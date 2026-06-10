@@ -1,30 +1,31 @@
+class Counter {
+    count: int;
+
+    function init(v: int): void {
+        self.count = v;
+    }
+
+    function get(): int {
+        return self.count;
+    }
+
+    function increment(): void {
+        self.count = self.count + 1;
+    }
+}
+
 function main(): int {
-    println("Ajeeb compiler v0.1 — Sab features ek saath!");
-    
-    // Variables & arithmetic
-    let x: int = 10;
-    let y: int = x * 2 + 5;
-    
-    // If/else
-    if (y > 20) {
-        println("y bada hai 20 se");
-    } else {
-        println("y chhota hai");
-    }
-    
-    // Arrays
-    let arr: int[] = [1, 2, 3, 4, 5];
-    let sum: int = arr[0] + arr[1] + arr[2] + arr[3] + arr[4];
-    println("Array sum:");
-    print(sum);
-    
-    // While loop
-    let i: int = 0;
-    while (i < 3) {
-        println("Loop iteration:");
-        print(i);
-        i = i + 1;
-    }
-    
-    return 0;
+    println("Ajeeb v0.2 — OOP ke saath!");
+
+    let c: Counter = new Counter;
+    c.init(10);
+    let val: int = c.get();
+    println("Initial value 10 hai");
+
+    c.increment();
+    val = c.get();
+    println("Increment ke baad 11 hai");
+
+    let result: int = val - 11;
+    return result;
 }

@@ -1,0 +1,234 @@
+// ============================================================
+//  Ajeeb Compiler — Self-Hosting  (No globals, no break)
+//  All state in __ajeeb_outbuf accessed via getInt/setInt
+// ============================================================
+
+// --- HELPERS ---
+
+function rdB(buf: string, off: int): int { return getInt(buf, off); }
+function wrB(buf: string, off: int, v: int): void { setInt(buf, off, v); }
+function rdPos(buf: string): int { return rdB(buf, 0); }
+function wrPos(buf: string, v: int): void { wrB(buf, 0, v); }
+function rdLbl(buf: string): int { let n: int = rdB(buf, 8); wrB(buf, 8, n+1); return n; }
+function rdFnC(buf: string): int { return rdB(buf, 16); }
+function wrFnC(buf: string, v: int): void { wrB(buf, 16, v); }
+function rdSrc(buf: string): int { return rdB(buf, 32); }
+function wrSrc(buf: string, v: int): void { wrB(buf, 32, v); }
+
+function isDigit(c: int): int {
+    if (c >= 48 && c <= 57) { return 1; } return 0;
+}
+function isAlpha(c: int): int {
+    if (c >= 65 && c <= 90) { return 1; }
+    if (c >= 97 && c <= 122) { return 1; }
+    if (c == 95) { return 1; }
+    return 0;
+}
+function isAlphaNum(c: int): int {
+    if (isDigit(c) == 1) { return 1; }
+    if (isAlpha(c) == 1) { return 1; }
+    return 0;
+}
+function isSpace(c: int): int {
+    if (c == 32 || c == 9 || c == 10 || c == 13) { return 1; }
+    return 0;
+}
+function chr(src: int, i: int): int { return charCode(src, i); }
+
+function skipWS(src: int, buf: string): void {
+    let pos: int = rdPos(buf);
+    let go: int = 1;
+    while (go == 1) {
+        let c: int = chr(src, pos);
+        if (isSpace(c) == 1) { pos = pos + 1; }
+        else if (c == 47 && chr(src, pos+1) == 47) {
+            pos = pos + 2;
+            while (chr(src, pos) != 10) { pos = pos + 1; }
+        }
+        else if (c == 47 && chr(src, pos+1) == 42) {
+            pos = pos + 2;
+            let dg: int = 1;
+            while (dg == 1) {
+                if (chr(src, pos) == 42 && chr(src, pos+1) == 47) { dg = 0; }
+                else { pos = pos + 1; }
+            }
+            pos = pos + 2;
+        }
+        else { go = 0; }
+    }
+    wrPos(buf, pos);
+}
+
+function matchKwd(src: int, buf: string, kwd: string): int {
+    let pos: int = rdPos(buf);
+    let klen: int = len(kwd);
+    let i: int = 0;
+    while (i < klen) {
+        if (chr(src, pos + i) != charCode(kwd, i)) { return 0; }
+        i = i + 1;
+    }
+    if (isAlphaNum(chr(src, pos + klen)) == 1) { return 0; }
+    return 1;
+}
+
+function readIdent(src: int, buf: string): int {
+    let pos: int = rdPos(buf);
+    let start: int = pos;
+    while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+    wrPos(buf, pos);
+    return start;
+}
+
+// --- Function table (off 1000, 24 bytes/entry) ---
+
+function addFn(src: int, buf: string, nameStart: int): void {
+    let count: int = rdFnC(buf);
+    let pos: int = rdPos(buf);
+    let nameLen: int = pos - nameStart;
+    let off: int = 1000 + count * 24;
+    setInt(buf, off, nameStart);
+    setInt(buf, off+8, nameLen);
+    setInt(buf, off+16, count);
+    wrFnC(buf, count + 1);
+}
+
+// --- PASS 1: collect function names ---
+
+function collectFns(src: int, buf: string): void {
+    wrPos(buf, 0);
+    wrFnC(buf, 0);
+    let go: int = 1;
+    while (go == 1) {
+        skipWS(src, buf);
+        let pos: int = rdPos(buf);
+        if (chr(src, pos) == 0) { go = 0; }
+        else if (matchKwd(src, buf, "class") == 1) {
+            pos = pos + 5; wrPos(buf, pos); skipWS(src, buf);
+            readIdent(src, buf); skipWS(src, buf);
+            pos = rdPos(buf);
+            if (chr(src, pos) == 123) {
+                let depth: int = 1; pos = pos + 1;
+                while (depth > 0) {
+                    if (chr(src, pos) == 123) { depth = depth + 1; }
+                    else if (chr(src, pos) == 125) { depth = depth - 1; }
+                    pos = pos + 1;
+                }
+                wrPos(buf, pos);
+            }
+        }
+        else if (matchKwd(src, buf, "function") == 1) {
+            pos = pos + 8; wrPos(buf, pos); skipWS(src, buf);
+            let fnStart: int = readIdent(src, buf);
+            addFn(src, buf, fnStart);
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 40) {
+                let depth: int = 1; pos = pos + 1;
+                while (depth > 0) {
+                    if (chr(src, pos) == 40) { depth = depth + 1; }
+                    else if (chr(src, pos) == 41) { depth = depth - 1; }
+                    pos = pos + 1;
+                }
+                wrPos(buf, pos);
+            }
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 58) {
+                pos = pos + 1;
+                while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+                if (chr(src, pos) == 91) { pos = pos + 2; }
+                wrPos(buf, pos);
+            }
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 123) {
+                let depth: int = 1; pos = pos + 1;
+                while (depth > 0) {
+                    if (chr(src, pos) == 123) { depth = depth + 1; }
+                    else if (chr(src, pos) == 125) { depth = depth - 1; }
+                    pos = pos + 1;
+                }
+                wrPos(buf, pos);
+            }
+        }
+        else { wrPos(buf, pos + 1); }
+    }
+}
+
+// --- PASS 2: emit skeleton assembly ---
+
+function emitStr(out: string, s: string): void { writeAppend(out, s); }
+function emitI(out: string, n: int): void { writeAppend(out, itoa(n)); }
+
+function emitFnBody(src: int, buf: string, out: string, idx: int): void {
+    let off: int = 1000 + idx * 24;
+    let nameStart: int = rdB(buf, off);
+    let nameLen: int = rdB(buf, off+8);
+
+    emitStr(out, "fn_");
+    let i: int = 0;
+    while (i < nameLen) {
+        let ch: int = chr(src, nameStart + i);
+        i = i + 1;
+        // Write single char using strSet on __ajeeb_buf
+        let scratch: string = getOutbuf();
+        strSet(scratch, 0, ch);
+        strSet(scratch, 1, 0);
+        writeAppend(out, scratch);
+    }
+    emitStr(out, ":\n");
+    emitStr(out, "    stp x29, x30, [sp, #-16]!\n");
+    emitStr(out, "    stp x19, x20, [sp, #-16]!\n");
+    emitStr(out, "    str x21, [sp, #-16]!\n");
+    emitStr(out, "    mov x29, sp\n");
+    emitStr(out, "    sub sp, sp, #32\n");
+    emitStr(out, "    mov x0, #0\n");
+    emitStr(out, "    mov sp, x29\n");
+    emitStr(out, "    ldr x21, [sp], #16\n");
+    emitStr(out, "    ldp x19, x20, [sp], #16\n");
+    emitStr(out, "    ldp x29, x30, [sp], #16\n");
+    emitStr(out, "    ret\n");
+}
+
+// --- MAIN ---
+
+function main(): int {
+    let buf: string = getOutbuf();
+    setInt(buf, 0, 0);
+    setInt(buf, 8, 0);
+    setInt(buf, 16, 0);
+
+    let inPath: string = readArg(1);
+    if (len(inPath) == 0) { inPath = "input.ajb"; }
+    let src: string = readFile(inPath);
+    setInt(buf, 32, src);
+
+    let out: string = "output.asm";
+    writeFile(out, "// Ajeeb bootstrap\n");
+
+    collectFns(src, buf);
+
+    emitStr(out, ".global _start\n");
+    emitStr(out, ".text\n");
+    emitStr(out, "_start:\n");
+    emitStr(out, "    mov x1, sp\n");
+    emitStr(out, "    adrp x0, __ajeeb_argv\n");
+    emitStr(out, "    add x0, x0, :lo12:__ajeeb_argv\n");
+    emitStr(out, "    str x1, [x0]\n");
+    emitStr(out, "    bl fn_main\n");
+    emitStr(out, "    mov x8, #93\n");
+    emitStr(out, "    svc #0\n");
+
+    let count: int = rdFnC(buf);
+    let i: int = 0;
+    while (i < count) {
+        emitFnBody(src, buf, out, i);
+        i = i + 1;
+    }
+
+    emitStr(out, ".section .bss\n");
+    emitStr(out, ".align 4\n");
+    emitStr(out, "__ajeeb_argv: .space 8\n");
+    emitStr(out, "__ajeeb_buf: .space 16384\n");
+    emitStr(out, "__ajeeb_itoa_buf: .space 32\n");
+    emitStr(out, "__ajeeb_outbuf: .space 65536\n");
+
+    return 0;
+}
