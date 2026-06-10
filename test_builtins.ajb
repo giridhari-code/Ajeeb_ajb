@@ -1,0 +1,35 @@
+function main(): int {
+    // Test 1: len()
+    let msg: string = "namaste";
+    let n: int = len(msg);
+    if (n == 7) {
+        println("len OK");
+    } else {
+        println("len FAIL");
+    }
+
+    // Test 2: charCode()
+    let c: int = charCode(msg, 0);
+    if (c == 110) {
+        println("charCode OK");
+    } else {
+        println("charCode FAIL");
+    }
+
+    // Test 3: writeFile + readFile
+    writeFile("/tmp/ajeeb_test.txt", "hello ajeeb!");
+    let content: string = readFile("/tmp/ajeeb_test.txt");
+    let clen: int = len(content);
+    if (clen == 12) {
+        let c0: int = charCode(content, 0);
+        if (c0 == 104) {
+            println("readFile OK");
+        } else {
+            println("readFile FAIL: first char");
+        }
+    } else {
+        println("readFile FAIL: length");
+    }
+
+    return 0;
+}

@@ -436,7 +436,7 @@ impl Parser {
     }
 
     fn parse_fn_def(&mut self) -> Result<Stmt, CompileError> {
-        self.advance(); // function
+        self.advance();
         let name = match self.advance() {
             Token::Identifier(n) => n,
             _ => return Err(CompileError::new(0, 0, "'function' ke baad function ka naam chahiye.".to_string())),
@@ -643,9 +643,24 @@ impl Parser {
             }
             _ => return Err(CompileError::new(0, 0, format!("Unexpected token. Expecting expression, mila {:?}.", self.peek()))),
         };
-        // Postfix chain: .field, .method(), [index]
+        // Postfix chain: .field, .method(), [index], (args)
         loop {
             match self.peek() {
+                Token::LParen => {
+                    // function call: ident(args)
+                    let name = match &expr {
+                        Expr::Ident(n) => n.clone(),
+                        _ => return Err(CompileError::new(0, 0, "Sirf identifier ko call kar sakte ho.".to_string())),
+                    };
+                    self.advance(); // (
+                    let mut args = Vec::new();
+                    while self.peek() != &Token::RParen {
+                        args.push(self.parse_expression()?);
+                        if self.peek() == &Token::Comma { self.advance(); }
+                    }
+                    self.expect(&Token::RParen)?;
+                    expr = Expr::FnCall { name, args };
+                }
                 Token::Dot => {
                     self.advance();
                     let field = match self.advance() {
@@ -677,21 +692,6 @@ impl Parser {
                     } else {
                         expr = Expr::Index { obj: Box::new(expr), index: Box::new(index) };
                     }
-                }
-                Token::LParen => {
-                    // call on expression result (only for idents handled above)
-                    self.advance();
-                    let mut args = Vec::new();
-                    while self.peek() != &Token::RParen {
-                        args.push(self.parse_expression()?);
-                        if self.peek() == &Token::Comma { self.advance(); }
-                    }
-                    self.expect(&Token::RParen)?;
-                    let name = match &expr {
-                        Expr::Ident(n) => n.clone(),
-                        _ => return Err(CompileError::new(0, 0, "Sirf identifier ko call kar sakte hain.".to_string())),
-                    };
-                    expr = Expr::FnCall { name, args };
                 }
                 _ => break,
             }
@@ -847,7 +847,8 @@ impl AsmGen {
         }
 
         self.emit_data_section();
-        Ok(format!("{}\n{}", self.asm, self.data))
+        let bss = ".section .bss\n.align 4\n__ajeeb_buf: .space 4096\n";
+        Ok(format!("{}\n{}{}", self.asm, self.data, bss))
     }
 
     fn emit_data_section(&mut self) {
@@ -1078,6 +1079,100 @@ impl AsmGen {
                         return self.emit_println(&args[0]);
                     }
                 }
+                // Built-in: len(str)
+                if name == "len" && args.len() == 1 {
+                    self.emit_expr(&args[0])?;
+                    self.asm.push_str("    mov x1, x0\n");
+                    self.asm.push_str("    mov x0, #0\n");
+                    let sl_lbl = self.fresh_label("strlen_loop");
+                    self.asm.push_str(&format!("{}:\n", sl_lbl));
+                    let selbl = self.fresh_label("strlen_end");
+                    self.asm.push_str("    ldrb w2, [x1, x0]\n");
+                    self.asm.push_str(&format!("    cbz w2, {}\n", selbl));
+                    self.asm.push_str("    add x0, x0, #1\n");
+                    self.asm.push_str(&format!("    b {}\n", sl_lbl));
+                    self.asm.push_str(&format!("{}:\n", selbl));
+                    return Ok(());
+                }
+                // Built-in: charCode(str, index)
+                if name == "charCode" && args.len() == 2 {
+                    self.emit_expr(&args[1])?;  // index
+                    self.asm.push_str("    str x0, [sp, #-16]!\n");
+                    self.emit_expr(&args[0])?;  // str
+                    self.asm.push_str("    ldr x1, [sp], #16\n"); // index in x1
+                    self.asm.push_str("    add x0, x0, x1\n"); // str + index
+                    self.asm.push_str("    ldrb w0, [x0]\n");
+                    return Ok(());
+                }
+                // Built-in: readFile(path)
+                if name == "readFile" && args.len() == 1 {
+                    self.emit_expr(&args[0])?; // path in x0
+                    // openat(AT_FDCWD=-100, path, O_RDONLY=0)
+                    self.asm.push_str("    mov x1, x0\n"); // path
+                    self.asm.push_str("    mov x0, #-100\n"); // dirfd = AT_FDCWD
+                    self.asm.push_str("    mov x2, #0\n"); // O_RDONLY
+                    self.asm.push_str("    mov x8, #56\n"); // openat
+                    self.asm.push_str("    svc #0\n");
+                    self.asm.push_str("    mov x19, x0\n"); // save fd
+                    // read(fd, buf, 4096)
+                    self.asm.push_str("    adrp x1, __ajeeb_buf\n");
+                    self.asm.push_str("    add x1, x1, :lo12:__ajeeb_buf\n");
+                    self.asm.push_str("    mov x2, #4096\n");
+                    self.asm.push_str("    mov x0, x19\n"); // fd
+                    self.asm.push_str("    mov x8, #63\n"); // read
+                    self.asm.push_str("    svc #0\n");
+                    self.asm.push_str("    mov x20, x0\n"); // save bytes read
+                    // null-terminate
+                    self.asm.push_str("    adrp x1, __ajeeb_buf\n");
+                    self.asm.push_str("    add x1, x1, :lo12:__ajeeb_buf\n");
+                    self.asm.push_str("    strb wzr, [x1, x20]\n");
+                    // close(fd)
+                    self.asm.push_str("    mov x0, x19\n");
+                    self.asm.push_str("    mov x8, #57\n"); // close
+                    self.asm.push_str("    svc #0\n");
+                    // Return buffer address
+                    self.asm.push_str("    adrp x0, __ajeeb_buf\n");
+                    self.asm.push_str("    add x0, x0, :lo12:__ajeeb_buf\n");
+                    return Ok(());
+                }
+                // Built-in: writeFile(path, content)
+                if name == "writeFile" && args.len() == 2 {
+                    self.emit_expr(&args[0])?;
+                    self.asm.push_str("    mov x19, x0\n"); // save path
+                    self.emit_expr(&args[1])?;
+                    self.asm.push_str("    mov x20, x0\n"); // save content
+                    // strlen
+                    self.asm.push_str("    mov x2, #0\n");
+                    let wlbl = self.fresh_label("wstrlen");
+                    let welbl = self.fresh_label("wstrlen_end");
+                    self.asm.push_str(&format!("{}:\n", wlbl));
+                    self.asm.push_str("    ldrb w3, [x20, x2]\n");
+                    self.asm.push_str(&format!("    cbz w3, {}\n", welbl));
+                    self.asm.push_str("    add x2, x2, #1\n");
+                    self.asm.push_str(&format!("    b {}\n", wlbl));
+                    self.asm.push_str(&format!("{}:\n", welbl));
+                    self.asm.push_str("    mov x21, x2\n"); // save len
+                    // openat(AT_FDCWD=-100, path, O_WRONLY|O_CREAT|O_TRUNC=577, 0644)
+                    self.asm.push_str("    mov x1, x19\n"); // path
+                    self.asm.push_str("    mov x0, #-100\n"); // dirfd = AT_FDCWD
+                    self.asm.push_str("    mov x2, #577\n"); // flags
+                    self.asm.push_str("    mov x3, #420\n"); // mode 0644
+                    self.asm.push_str("    mov x8, #56\n"); // openat
+                    self.asm.push_str("    svc #0\n");
+                    self.asm.push_str("    mov x19, x0\n"); // save fd
+                    // write(fd, content, len)
+                    self.asm.push_str("    mov x0, x19\n"); // fd
+                    self.asm.push_str("    mov x1, x20\n"); // content
+                    self.asm.push_str("    mov x2, x21\n"); // len
+                    self.asm.push_str("    mov x8, #64\n");
+                    self.asm.push_str("    svc #0\n");
+                    // close(fd)
+                    self.asm.push_str("    mov x0, x19\n");
+                    self.asm.push_str("    mov x8, #57\n");
+                    self.asm.push_str("    svc #0\n");
+                    self.asm.push_str("    mov x0, #0\n");
+                    return Ok(());
+                }
                 let label = {
                     let info = self.fn_map.get(name)
                         .ok_or_else(|| CompileError::new(0, 0, format!("Function '{}' define nahi hui!", name)))?;
@@ -1141,6 +1236,8 @@ impl AsmGen {
         let info = self.fn_map.get(name).unwrap();
         self.asm.push_str(&format!("{}:\n", info.label));
         self.asm.push_str("    stp x29, x30, [sp, #-16]!\n");
+        self.asm.push_str("    stp x19, x20, [sp, #-16]!\n");
+        self.asm.push_str("    str x21, [sp, #-16]!\n");
         self.asm.push_str("    mov x29, sp\n");
 
         let old_var_map = self.var_map.clone();
@@ -1204,6 +1301,8 @@ impl AsmGen {
 
     fn emit_fn_epilogue(&mut self) {
         self.asm.push_str("    mov sp, x29\n");
+        self.asm.push_str("    ldr x21, [sp], #16\n");
+        self.asm.push_str("    ldp x19, x20, [sp], #16\n");
         self.asm.push_str("    ldp x29, x30, [sp], #16\n");
         self.asm.push_str("    ret\n");
     }
