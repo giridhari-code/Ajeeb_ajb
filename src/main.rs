@@ -13,8 +13,9 @@ pub enum Token {
     Identifier(String), Number(i64), StringLiteral(String),
     Plus, Minus, Star, Slash, Assign,
     Eq, Neq, Lt, Gt, Le, Ge,
-    Semicolon, Colon, Comma, Arrow,
-    LParen, RParen, LBrace, RBrace,
+    Semicolon, Colon, Comma, Arrow, Dot,
+    LParen, RParen, LBrace, RBrace, LBracket, RBracket,
+    Class, SelfKwd,
     Eof,
 }
 
@@ -117,6 +118,7 @@ impl Lexer {
             "true" => Token::True, "false" => Token::False,
             "int" => Token::Int, "string" => Token::String,
             "bool" => Token::Bool, "void" => Token::Void,
+            "class" => Token::Class, "self" => Token::SelfKwd,
             _ => Token::Identifier(s),
         }
     }
@@ -174,6 +176,9 @@ impl Lexer {
                 ')' => Ok(Token::RParen),
                 '{' => Ok(Token::LBrace),
                 '}' => Ok(Token::RBrace),
+                '[' => Ok(Token::LBracket),
+                ']' => Ok(Token::RBracket),
+                '.' => Ok(Token::Dot),
                 '"' => self.read_string(),
                 c if c.is_ascii_digit() => Ok(self.read_number(c)),
                 c if c.is_alphabetic() || c == '_' => Ok(self.read_identifier(c)),
@@ -211,6 +216,19 @@ impl std::fmt::Display for CompileError {
 #[derive(Debug, Clone)]
 pub enum TypeAnnot {
     Int, String, Bool, Void,
+    Array(Box<TypeAnnot>),
+}
+
+#[derive(Debug, Clone)]
+pub struct ClassField {
+    pub name: String,
+    pub type_ann: TypeAnnot,
+}
+
+#[derive(Debug, Clone)]
+pub struct ClassInfo {
+    pub fields: Vec<ClassField>,
+    pub methods: Vec<Stmt>,
 }
 
 #[derive(Debug, Clone)]
@@ -222,6 +240,7 @@ pub enum Stmt {
     Return { value: Option<Expr> },
     Expr(Expr),
     FnDef { name: String, params: Vec<(String, TypeAnnot)>, return_type: TypeAnnot, body: Vec<Stmt> },
+    Class { name: String, fields: Vec<ClassField>, methods: Vec<Stmt> },
 }
 
 #[derive(Debug, Clone)]
@@ -232,7 +251,11 @@ pub enum Expr {
     Ident(String),
     Binary { left: Box<Expr>, op: BinOp, right: Box<Expr> },
     Assign { name: String, value: Box<Expr> },
+    IndexAssign { obj: Box<Expr>, index: Box<Expr>, value: Box<Expr> },
     FnCall { name: String, args: Vec<Expr> },
+    ArrayLit(Vec<Expr>),
+    Index { obj: Box<Expr>, index: Box<Expr> },
+    Field { obj: Box<Expr>, field: String },
     Group(Box<Expr>),
 }
 
@@ -292,6 +315,11 @@ impl Parser {
             Token::Lt => "<", Token::Gt => ">", Token::Le => "<=", Token::Ge => ">=",
             Token::Plus => "+", Token::Minus => "-", Token::Star => "*", Token::Slash => "/",
             Token::Arrow => "->",
+            Token::Dot => ".",
+            Token::LBracket => "[",
+            Token::RBracket => "]",
+            Token::Class => "class",
+            Token::SelfKwd => "self",
             Token::Identifier(_) => "identifier",
             Token::Number(_) => "number",
             Token::StringLiteral(_) => "string literal",
@@ -303,12 +331,20 @@ impl Parser {
     fn parse_type(&mut self) -> Result<Option<TypeAnnot>, CompileError> {
         if self.peek() == &Token::Colon {
             self.advance();
-            match self.advance() {
-                Token::Int => Ok(Some(TypeAnnot::Int)),
-                Token::String => Ok(Some(TypeAnnot::String)),
-                Token::Bool => Ok(Some(TypeAnnot::Bool)),
-                Token::Void => Ok(Some(TypeAnnot::Void)),
-                other => Err(CompileError::new(0, 0, format!("Unknown type {:?}. Sirf int, string, bool, void allowed hain.", other))),
+            let base = match self.advance() {
+                Token::Int => TypeAnnot::Int,
+                Token::String => TypeAnnot::String,
+                Token::Bool => TypeAnnot::Bool,
+                Token::Void => TypeAnnot::Void,
+                other => return Err(CompileError::new(0, 0, format!("Unknown type {:?}. Sirf int, string, bool, void allowed hain.", other))),
+            };
+            // Check for array type: int[], string[], etc.
+            if self.peek() == &Token::LBracket {
+                self.advance();
+                self.expect(&Token::RBracket)?;
+                Ok(Some(TypeAnnot::Array(Box::new(base))))
+            } else {
+                Ok(Some(base))
             }
         } else {
             Ok(None)
@@ -331,6 +367,7 @@ impl Parser {
             Token::While => self.parse_while_stmt(),
             Token::Function => self.parse_fn_def(),
             Token::Return => self.parse_return_stmt(),
+            Token::Class => self.parse_class_def(),
             Token::RBrace => Err(CompileError::new(0, 0, "Extra '}' mil gaya. Kahi closing brace zyada hai.".to_string())),
             _ => self.parse_expr_stmt(),
         }
@@ -427,6 +464,36 @@ impl Parser {
         let body = self.parse_block()?;
         self.expect(&Token::RBrace)?;
         Ok(Stmt::FnDef { name, params, return_type, body })
+    }
+
+    fn parse_class_def(&mut self) -> Result<Stmt, CompileError> {
+        self.advance(); // class
+        let name = match self.advance() {
+            Token::Identifier(n) => n,
+            _ => return Err(CompileError::new(0, 0, "'class' ke baad naam chahiye.".to_string())),
+        };
+        self.expect(&Token::LBrace)?;
+        let mut fields = Vec::new();
+        let mut methods = Vec::new();
+        while self.peek() != &Token::RBrace && self.peek() != &Token::Eof {
+            if self.peek() == &Token::Function {
+                methods.push(self.parse_fn_def()?);
+            } else {
+                // field declaration: name : type ;
+                let fname = match self.advance() {
+                    Token::Identifier(n) => n,
+                    _ => return Err(CompileError::new(0, 0, "Field ka naam chahiye.".to_string())),
+                };
+                let ftype = match self.parse_type()? {
+                    Some(t) => t,
+                    None => return Err(CompileError::new(0, 0, "Field ka type batana zaroori hai.".to_string())),
+                };
+                self.expect(&Token::Semicolon)?;
+                fields.push(ClassField { name: fname, type_ann: ftype });
+            }
+        }
+        self.expect(&Token::RBrace)?;
+        Ok(Stmt::Class { name, fields, methods })
     }
 
     fn parse_return_stmt(&mut self) -> Result<Stmt, CompileError> {
@@ -547,22 +614,72 @@ impl Parser {
     }
 
     fn parse_primary(&mut self) -> Result<Expr, CompileError> {
-        match self.peek() {
-            Token::Number(n) => { let v = n.clone(); self.advance(); Ok(Expr::Number(v)) }
-            Token::StringLiteral(s) => { let v = s.clone(); self.advance(); Ok(Expr::StringLit(v)) }
-            Token::True => { self.advance(); Ok(Expr::Bool(true)) }
-            Token::False => { self.advance(); Ok(Expr::Bool(false)) }
+        let mut expr = match self.peek() {
+            Token::Number(n) => { let v = n.clone(); self.advance(); Expr::Number(v) }
+            Token::StringLiteral(s) => { let v = s.clone(); self.advance(); Expr::StringLit(v) }
+            Token::True => { self.advance(); Expr::Bool(true) }
+            Token::False => { self.advance(); Expr::Bool(false) }
+            Token::SelfKwd => { self.advance(); Expr::Ident("self".to_string()) }
+            Token::LBracket => {
+                self.advance();
+                let mut elems = Vec::new();
+                while self.peek() != &Token::RBracket {
+                    elems.push(self.parse_expression()?);
+                    if self.peek() == &Token::Comma { self.advance(); }
+                }
+                self.expect(&Token::RBracket)?;
+                Expr::ArrayLit(elems)
+            }
             Token::LParen => {
                 self.advance();
-                let expr = self.parse_expression()?;
+                let e = self.parse_expression()?;
                 self.expect(&Token::RParen)?;
-                Ok(Expr::Group(Box::new(expr)))
+                Expr::Group(Box::new(e))
             }
             Token::Identifier(name) => {
                 let name = name.clone();
                 self.advance();
-                if self.peek() == &Token::LParen {
-                    // function call
+                Expr::Ident(name)
+            }
+            _ => return Err(CompileError::new(0, 0, format!("Unexpected token. Expecting expression, mila {:?}.", self.peek()))),
+        };
+        // Postfix chain: .field, .method(), [index]
+        loop {
+            match self.peek() {
+                Token::Dot => {
+                    self.advance();
+                    let field = match self.advance() {
+                        Token::Identifier(n) => n,
+                        _ => return Err(CompileError::new(0, 0, "'.' ke baad field/method ka naam chahiye.".to_string())),
+                    };
+                    if self.peek() == &Token::LParen {
+                        // method call: obj.method(args)
+                        self.advance();
+                        let mut args = vec![expr.clone()]; // self is first arg
+                        while self.peek() != &Token::RParen {
+                            args.push(self.parse_expression()?);
+                            if self.peek() == &Token::Comma { self.advance(); }
+                        }
+                        self.expect(&Token::RParen)?;
+                        expr = Expr::FnCall { name: field, args };
+                    } else {
+                        expr = Expr::Field { obj: Box::new(expr), field };
+                    }
+                }
+                Token::LBracket => {
+                    self.advance();
+                    let index = self.parse_expression()?;
+                    self.expect(&Token::RBracket)?;
+                    if self.peek() == &Token::Assign {
+                        self.advance();
+                        let value = self.parse_expression()?;
+                        expr = Expr::IndexAssign { obj: Box::new(expr), index: Box::new(index), value: Box::new(value) };
+                    } else {
+                        expr = Expr::Index { obj: Box::new(expr), index: Box::new(index) };
+                    }
+                }
+                Token::LParen => {
+                    // call on expression result (only for idents handled above)
                     self.advance();
                     let mut args = Vec::new();
                     while self.peek() != &Token::RParen {
@@ -570,13 +687,16 @@ impl Parser {
                         if self.peek() == &Token::Comma { self.advance(); }
                     }
                     self.expect(&Token::RParen)?;
-                    Ok(Expr::FnCall { name, args })
-                } else {
-                    Ok(Expr::Ident(name))
+                    let name = match &expr {
+                        Expr::Ident(n) => n.clone(),
+                        _ => return Err(CompileError::new(0, 0, "Sirf identifier ko call kar sakte hain.".to_string())),
+                    };
+                    expr = Expr::FnCall { name, args };
                 }
+                _ => break,
             }
-            _ => Err(CompileError::new(0, 0, format!("Unexpected token. Expecting expression, mila {:?}.", self.peek()))),
         }
+        Ok(expr)
     }
 }
 
@@ -589,12 +709,21 @@ struct AsmGen {
     label_counter: usize,
     var_map: HashMap<String, i32>,
     fn_map: HashMap<String, FnInfo>,
+    class_map: HashMap<String, ClassLayout>,
+    _field_access_tmp: HashMap<String, String>,
     current_offset: i32,
+    class_field_scope: Option<String>, // when emitting class method, which class
+}
+
+struct FnInfo {
+    label: String,
 }
 
 #[allow(dead_code)]
-struct FnInfo {
-    label: String,
+struct ClassLayout {
+    _fields: Vec<String>,
+    field_offsets: HashMap<String, i32>,
+    _size: i32,
 }
 
 impl AsmGen {
@@ -605,7 +734,10 @@ impl AsmGen {
             label_counter: 0,
             var_map: HashMap::new(),
             fn_map: HashMap::new(),
+            class_map: HashMap::new(),
+            _field_access_tmp: HashMap::new(),
             current_offset: 0,
+            class_field_scope: None,
         }
     }
 
@@ -625,11 +757,44 @@ impl AsmGen {
         self.current_offset
     }
 
+    fn alloc_var_sized(&mut self, name: &str, slots: usize) -> i32 {
+        for _ in 0..slots { self.current_offset -= 8; }
+        let base = self.current_offset + 8; // first slot
+        self.var_map.insert(name.to_string(), self.current_offset + 8 * slots as i32);
+        base
+    }
+
     fn generate(&mut self, stmts: &[Stmt]) -> Result<String, CompileError> {
+        // First pass: collect class info and function definitions
         for stmt in stmts {
-            if let Stmt::FnDef { name, .. } = stmt {
-                let label = format!("fn_{}", name);
-                self.fn_map.insert(name.clone(), FnInfo { label });
+            match stmt {
+                Stmt::FnDef { name, .. } => {
+                    let label = format!("fn_{}", name);
+                    self.fn_map.insert(name.clone(), FnInfo { label });
+                }
+                Stmt::Class { name, fields, methods } => {
+                    let mut offsets = HashMap::new();
+                    let mut fnames = Vec::new();
+                    let mut off: i32 = 0;
+                    for f in fields {
+                        offsets.insert(f.name.clone(), off);
+                        fnames.push(f.name.clone());
+                        off += 8;
+                    }
+                    self.class_map.insert(name.clone(), ClassLayout {
+                        _fields: fnames,
+                        field_offsets: offsets,
+                        _size: off,
+                    });
+                    // Register methods as functions with class prefix
+                    for m in methods {
+                        if let Stmt::FnDef { name: mname, .. } = m {
+                            let label = format!("fn_{}_{}", name, mname);
+                            self.fn_map.insert(format!("{}_{}", name, mname), FnInfo { label });
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -659,8 +824,25 @@ impl AsmGen {
         }
 
         for stmt in stmts {
-            if let Stmt::FnDef { name, params, body, .. } = stmt {
-                self.emit_fn_def(&name, &params, &body)?;
+            match stmt {
+                Stmt::FnDef { name, params, body, .. } => {
+                    self.emit_fn_def(&name, &params, &body)?;
+                }
+                Stmt::Class { name, methods, .. } => {
+                    // Emit methods as ClassName_methodName
+                    for m in methods {
+                        if let Stmt::FnDef { name: mname, params, body, return_type: _ } = m {
+                            let mut all_params = vec![("self".to_string(), TypeAnnot::Int)]; // self pointer
+                            all_params.extend(params.iter().cloned());
+                            self.class_field_scope = Some(name.clone());
+                            // Register params including self
+                            let mangled_name = format!("{}_{}", name, mname);
+                            self.emit_fn_def(&mangled_name, &all_params, &body)?;
+                            self.class_field_scope = None;
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -677,10 +859,27 @@ impl AsmGen {
     fn emit_stmt(&mut self, stmt: &Stmt) -> Result<(), CompileError> {
         match stmt {
             Stmt::Let { name, value, .. } | Stmt::Const { name, value, .. } => {
-                self.alloc_var(name);
-                self.emit_expr(value)?;
-                let offset = self.get_var_offset(name);
-                self.asm.push_str(&format!("    str x0, [x29, {}]\n", offset));
+                match value {
+                    Expr::ArrayLit(elems) => {
+                        // Allocate pointer slot + element slots
+                        let base = self.alloc_var_sized(name, elems.len() + 1);
+                        let ptr_slot = self.get_var_offset(name); // where pointer is stored
+                        for (i, elem) in elems.iter().enumerate() {
+                            let elem_addr = base + (i as i32 * 8);
+                            self.emit_expr(elem)?;
+                            self.asm.push_str(&format!("    str x0, [x29, {}]\n", elem_addr));
+                        }
+                        // Store pointer to first element
+                        self.asm.push_str(&format!("    add x0, x29, #{}\n", base));
+                        self.asm.push_str(&format!("    str x0, [x29, {}]\n", ptr_slot));
+                    }
+                    _ => {
+                        self.alloc_var(name);
+                        self.emit_expr(value)?;
+                        let offset = self.get_var_offset(name);
+                        self.asm.push_str(&format!("    str x0, [x29, {}]\n", offset));
+                    }
+                }
                 Ok(())
             }
             Stmt::If { condition, then_block, else_block } => {
@@ -720,6 +919,7 @@ impl AsmGen {
                 Ok(())
             }
             Stmt::FnDef { .. } => Ok(()),
+            Stmt::Class { .. } => Ok(()), // methods emitted separately
         }
     }
 
@@ -727,6 +927,54 @@ impl AsmGen {
         self.emit_expr(condition)?;
         self.asm.push_str("    cmp x0, #0\n");
         self.asm.push_str(&format!("    b.eq {}\n", false_label));
+        Ok(())
+    }
+
+    fn emit_print(&mut self, expr: &Expr) -> Result<(), CompileError> {
+        // print(expr) — write syscall: x0=1(stdout), x1=string, x2=len, x8=64, svc
+        // For string literals, we know the length at compile time
+        if let Expr::StringLit(s) = expr {
+            let lbl = self.fresh_label("str");
+            let len = s.len();
+            self.data.push_str(&format!("{}: .asciz \"", lbl));
+            for c in s.chars() {
+                match c {
+                    '\n' => self.data.push_str("\\n"),
+                    '\t' => self.data.push_str("\\t"),
+                    '\\' => self.data.push_str("\\\\"),
+                    '"' => self.data.push_str("\"\""),
+                    _ => self.data.push(c),
+                }
+            }
+            self.data.push_str("\"\n");
+            self.asm.push_str("    mov x0, #1\n");
+            self.asm.push_str(&format!("    adrp x1, {}\n", lbl));
+            self.asm.push_str(&format!("    add x1, x1, :lo12:{}\n", lbl));
+            self.asm.push_str(&format!("    mov x2, #{}\n", len));
+            self.asm.push_str("    mov x8, #64\n");
+            self.asm.push_str("    svc #0\n");
+        } else {
+            // For non-string, just emit as-is (will be a pointer)
+            self.emit_expr(expr)?;
+            self.asm.push_str("    mov x1, x0\n");
+            self.asm.push_str("    mov x0, #1\n");
+            self.asm.push_str("    mov x2, #8\n"); // print 8 bytes as fallback
+            self.asm.push_str("    mov x8, #64\n");
+            self.asm.push_str("    svc #0\n");
+        }
+        Ok(())
+    }
+
+    fn emit_println(&mut self, expr: &Expr) -> Result<(), CompileError> {
+        self.emit_print(expr)?;
+        let nl_lbl = self.fresh_label("nl");
+        self.data.push_str(&format!("{}: .asciz \"\\n\"\n", nl_lbl));
+        self.asm.push_str("    mov x0, #1\n");
+        self.asm.push_str(&format!("    adrp x1, {}\n", nl_lbl));
+        self.asm.push_str(&format!("    add x1, x1, :lo12:{}\n", nl_lbl));
+        self.asm.push_str("    mov x2, #1\n");
+        self.asm.push_str("    mov x8, #64\n");
+        self.asm.push_str("    svc #0\n");
         Ok(())
     }
 
@@ -755,8 +1003,14 @@ impl AsmGen {
                 self.asm.push_str(&format!("    mov x0, #{}\n", if *b { 1 } else { 0 }));
             }
             Expr::Ident(name) => {
-                let offset = self.get_var_offset(name);
-                self.asm.push_str(&format!("    ldr x0, [x29, {}]\n", offset));
+                if name == "self" && self.class_field_scope.is_some() {
+                    // self pointer — load it from the first parameter slot
+                    let offset = self.get_var_offset(name);
+                    self.asm.push_str(&format!("    ldr x0, [x29, {}]\n", offset));
+                } else {
+                    let offset = self.get_var_offset(name);
+                    self.asm.push_str(&format!("    ldr x0, [x29, {}]\n", offset));
+                }
             }
             Expr::Binary { left, op, right } => {
                 self.emit_expr(left)?;
@@ -800,7 +1054,30 @@ impl AsmGen {
                 let offset = self.get_var_offset(name);
                 self.asm.push_str(&format!("    str x0, [x29, {}]\n", offset));
             }
+            Expr::IndexAssign { obj, index, value } => {
+                self.emit_expr(obj)?;
+                self.asm.push_str("    str x0, [sp, #-16]!\n"); // push base
+                self.emit_expr(index)?;
+                self.asm.push_str("    mov x1, x0\n");  // index
+                self.asm.push_str("    ldr x0, [sp], #16\n"); // pop base
+                self.asm.push_str("    add x0, x0, x1, lsl #3\n"); // base + index*8
+                self.asm.push_str("    str x0, [sp, #-16]!\n"); // push addr
+                self.emit_expr(value)?;
+                self.asm.push_str("    ldr x1, [sp], #16\n"); // pop addr
+                self.asm.push_str("    str x0, [x1]\n");
+            }
             Expr::FnCall { name, args } => {
+                // Handle built-in print/println
+                if name == "print" {
+                    if args.len() == 1 {
+                        return self.emit_print(&args[0]);
+                    }
+                }
+                if name == "println" {
+                    if args.len() == 1 {
+                        return self.emit_println(&args[0]);
+                    }
+                }
                 let label = {
                     let info = self.fn_map.get(name)
                         .ok_or_else(|| CompileError::new(0, 0, format!("Function '{}' define nahi hui!", name)))?;
@@ -818,6 +1095,42 @@ impl AsmGen {
                     self.asm.push_str(&format!("    ldr {}, [sp], #16\n", arg_regs[i]));
                 }
                 self.asm.push_str(&format!("    bl {}\n", label));
+            }
+            Expr::ArrayLit(elems) => {
+                // Result is pointer to first element on stack
+                self.asm.push_str("    mov x0, sp\n");
+                for elem in elems.iter() {
+                    self.emit_expr(elem)?;
+                    self.asm.push_str("    str x0, [sp, #-16]!\n");
+                }
+                // x0 points to where first element was stored... but we modified sp
+                // Instead, just allocate a slot and return pointer
+                self.asm.push_str("    mov x0, sp\n");
+            }
+            Expr::Index { obj, index } => {
+                self.emit_expr(obj)?;
+                self.asm.push_str("    str x0, [sp, #-16]!\n"); // push base
+                self.emit_expr(index)?;
+                self.asm.push_str("    mov x1, x0\n");  // index
+                self.asm.push_str("    ldr x0, [sp], #16\n"); // pop base
+                self.asm.push_str("    add x0, x0, x1, lsl #3\n"); // base + index*8
+                self.asm.push_str("    ldr x0, [x0]\n"); // load value
+            }
+            Expr::Field { obj, field } => {
+                let class_name = self.class_field_scope.as_ref().cloned();
+                if let Some(ref cn) = class_name {
+                    let offset_val = self.class_map.get(cn)
+                        .and_then(|layout| layout.field_offsets.get(field))
+                        .cloned();
+                    if let Some(off) = offset_val {
+                        self.emit_expr(obj)?;
+                        self.asm.push_str(&format!("    ldr x0, [x0, #{}]\n", off));
+                    } else {
+                        return Err(CompileError::new(0, 0, format!("Field '{}' class '{}' me exist nahi karta!", field, cn)));
+                    }
+                } else {
+                    return Err(CompileError::new(0, 0, "Field access sirf class methods me kaam karta hai.".to_string()));
+                }
             }
             Expr::Group(inner) => self.emit_expr(inner)?,
         }
@@ -847,7 +1160,8 @@ impl AsmGen {
         }
         let total_stack = params.len() + local_var_count;
         if total_stack > 0 {
-            let size = total_stack * 8;
+            // align to 16 bytes for aarch64 stack alignment requirement
+            let size = ((total_stack * 8) + 15) & !15;
             self.asm.push_str(&format!("    sub sp, sp, #{}\n", size));
         }
 
@@ -868,7 +1182,13 @@ impl AsmGen {
 
     fn count_local_vars(&mut self, stmt: &Stmt, count: &mut usize) {
         match stmt {
-            Stmt::Let { .. } | Stmt::Const { .. } => *count += 1,
+            Stmt::Let { value, .. } | Stmt::Const { value, .. } => {
+                if let Expr::ArrayLit(elems) = value {
+                    *count += elems.len() + 1; // pointer + elements
+                } else {
+                    *count += 1;
+                }
+            }
             Stmt::If { then_block, else_block, .. } => {
                 for s in then_block { self.count_local_vars(s, count); }
                 if let Some(eb) = else_block {
