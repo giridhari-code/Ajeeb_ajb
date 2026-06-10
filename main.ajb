@@ -1,0 +1,4 @@
+function main(): int {
+    let msg: string = "Hello from Ajeeb!";
+    return 0;
+}
