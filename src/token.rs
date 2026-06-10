@@ -4,9 +4,9 @@ pub enum Token {
     Int, String, Bool, Void,
     Identifier(String), Number(i64), StringLiteral(String),
     Plus, Minus, Star, Slash, Assign,
-    Eq, Neq, Lt, Gt, Le, Ge,
+    Eq, Neq, Lt, Gt, Le, Ge, And, Or, Not,
     Semicolon, Colon, Comma, Arrow, Dot,
     LParen, RParen, LBrace, RBrace, LBracket, RBracket,
-    Class, SelfKwd,
+    Class, SelfKwd, New,
     Eof,
 }

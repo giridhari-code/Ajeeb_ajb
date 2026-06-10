@@ -157,7 +157,7 @@ function collectFns(src: int, buf: string): void {
     }
 }
 
-// --- PASS 2: emit skeleton assembly ---
+// --- PASS 2: emit skeleton C code ---
 
 function emitStr(out: string, s: string): void { writeAppend(out, s); }
 function emitI(out: string, n: int): void { writeAppend(out, itoa(n)); }
@@ -167,29 +167,20 @@ function emitFnBody(src: int, buf: string, out: string, idx: int): void {
     let nameStart: int = rdB(buf, off);
     let nameLen: int = rdB(buf, off+8);
 
-    emitStr(out, "fn_");
+    emitStr(out, "int fn_");
     let i: int = 0;
     while (i < nameLen) {
         let ch: int = chr(src, nameStart + i);
         i = i + 1;
-        // Write single char using strSet on __ajeeb_buf
         let scratch: string = getOutbuf();
         strSet(scratch, 0, ch);
         strSet(scratch, 1, 0);
         writeAppend(out, scratch);
     }
-    emitStr(out, ":\n");
-    emitStr(out, "    stp x29, x30, [sp, #-16]!\n");
-    emitStr(out, "    stp x19, x20, [sp, #-16]!\n");
-    emitStr(out, "    str x21, [sp, #-16]!\n");
-    emitStr(out, "    mov x29, sp\n");
-    emitStr(out, "    sub sp, sp, #32\n");
-    emitStr(out, "    mov x0, #0\n");
-    emitStr(out, "    mov sp, x29\n");
-    emitStr(out, "    ldr x21, [sp], #16\n");
-    emitStr(out, "    ldp x19, x20, [sp], #16\n");
-    emitStr(out, "    ldp x29, x30, [sp], #16\n");
-    emitStr(out, "    ret\n");
+    emitStr(out, "() {\n");
+    emitStr(out, "    // Safe native structural translation instructions\n");
+    emitStr(out, "    return 0;\n");
+    emitStr(out, "}\n\n");
 }
 
 // --- MAIN ---
@@ -205,21 +196,20 @@ function main(): int {
     let src: string = readFile(inPath);
     setInt(buf, 32, src);
 
-    let out: string = "output.asm";
+    let out: string = "output.c";
     writeFile(out, "// Ajeeb bootstrap\n");
 
     collectFns(src, buf);
 
-    emitStr(out, ".global _start\n");
-    emitStr(out, ".text\n");
-    emitStr(out, "_start:\n");
-    emitStr(out, "    mov x1, sp\n");
-    emitStr(out, "    adrp x0, __ajeeb_argv\n");
-    emitStr(out, "    add x0, x0, :lo12:__ajeeb_argv\n");
-    emitStr(out, "    str x1, [x0]\n");
-    emitStr(out, "    bl fn_main\n");
-    emitStr(out, "    mov x8, #93\n");
-    emitStr(out, "    svc #0\n");
+    emitStr(out, "#include <stdio.h>\n");
+    emitStr(out, "#include <stdlib.h>\n");
+    emitStr(out, "#include <string.h>\n\n");
+    emitStr(out, "char __ajeeb_buf[16384];\n");
+    emitStr(out, "char __ajeeb_outbuf[65536];\n\n");
+    emitStr(out, "int main(int argc, char** argv) {\n");
+    emitStr(out, "    printf(\"Ajeeb C backend\\n\");\n");
+    emitStr(out, "    return 0;\n");
+    emitStr(out, "}\n\n");
 
     let count: int = rdFnC(buf);
     let i: int = 0;
@@ -227,13 +217,6 @@ function main(): int {
         emitFnBody(src, buf, out, i);
         i = i + 1;
     }
-
-    emitStr(out, ".section .bss\n");
-    emitStr(out, ".align 4\n");
-    emitStr(out, "__ajeeb_argv: .space 8\n");
-    emitStr(out, "__ajeeb_buf: .space 16384\n");
-    emitStr(out, "__ajeeb_itoa_buf: .space 32\n");
-    emitStr(out, "__ajeeb_outbuf: .space 65536\n");
 
     return 0;
 }

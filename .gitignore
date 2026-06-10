@@ -2,3 +2,7 @@
 *.o
 output
 output.asm
+output.c
+stage1_c_compiler
+out_*
+output_test

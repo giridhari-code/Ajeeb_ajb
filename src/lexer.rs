@@ -73,13 +73,16 @@ impl Lexer {
         Ok(Token::StringLiteral(s))
     }
 
-    fn read_number(&mut self, first: char) -> Token {
+    fn read_number(&mut self, first: char) -> Result<Token, CompileError> {
         let mut s = String::new();
         s.push(first);
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() { s.push(c); self.advance(); } else { break; }
         }
-        Token::Number(s.parse().unwrap())
+        let val: i64 = s.parse().map_err(|_| {
+            CompileError::new(self.line, self.col, "Number bahut bada hai! i64 me fit nahi ho raha.".to_string())
+        })?;
+        Ok(Token::Number(val))
     }
 
     fn read_identifier(&mut self, first: char) -> Token {
@@ -96,7 +99,7 @@ impl Lexer {
             "true" => Token::True, "false" => Token::False,
             "int" => Token::Int, "string" => Token::String,
             "bool" => Token::Bool, "void" => Token::Void,
-            "class" => Token::Class, "self" => Token::SelfKwd,
+            "class" => Token::Class, "self" => Token::SelfKwd, "new" => Token::New,
             _ => Token::Identifier(s),
         }
     }
@@ -136,7 +139,15 @@ impl Lexer {
                 }
                 '!' => {
                     if self.peek() == Some('=') { self.advance(); Ok(Token::Neq) }
-                    else { Err(CompileError::new(start_line, start_col, "Akela '!' kaam nahi karega. '!=' ya '==' use karo.".to_string())) }
+                    else { Ok(Token::Not) }
+                }
+                '&' => {
+                    if self.peek() == Some('&') { self.advance(); Ok(Token::And) }
+                    else { Err(CompileError::new(start_line, start_col, "Akela '&' kaam nahi karega. '&&' use karo.".to_string())) }
+                }
+                '|' => {
+                    if self.peek() == Some('|') { self.advance(); Ok(Token::Or) }
+                    else { Err(CompileError::new(start_line, start_col, "Akela '|' kaam nahi karega. '||' use karo.".to_string())) }
                 }
                 '<' => {
                     if self.peek() == Some('=') { self.advance(); Ok(Token::Le) }
@@ -157,7 +168,7 @@ impl Lexer {
                 ']' => Ok(Token::RBracket),
                 '.' => Ok(Token::Dot),
                 '"' => self.read_string(),
-                c if c.is_ascii_digit() => Ok(self.read_number(c)),
+                c if c.is_ascii_digit() => self.read_number(c),
                 c if c.is_alphabetic() || c == '_' => Ok(self.read_identifier(c)),
                 _ => Err(CompileError::new(start_line, start_col, format!("Unexpected character '{}'. Yeh kya hai bhai?", c))),
             }

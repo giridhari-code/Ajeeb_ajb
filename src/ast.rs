@@ -1,7 +1,8 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypeAnnot {
     Int, String, Bool, Void,
     Array(Box<TypeAnnot>),
+    Class(String),
 }
 
 #[derive(Debug, Clone)]
@@ -38,9 +39,11 @@ pub enum Expr {
     Assign { name: String, value: Box<Expr> },
     IndexAssign { obj: Box<Expr>, index: Box<Expr>, value: Box<Expr> },
     FnCall { name: String, args: Vec<Expr> },
+    New { class_name: String },
     ArrayLit(Vec<Expr>),
     Index { obj: Box<Expr>, index: Box<Expr> },
-    Field { obj: Box<Expr>, field: String },
+    Field { obj: Box<Expr>, field: String, class_name: Option<String> },
+    FieldAssign { obj: Box<Expr>, field: String, class_name: Option<String>, value: Box<Expr> },
     Group(Box<Expr>),
 }
 
@@ -48,4 +51,5 @@ pub enum Expr {
 pub enum BinOp {
     Add, Sub, Mul, Div,
     Eq, Neq, Lt, Gt, Le, Ge,
+    And, Or,
 }

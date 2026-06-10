@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::ast::*;
 use crate::error::CompileError;
 use crate::token::Token;
@@ -5,11 +6,13 @@ use crate::token::Token;
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    var_types: HashMap<String, TypeAnnot>,
+    current_class: Option<String>,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Parser { tokens, pos: 0 }
+        Parser { tokens, pos: 0, var_types: HashMap::new(), current_class: None }
     }
 
     fn peek(&self) -> &Token {
@@ -53,6 +56,10 @@ impl Parser {
             Token::RBracket => "]",
             Token::Class => "class",
             Token::SelfKwd => "self",
+            Token::New => "new",
+            Token::And => "&&",
+            Token::Or => "||",
+            Token::Not => "!",
             Token::Identifier(_) => "identifier",
             Token::Number(_) => "number",
             Token::StringLiteral(_) => "string literal",
@@ -69,7 +76,8 @@ impl Parser {
                 Token::String => TypeAnnot::String,
                 Token::Bool => TypeAnnot::Bool,
                 Token::Void => TypeAnnot::Void,
-                other => return Err(CompileError::new(0, 0, format!("Unknown type {:?}. Sirf int, string, bool, void allowed hain.", other))),
+                Token::Identifier(name) => TypeAnnot::Class(name),
+                other => return Err(CompileError::new(0, 0, format!("Unknown type {:?}. Sirf int, string, bool, void aur class names allowed hain.", other))),
             };
             if self.peek() == &Token::LBracket {
                 self.advance();
@@ -112,6 +120,9 @@ impl Parser {
             _ => return Err(CompileError::new(0, 0, "'let' ke baad variable ka naam chahiye.".to_string())),
         };
         let type_ann = self.parse_type()?;
+        if let Some(ref t) = type_ann {
+            self.var_types.insert(name.clone(), t.clone());
+        }
         self.expect(&Token::Assign)?;
         let value = self.parse_expression()?;
         self.expect(&Token::Semicolon)?;
@@ -125,6 +136,9 @@ impl Parser {
             _ => return Err(CompileError::new(0, 0, "'const' ke baad variable ka naam chahiye.".to_string())),
         };
         let type_ann = self.parse_type()?;
+        if let Some(ref t) = type_ann {
+            self.var_types.insert(name.clone(), t.clone());
+        }
         self.expect(&Token::Assign)?;
         let value = self.parse_expression()?;
         self.expect(&Token::Semicolon)?;
@@ -206,6 +220,7 @@ impl Parser {
         self.expect(&Token::LBrace)?;
         let mut fields = Vec::new();
         let mut methods = Vec::new();
+        let old_class = self.current_class.replace(name.clone());
         while self.peek() != &Token::RBrace && self.peek() != &Token::Eof {
             if self.peek() == &Token::Function {
                 methods.push(self.parse_fn_def()?);
@@ -222,6 +237,7 @@ impl Parser {
                 fields.push(ClassField { name: fname, type_ann: ftype });
             }
         }
+        self.current_class = old_class;
         self.expect(&Token::RBrace)?;
         Ok(Stmt::Class { name, fields, methods })
     }
@@ -257,7 +273,7 @@ impl Parser {
     }
 
     fn parse_assignment(&mut self) -> Result<Expr, CompileError> {
-        let expr = self.parse_equality()?;
+        let expr = self.parse_or()?;
         if self.peek() == &Token::Assign {
             self.advance();
             match expr {
@@ -265,11 +281,35 @@ impl Parser {
                     let value = self.parse_assignment()?;
                     Ok(Expr::Assign { name, value: Box::new(value) })
                 }
-                _ => Err(CompileError::new(0, 0, "Assignment ka left side variable hona chahiye.".to_string())),
+                Expr::Field { obj, field, class_name } => {
+                    let value = self.parse_assignment()?;
+                    Ok(Expr::FieldAssign { obj, field, class_name, value: Box::new(value) })
+                }
+                _ => Err(CompileError::new(0, 0, "Assignment ka left side variable ya field hona chahiye.".to_string())),
             }
         } else {
             Ok(expr)
         }
+    }
+
+    fn parse_or(&mut self) -> Result<Expr, CompileError> {
+        let mut expr = self.parse_and()?;
+        while self.peek() == &Token::Or {
+            self.advance();
+            let right = self.parse_and()?;
+            expr = Expr::Binary { left: Box::new(expr), op: BinOp::Or, right: Box::new(right) };
+        }
+        Ok(expr)
+    }
+
+    fn parse_and(&mut self) -> Result<Expr, CompileError> {
+        let mut expr = self.parse_equality()?;
+        while self.peek() == &Token::And {
+            self.advance();
+            let right = self.parse_equality()?;
+            expr = Expr::Binary { left: Box::new(expr), op: BinOp::And, right: Box::new(right) };
+        }
+        Ok(expr)
     }
 
     fn parse_equality(&mut self) -> Result<Expr, CompileError> {
@@ -337,6 +377,14 @@ impl Parser {
                 op: BinOp::Sub,
                 right: Box::new(expr),
             })
+        } else if self.peek() == &Token::Not {
+            self.advance();
+            let expr = self.parse_unary()?;
+            Ok(Expr::Binary {
+                left: Box::new(Expr::Number(0)),
+                op: BinOp::Eq,
+                right: Box::new(expr),
+            })
         } else {
             self.parse_primary()
         }
@@ -349,6 +397,14 @@ impl Parser {
             Token::True => { self.advance(); Expr::Bool(true) }
             Token::False => { self.advance(); Expr::Bool(false) }
             Token::SelfKwd => { self.advance(); Expr::Ident("self".to_string()) }
+            Token::New => {
+                self.advance();
+                let class_name = match self.advance() {
+                    Token::Identifier(n) => n,
+                    _ => return Err(CompileError::new(0, 0, "'new' ke baad class ka naam chahiye.".to_string())),
+                };
+                Expr::New { class_name }
+            }
             Token::LBracket => {
                 self.advance();
                 let mut elems = Vec::new();
@@ -390,6 +446,18 @@ impl Parser {
                 }
                 Token::Dot => {
                     self.advance();
+                    let class_name = match &expr {
+                        Expr::Ident(n) => {
+                            if n == "self" {
+                                self.current_class.clone()
+                            } else {
+                                self.var_types.get(n).and_then(|t| {
+                                    if let TypeAnnot::Class(cn) = t { Some(cn.clone()) } else { None }
+                                })
+                            }
+                        }
+                        _ => None,
+                    };
                     let field = match self.advance() {
                         Token::Identifier(n) => n,
                         _ => return Err(CompileError::new(0, 0, "'.' ke baad field/method ka naam chahiye.".to_string())),
@@ -402,9 +470,14 @@ impl Parser {
                             if self.peek() == &Token::Comma { self.advance(); }
                         }
                         self.expect(&Token::RParen)?;
-                        expr = Expr::FnCall { name: field, args };
+                        let name = if let Some(ref cn) = class_name {
+                            format!("{}_{}", cn, field)
+                        } else {
+                            field
+                        };
+                        expr = Expr::FnCall { name, args };
                     } else {
-                        expr = Expr::Field { obj: Box::new(expr), field };
+                        expr = Expr::Field { obj: Box::new(expr), field, class_name };
                     }
                 }
                 Token::LBracket => {
