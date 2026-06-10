@@ -54,6 +54,11 @@ function skipWS(src: int, buf: string): void {
             }
             pos = pos + 2;
         }
+        else if (c == 34) {
+            pos = pos + 1;
+            while (chr(src, pos) != 34) { pos = pos + 1; }
+            pos = pos + 1;
+        }
         else { go = 0; }
     }
     wrPos(buf, pos);
