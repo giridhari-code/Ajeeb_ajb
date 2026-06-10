@@ -847,7 +847,7 @@ impl AsmGen {
         }
 
         self.emit_data_section();
-        let bss = ".section .bss\n.align 4\n__ajeeb_buf: .space 4096\n";
+        let bss = ".section .bss\n.align 4\n__ajeeb_buf: .space 4096\n__ajeeb_itoa_buf: .space 32\n";
         Ok(format!("{}\n{}{}", self.asm, self.data, bss))
     }
 
@@ -1171,6 +1171,100 @@ impl AsmGen {
                     self.asm.push_str("    mov x8, #57\n");
                     self.asm.push_str("    svc #0\n");
                     self.asm.push_str("    mov x0, #0\n");
+                    return Ok(());
+                }
+                // Built-in: itoa(n)
+                if name == "itoa" && args.len() == 1 {
+                    self.emit_expr(&args[0])?; // x0 = n
+                    self.asm.push_str("    adrp x1, __ajeeb_itoa_buf\n");
+                    self.asm.push_str("    add x1, x1, :lo12:__ajeeb_itoa_buf\n");
+                    self.asm.push_str("    add x2, x1, #31\n"); // end of 32-byte buf
+                    self.asm.push_str("    mov w3, #0\n");
+                    self.asm.push_str("    strb w3, [x2]\n"); // null terminator
+                    let iz_lbl = self.fresh_label("itoa_zero");
+                    let ip_lbl = self.fresh_label("itoa_pos");
+                    let il_lbl = self.fresh_label("itoa_loop");
+                    let id_lbl = self.fresh_label("itoa_done");
+                    let ie_lbl = self.fresh_label("itoa_end");
+                    self.asm.push_str(&format!("    cmp x0, #0\n"));
+                    self.asm.push_str(&format!("    b.ne {}\n", iz_lbl));
+                    // n == 0
+                    self.asm.push_str("    mov w3, #'0'\n");
+                    self.asm.push_str("    sub x2, x2, #1\n");
+                    self.asm.push_str("    strb w3, [x2]\n");
+                    self.asm.push_str(&format!("    mov x0, x2\n"));
+                    self.asm.push_str(&format!("    b {}\n", ie_lbl));
+                    self.asm.push_str(&format!("{}:\n", iz_lbl));
+                    // negative handling
+                    self.asm.push_str("    mov x4, #0\n"); // sign flag
+                    self.asm.push_str(&format!("    cmp x0, #0\n"));
+                    self.asm.push_str(&format!("    b.ge {}\n", ip_lbl));
+                    self.asm.push_str("    mov x4, #1\n");
+                    self.asm.push_str("    neg x0, x0\n");
+                    self.asm.push_str(&format!("{}:\n", ip_lbl));
+                    // digit loop
+                    self.asm.push_str("    mov x7, #10\n"); // divisor
+                    self.asm.push_str(&format!("{}:\n", il_lbl));
+                    self.asm.push_str("    udiv x5, x0, x7\n");
+                    self.asm.push_str("    msub x6, x5, x7, x0\n");
+                    self.asm.push_str("    add x6, x6, #'0'\n");
+                    self.asm.push_str("    sub x2, x2, #1\n");
+                    self.asm.push_str("    strb w6, [x2]\n");
+                    self.asm.push_str("    mov x0, x5\n");
+                    self.asm.push_str(&format!("    cbnz x0, {}\n", il_lbl));
+                    self.asm.push_str(&format!("{}:\n", id_lbl));
+                    self.asm.push_str("    cmp x4, #1\n");
+                    self.asm.push_str(&format!("    b.ne {}\n", ie_lbl));
+                    self.asm.push_str("    sub x2, x2, #1\n");
+                    self.asm.push_str("    mov w6, #'-'\n");
+                    self.asm.push_str("    strb w6, [x2]\n");
+                    self.asm.push_str(&format!("{}:\n", ie_lbl));
+                    self.asm.push_str("    mov x0, x2\n"); // return pointer
+                    return Ok(());
+                }
+                // Built-in: strcmp(a, b)
+                if name == "strcmp" && args.len() == 2 {
+                    self.emit_expr(&args[1])?; // b
+                    self.asm.push_str("    mov x1, x0\n");
+                    self.emit_expr(&args[0])?; // a
+                    let scl_lbl = self.fresh_label("strcmp_loop");
+                    let scd_lbl = self.fresh_label("strcmp_diff");
+                    self.asm.push_str(&format!("{}:\n", scl_lbl));
+                    self.asm.push_str("    ldrb w2, [x0]\n");
+                    self.asm.push_str("    ldrb w3, [x1]\n");
+                    self.asm.push_str("    cmp w2, w3\n");
+                    self.asm.push_str(&format!("    b.ne {}\n", scd_lbl));
+                    let seq_lbl = self.fresh_label("strcmp_eq");
+                    self.asm.push_str(&format!("    cbz w2, {}\n", seq_lbl));
+                    self.asm.push_str("    add x0, x0, #1\n");
+                    self.asm.push_str("    add x1, x1, #1\n");
+                    self.asm.push_str(&format!("    b {}\n", scl_lbl));
+                    self.asm.push_str(&format!("{}:\n", seq_lbl));
+                    self.asm.push_str("    mov x0, #0\n");
+                    let scx_lbl = self.fresh_label("strcmp_exit");
+                    self.asm.push_str(&format!("    b {}\n", scx_lbl));
+                    self.asm.push_str(&format!("{}:\n", scd_lbl));
+                    self.asm.push_str("    sub x0, x2, x3\n");
+                    self.asm.push_str(&format!("{}:\n", scx_lbl));
+                    return Ok(());
+                }
+                // Built-in: strcpy(dest, src)
+                if name == "strcpy" && args.len() == 2 {
+                    self.emit_expr(&args[1])?; // src
+                    self.asm.push_str("    mov x1, x0\n");
+                    self.emit_expr(&args[0])?; // dest
+                    self.asm.push_str("    mov x2, x0\n"); // save dest
+                    let syp_lbl = self.fresh_label("strcpy_loop");
+                    self.asm.push_str(&format!("{}:\n", syp_lbl));
+                    self.asm.push_str("    ldrb w3, [x1]\n");
+                    self.asm.push_str("    strb w3, [x2]\n");
+                    let sye_lbl = self.fresh_label("strcpy_done");
+                    self.asm.push_str(&format!("    cbz w3, {}\n", sye_lbl));
+                    self.asm.push_str("    add x1, x1, #1\n");
+                    self.asm.push_str("    add x2, x2, #1\n");
+                    self.asm.push_str(&format!("    b {}\n", syp_lbl));
+                    self.asm.push_str(&format!("{}:\n", sye_lbl));
+                    // x0 already = dest from emit_expr
                     return Ok(());
                 }
                 let label = {

@@ -1,35 +1,70 @@
 function main(): int {
-    // Test 1: len()
     let msg: string = "namaste";
     let n: int = len(msg);
     if (n == 7) {
-        println("len OK");
+        println("len: OK");
     } else {
-        println("len FAIL");
+        println("len: FAIL");
     }
 
-    // Test 2: charCode()
     let c: int = charCode(msg, 0);
     if (c == 110) {
-        println("charCode OK");
+        println("charCode: OK");
     } else {
-        println("charCode FAIL");
+        println("charCode: FAIL");
     }
 
-    // Test 3: writeFile + readFile
     writeFile("/tmp/ajeeb_test.txt", "hello ajeeb!");
     let content: string = readFile("/tmp/ajeeb_test.txt");
-    let clen: int = len(content);
-    if (clen == 12) {
-        let c0: int = charCode(content, 0);
-        if (c0 == 104) {
-            println("readFile OK");
+    if (len(content) == 12) {
+        if (charCode(content, 0) == 104) {
+            println("readFile: OK");
         } else {
-            println("readFile FAIL: first char");
+            println("readFile: FAIL");
         }
     } else {
-        println("readFile FAIL: length");
+        println("readFile: FAIL");
     }
 
+    let s: string = itoa(12345);
+    let sn: int = len(s);
+    if (sn == 5) {
+        if (charCode(s, 0) == 49) {
+            if (charCode(s, 4) == 53) {
+                println("itoa: OK");
+            } else { println("itoa: FAIL"); }
+        } else { println("itoa: FAIL"); }
+    } else { println("itoa: FAIL"); }
+
+    let s2: string = itoa(-42);
+    if (len(s2) == 3) {
+        if (charCode(s2, 0) == 45) {
+            println("itoa neg: OK");
+        } else { println("itoa neg: FAIL"); }
+    } else { println("itoa neg: FAIL"); }
+
+    let zero: string = itoa(0);
+    if (len(zero) == 1) {
+        if (charCode(zero, 0) == 48) {
+            println("itoa zero: OK");
+        } else { println("itoa zero: FAIL"); }
+    } else { println("itoa zero: FAIL"); }
+
+    let cmp1: int = strcmp("hello", "hello");
+    if (cmp1 == 0) {
+        println("strcmp eq: OK");
+    } else { println("strcmp eq: FAIL"); }
+
+    let cmp2: int = strcmp("abc", "abd");
+    if (cmp2 < 0) {
+        println("strcmp lt: OK");
+    } else { println("strcmp lt: FAIL"); }
+
+    let cmp3: int = strcmp("abd", "abc");
+    if (cmp3 > 0) {
+        println("strcmp gt: OK");
+    } else { println("strcmp gt: FAIL"); }
+
+    println("all builtins done");
     return 0;
 }
