@@ -183,7 +183,7 @@ impl Evaluator {
         if self.iteration_count % 25000 == 0 {
             eprintln!("[ITER {}] fn: {} args:{}", self.iteration_count, name, args.len());
         }
-        if self.iteration_count > 2000000 {
+        if self.iteration_count > 10000000 {
             eprintln!("[ITER {}] ABORT", self.iteration_count);
             return RuntimeValue::Int(0);
         }
@@ -272,7 +272,7 @@ impl Evaluator {
                     if let (RuntimeValue::String(path), RuntimeValue::String(content)) = (&arg_vals[0], &arg_vals[1]) {
                         use std::io::Write;
                         if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path.borrow().as_str()) {
-                            let bytes: Vec<u8> = content.borrow().bytes().take_while(|&b| b != 0).collect();
+                            let bytes: Vec<u8> = content.borrow().bytes().filter(|&b| b != 0).collect();
                             let _ = f.write_all(&bytes);
                         }
                     }
@@ -340,6 +340,17 @@ impl Evaluator {
                             buf.extend(std::iter::repeat('\0').take(i + 1 - blen));
                         }
                         buf.replace_range(i..=i, &String::from(char::from_u32(*ch as u32).unwrap_or('\0')));
+                    }
+                }
+                RuntimeValue::Void
+            }
+            "writeByte" => {
+                if arg_vals.len() >= 2 {
+                    if let (RuntimeValue::String(path), RuntimeValue::Int(byte)) = (&arg_vals[0], &arg_vals[1]) {
+                        use std::io::Write;
+                        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path.borrow().as_str()) {
+                            let _ = f.write_all(&[*byte as u8]);
+                        }
                     }
                 }
                 RuntimeValue::Void

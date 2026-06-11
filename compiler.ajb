@@ -73,11 +73,6 @@ function skipWS(src: int, buf: string): void {
             }
             pos = pos + 2;
         }
-        else if (c == 34) {
-            pos = pos + 1;
-            while (chr(src, pos) != 34 && chr(src, pos) != 0) { pos = pos + 1; }
-            pos = pos + 1;
-        }
         else { go = 0; }
     }
     wrPos(buf, pos);
@@ -170,37 +165,37 @@ function nextTok(src: int, buf: string): void {
         readIdent(src, buf);
         let slen: int = rdPos(buf) - start;
         savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "let") == 1) { setTok(buf, 4, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "let") == 1) { setTok(buf, 4, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "const") == 1) { setTok(buf, 5, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "const") == 1) { setTok(buf, 5, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "if") == 1) { setTok(buf, 6, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "if") == 1) { setTok(buf, 6, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "else") == 1) { setTok(buf, 7, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "else") == 1) { setTok(buf, 7, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "while") == 1) { setTok(buf, 8, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "while") == 1) { setTok(buf, 8, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "function") == 1) { setTok(buf, 9, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "function") == 1) { setTok(buf, 9, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "return") == 1) { setTok(buf, 10, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "return") == 1) { setTok(buf, 10, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "true") == 1) { setTok(buf, 11, 1, 0, 0); return; }
+        if (matchKwd(src, buf, "true") == 1) { setTok(buf, 11, 1, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "false") == 1) { setTok(buf, 12, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "false") == 1) { setTok(buf, 12, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "int") == 1) { setTok(buf, 13, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "int") == 1) { setTok(buf, 13, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "string") == 1) { setTok(buf, 14, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "string") == 1) { setTok(buf, 14, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "bool") == 1) { setTok(buf, 15, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "bool") == 1) { setTok(buf, 15, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "void") == 1) { setTok(buf, 16, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "void") == 1) { setTok(buf, 16, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "class") == 1) { setTok(buf, 42, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "class") == 1) { setTok(buf, 42, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "self") == 1) { setTok(buf, 43, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "self") == 1) { setTok(buf, 43, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
-        if (matchKwd(src, buf, "new") == 1) { setTok(buf, 44, 0, 0, 0); return; }
+        if (matchKwd(src, buf, "new") == 1) { setTok(buf, 44, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf);
         setTok(buf, 1, 0, start, slen);
         return;
@@ -295,10 +290,7 @@ function emitEscapedStr(out: string, src: int, soff: int, slen: int): void {
         else if (c == 34) { emitStr(out, "\\\""); }
         else if (c == 92) { emitStr(out, "\\\\"); }
         else {
-            let scratch: string = getOutbuf();
-            strSet(scratch, 0, c);
-            strSet(scratch, 1, 0);
-            writeAppend(out, scratch);
+            writeByte(out, c);
         }
         i = i + 1;
     }
@@ -321,7 +313,56 @@ function parsePrimary(src: int, buf: string, out: string): void {
     }
     else if (t == 11) { emitStr(out, "1"); nextTok(src, buf); } // true
     else if (t == 12) { emitStr(out, "0"); nextTok(src, buf); } // false
-    else if (t == 43) { emitStr(out, "self"); nextTok(src, buf); } // self
+    else if (t == 43) { // self — with postfix chain for field/method access
+        nextTok(src, buf);
+        let se: int = 0;
+        let go: int = 1;
+        while (go == 1) {
+            t = tokType(buf);
+            if (t == 34) { // .
+                nextTok(src, buf);
+                let fd: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                nextTok(src, buf);
+                if (tokType(buf) == 35) { // method call on self
+                    nextTok(src, buf);
+                    emitStr(out, fd); emitStr(out, "(self");
+                    se = 1;
+                    let first: int = 1;
+                    while (tokType(buf) != 36 && tokType(buf) != 0) {
+                        if (first == 0) { emitStr(out, ", "); }
+                        first = 0;
+                        parseExpr(src, buf, out);
+                        if (tokType(buf) == 32) { nextTok(src, buf); }
+                    }
+                    emitStr(out, ")");
+                    if (tokType(buf) == 36) { nextTok(src, buf); }
+                } else {
+                    emitStr(out, "self->"); emitStr(out, fd); se = 1;
+                }
+            }
+            else if (t == 39) { // [
+                nextTok(src, buf);
+                emitStr(out, "self["); se = 1;
+                parseExpr(src, buf, out);
+                emitStr(out, "]");
+                if (tokType(buf) == 40) { nextTok(src, buf); }
+            }
+            else if (t == 35) { // ( — direct call on self
+                nextTok(src, buf);
+                emitStr(out, "self("); se = 1;
+                let first: int = 1;
+                while (tokType(buf) != 36 && tokType(buf) != 0) {
+                    if (first == 0) { emitStr(out, ", "); }
+                    first = 0;
+                    parseExpr(src, buf, out);
+                    if (tokType(buf) == 32) { nextTok(src, buf); }
+                }
+                emitStr(out, ")");
+                if (tokType(buf) == 36) { nextTok(src, buf); }
+            }
+            else { if (se == 0) { emitStr(out, "self"); } go = 0; }
+        }
+    }
     else if (t == 44) { // new
         nextTok(src, buf);
         let cn: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
@@ -351,13 +392,14 @@ function parsePrimary(src: int, buf: string, out: string): void {
     else if (t == 1) { // identifier
         let id: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
         nextTok(src, buf);
-        emitStr(out, id);
 
-        // Postfix chain
+        // Postfix chain — defer identifier emit so method calls work
+        let emitted: int = 0;
         let go: int = 1;
         while (go == 1) {
             t = tokType(buf);
             if (t == 35) { // ( -> call
+                if (emitted == 0) { emitStr(out, id); emitted = 1; }
                 nextTok(src, buf);
                 emitStr(out, "(");
                 let first: int = 1;
@@ -375,22 +417,24 @@ function parsePrimary(src: int, buf: string, out: string): void {
                 let fd: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
                 nextTok(src, buf);
                 if (tokType(buf) == 35) { // method call
+                    if (emitted == 0) { emitStr(out, fd); emitted = 1; }
+                    else { emitStr(out, fd); }
                     nextTok(src, buf);
-                    emitStr(out, "(&"); emitStr(out, id); emitStr(out, ", ");
-                    let first: int = 1;
+                    emitStr(out, "(&"); emitStr(out, id);
                     while (tokType(buf) != 36 && tokType(buf) != 0) {
-                        if (first == 0) { emitStr(out, ", "); }
-                        first = 0;
+                        emitStr(out, ", ");
                         parseExpr(src, buf, out);
                         if (tokType(buf) == 32) { nextTok(src, buf); }
                     }
                     emitStr(out, ")");
                     if (tokType(buf) == 36) { nextTok(src, buf); }
                 } else {
+                    if (emitted == 0) { emitStr(out, id); emitted = 1; }
                     emitStr(out, "."); emitStr(out, fd);
                 }
             }
             else if (t == 39) { // [
+                if (emitted == 0) { emitStr(out, id); emitted = 1; }
                 nextTok(src, buf);
                 emitStr(out, "[");
                 parseExpr(src, buf, out);
@@ -399,6 +443,7 @@ function parsePrimary(src: int, buf: string, out: string): void {
             }
             else { go = 0; }
         }
+        if (emitted == 0) { emitStr(out, id); }
     }
     else {
         emitStr(out, "0");
@@ -528,15 +573,20 @@ function parseStmt(src: int, buf: string, out: string): void {
         nextTok(src, buf);
         let vname: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
         nextTok(src, buf);
-        emitStr(out, "    intptr_t "); emitStr(out, vname);
-        // Check for type annotation
-        if (tokType(buf) == 31) {
-            let oldOut: string = out;
-            // We parse type but don't emit - we already did intptr_t
+        emitStr(out, "    ");
+        if (tokType(buf) == 31) { // type annotation
             nextTok(src, buf); // skip :
-            if (tokType(buf) == 1) { nextTok(src, buf); } // skip class name
-            else { nextTok(src, buf); } // skip int/string/bool/void
+            if (tokType(buf) == 1) { // class name
+                let cn: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                emitStr(out, cn); emitStr(out, " "); emitStr(out, vname);
+                nextTok(src, buf); // skip class name
+            } else {
+                emitStr(out, "intptr_t "); emitStr(out, vname);
+                nextTok(src, buf); // skip int/string/bool/void
+            }
             if (tokType(buf) == 39) { nextTok(src, buf); if (tokType(buf) == 40) { nextTok(src, buf); } }
+        } else {
+            emitStr(out, "intptr_t "); emitStr(out, vname);
         }
         if (tokType(buf) == 41) { // =
             nextTok(src, buf);
@@ -637,7 +687,7 @@ function parseStmt(src: int, buf: string, out: string): void {
             }
             if (tokType(buf) == 36) { nextTok(src, buf); }
         } else {
-            emitStr(out, "fn_"); emitStr(out, fnId); emitStr(out, "(");
+            emitStr(out, fnId); emitStr(out, "(");
             let first: int = 1;
             while (tokType(buf) != 36 && tokType(buf) != 0) {
                 if (first == 0) { emitStr(out, ", "); }
@@ -674,41 +724,54 @@ function parseStmt(src: int, buf: string, out: string): void {
         if (tokType(buf) != 30 && tokType(buf) != 0) {
             emitStr(out, " ");
             parseExpr(src, buf, out);
+        } else {
+            emitStr(out, " 0");
         }
         if (tokType(buf) == 30) { nextTok(src, buf); }
         emitStr(out, ";\n");
     }
     else if (t == 42) { // class
-        // Parse class definition: emit struct, skip methods for now
-        nextTok(src, buf); // skip class
+        nextTok(src, buf);
         let cn: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
-        nextTok(src, buf); // skip name
-        if (tokType(buf) == 37) { nextTok(src, buf); } // {
+        nextTok(src, buf);
+        if (tokType(buf) == 37) { nextTok(src, buf); }
         emitStr(out, "typedef struct {\n");
+        writeFile("__methods.txt", "");
         while (tokType(buf) != 38 && tokType(buf) != 0) {
-            if (tokType(buf) == 9) { // function -> method, skip it
-                nextTok(src, buf); // skip function
-                nextTok(src, buf); // skip method name
-                if (tokType(buf) == 35) { nextTok(src, buf); }
-                let depth: int = 1;
-                while (depth > 0 && tokType(buf) != 0) {
-                    if (tokType(buf) == 35) { depth = depth + 1; }
-                    if (tokType(buf) == 36) { depth = depth - 1; }
+            if (tokType(buf) == 9) { // method — emit to temp file
+                let mo: string = "__methods.txt";
+                nextTok(src, buf);
+                let fnId: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                nextTok(src, buf);
+                emitStr(mo, "int "); emitStr(mo, fnId); emitStr(mo, "(");
+                emitStr(mo, cn); emitStr(mo, "* self");
+                if (tokType(buf) == 35) {
                     nextTok(src, buf);
+                    while (tokType(buf) != 36 && tokType(buf) != 0) {
+                        emitStr(mo, ", ");
+                        let pn: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                        nextTok(src, buf);
+                        emitStr(mo, "intptr_t "); emitStr(mo, pn);
+                        if (tokType(buf) == 31) {
+                            nextTok(src, buf);
+                            if (tokType(buf) == 1) { nextTok(src, buf); }
+                            else { nextTok(src, buf); }
+                        }
+                        if (tokType(buf) == 32) { nextTok(src, buf); }
+                    }
+                    if (tokType(buf) == 36) { nextTok(src, buf); }
                 }
-                if (tokType(buf) == 36) { nextTok(src, buf); }
-                if (tokType(buf) == 31) { // return type
+                if (tokType(buf) == 31) {
                     nextTok(src, buf);
                     if (tokType(buf) == 1 || tokType(buf) == 13 || tokType(buf) == 14 || tokType(buf) == 15 || tokType(buf) == 16) { nextTok(src, buf); }
                 }
+                emitStr(mo, ") {\n");
                 if (tokType(buf) == 37) { nextTok(src, buf); }
-                depth = 1;
-                while (depth > 0 && tokType(buf) != 0) {
-                    if (tokType(buf) == 37) { depth = depth + 1; }
-                    if (tokType(buf) == 38) { depth = depth - 1; }
-                    if (depth > 0) { nextTok(src, buf); }
+                while (tokType(buf) != 38 && tokType(buf) != 0) {
+                    parseStmt(src, buf, mo);
                 }
                 if (tokType(buf) == 38) { nextTok(src, buf); }
+                emitStr(mo, "    return 0;\n}\n\n");
             } else {
                 let fd: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
                 nextTok(src, buf);
@@ -724,7 +787,9 @@ function parseStmt(src: int, buf: string, out: string): void {
         }
         if (tokType(buf) == 38) { nextTok(src, buf); }
         emitStr(out, "} "); emitStr(out, cn); emitStr(out, ";\n\n");
-        emitStr(out, "// Class methods need 2-pass, see collectFns\n");
+        // Append methods from temp file
+        let mb: string = readFile("__methods.txt");
+        emitStr(out, mb);
     }
     else if (t == 38) { // } - empty block end
         // do nothing
@@ -790,7 +855,37 @@ function collectFns(src: int, buf: string): void {
             readIdent(src, buf); skipWS(src, buf);
             pos = rdPos(buf);
             if (chr(src, pos) == 123) {
-                pos = skipDepth(src, pos, 123, 125);
+                pos = pos + 1;
+                let cd: int = 1;
+                while (cd > 0) {
+                    let c: int = chr(src, pos);
+                    if (c == 0) { cd = 0; }
+                    else if (c == 34) {
+                        pos = pos + 1;
+                        while (chr(src, pos) != 34 && chr(src, pos) != 0) {
+                            if (chr(src, pos) == 92) { pos = pos + 1; }
+                            pos = pos + 1;
+                        }
+                        pos = pos + 1;
+                    } else if (c == 47 && chr(src, pos+1) == 47) {
+                        pos = pos + 2;
+                        while (chr(src, pos) != 10 && chr(src, pos) != 0) { pos = pos + 1; }
+                    } else if (c == 47 && chr(src, pos+1) == 42) {
+                        pos = pos + 2;
+                        while (chr(src, pos) != 0 && !(chr(src, pos) == 42 && chr(src, pos+1) == 47)) { pos = pos + 1; }
+                        pos = pos + 2;
+                    } else if (c == 123) { cd = cd + 1; pos = pos + 1; }
+                    else if (c == 125) { cd = cd - 1; pos = pos + 1; }
+                    else if (c == 102 && chr(src, pos+1) == 117 && chr(src, pos+2) == 110 && chr(src, pos+3) == 99 && chr(src, pos+4) == 116 && chr(src, pos+5) == 105 && chr(src, pos+6) == 111 && chr(src, pos+7) == 110) {
+                        pos = pos + 8;
+                        while (isSpace(chr(src, pos)) == 1) { pos = pos + 1; }
+                        let fnS: int = pos;
+                        while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+                        if (pos > fnS) {
+                            savePos(buf); wrPos(buf, fnS); addFn(src, buf, fnS); restorePos(buf);
+                        }
+                    } else { pos = pos + 1; }
+                }
                 wrPos(buf, pos);
             }
         }
@@ -866,22 +961,29 @@ function main(): int {
     // PASS 2: parse and generate C code
     wrPos(buf, 0);
     nextTok(src, buf);
-    writeFile("debug.txt", "first tokType=");
-    writeAppend("debug.txt", itoa(tokType(buf)));
-    writeAppend("debug.txt", "\n");
-
     emitStr(out, "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <stdbool.h>\n#include <stdint.h>\n\n");
     emitStr(out, "char __ajeeb_buf[16384];\nchar __ajeeb_outbuf[65536];\n\n");
 
-    // Forward declarations
-    emitFwdDecls(src, buf, out);
+    // Built-in declarations
+    emitStr(out, "intptr_t getInt(intptr_t buf, intptr_t off);\n");
+    emitStr(out, "void setInt(intptr_t buf, intptr_t off, intptr_t v);\n");
+    emitStr(out, "intptr_t charCode(intptr_t s, intptr_t i);\n");
+    emitStr(out, "intptr_t len(intptr_t s);\n");
+    emitStr(out, "intptr_t readArg(intptr_t n);\n");
+    emitStr(out, "intptr_t readFile(intptr_t path);\n");
+    emitStr(out, "void writeFile(intptr_t path, intptr_t content);\n");
+    emitStr(out, "void writeAppend(intptr_t path, intptr_t content);\n");
+    emitStr(out, "intptr_t getOutbuf();\n");
+    emitStr(out, "void strSet(intptr_t s, intptr_t i, intptr_t c);\n");
+    emitStr(out, "intptr_t itoa(intptr_t n);\n");
+    emitStr(out, "intptr_t println(intptr_t s);\n");
+    emitStr(out, "intptr_t getStateBuf();\n");
+    emitStr(out, "int parseExpr(intptr_t src, intptr_t buf, intptr_t out);\n");
+    emitStr(out, "int parseStmt(intptr_t src, intptr_t buf, intptr_t out);\n");
     emitStr(out, "\n");
 
     // Parse all top-level statements
-    let cnt: int = 0;
     while (tokType(buf) != 0) {
-        cnt = cnt + 1;
-        if (cnt > 2) { return 0; }
         parseStmt(src, buf, out);
     }
 
