@@ -1,9 +1,5 @@
-/target
+/target/
 *.o
-output
-output.asm
-output.c
-stage1_c_compiler
-out_*
-output_test
-stage0_test
+*.bin
+*.c
+bootstrap/

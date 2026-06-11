@@ -8,19 +8,12 @@ pub enum TypeAnnot {
 #[derive(Debug, Clone)]
 pub struct ClassField {
     pub name: String,
-    pub type_ann: TypeAnnot,
-}
-
-#[derive(Debug, Clone)]
-pub struct ClassInfo {
-    pub fields: Vec<ClassField>,
-    pub methods: Vec<Stmt>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    Let { name: String, type_ann: Option<TypeAnnot>, value: Expr },
-    Const { name: String, type_ann: Option<TypeAnnot>, value: Expr },
+    Let { name: String, value: Expr },
+    Const { name: String, value: Expr },
     If { condition: Expr, then_block: Vec<Stmt>, else_block: Option<Vec<Stmt>> },
     While { condition: Expr, body: Vec<Stmt> },
     Return { value: Option<Expr> },
@@ -42,8 +35,8 @@ pub enum Expr {
     New { class_name: String },
     ArrayLit(Vec<Expr>),
     Index { obj: Box<Expr>, index: Box<Expr> },
-    Field { obj: Box<Expr>, field: String, class_name: Option<String> },
-    FieldAssign { obj: Box<Expr>, field: String, class_name: Option<String>, value: Box<Expr> },
+    Field { obj: Box<Expr>, field: String },
+    FieldAssign { obj: Box<Expr>, field: String, value: Box<Expr> },
     Group(Box<Expr>),
 }
 

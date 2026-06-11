@@ -1,0 +1,17 @@
+// ============================================================
+//  config.ajb — Ajeeb Native Configuration & Interop Block
+//  TOML-like syntax embedded directly in Ajeeb source.
+// ============================================================
+
+[project]
+name = "Alpha_Robot_AI"
+engine_version = "1.0"
+
+// Dynamic Bridge: Python AI + C++ Gaming Core
+[compatibility]
+python_modules = ["torch", "numpy"]
+cpp_natives     = ["game_physics_core.so"]
+
+[runtime_settings]
+max_threads = 8
+network_port = 8080

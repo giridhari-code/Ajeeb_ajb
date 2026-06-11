@@ -1,0 +1,16 @@
+// Sample Ajeeb file with functions and classes
+
+function greet(name: string): void {
+    // do nothing
+}
+
+class MyClass {
+    function doStuff(x: int): int {
+        return x + 1;
+    }
+}
+
+function main(): int {
+    let x: int = 42;
+    return x;
+}

@@ -1,0 +1,25 @@
+function main(): int {
+    let buf: string = getStateBuf();
+    let out: string = "output.c";
+    writeFile(out, "// test\n");
+
+    let src: string = "function foo(): int { return 42; }";
+    wrPos(buf, 0);
+    nextTok(src, buf);
+
+    let t: int = tokType(buf);
+    writeAppend(out, itoa(t));
+    writeAppend(out, "\n");
+
+    // Also test chr directly
+    let c: int = chr(src, 0);
+    writeAppend(out, "chr0=");
+    writeAppend(out, itoa(c));
+    writeAppend(out, "\n");
+
+    let isa: int = isAlpha(c);
+    writeAppend(out, "isAlpha=");
+    writeAppend(out, itoa(isa));
+    writeAppend(out, "\n");
+    return 0;
+}

@@ -1,0 +1,47 @@
+function rdPos(buf: string): int { return 0; }
+function wrPos(buf: string, v: int): void {}
+function isSpace(c: int): int { return 0; }
+function isAlphaNum(c: int): int { return 0; }
+function chr(src: int, idx: int): int { return 0; }
+function charCode(s: string, idx: int): int { return 0; }
+function len(s: string): int { return 0; }
+
+// Test source with "function" keyword at some position
+function testCollectFns(): void {
+    let buf: string = getOutbuf();
+    let src: string = "function foo(): void {}";
+    let srcInt: int = 0;  // placeholder
+
+    // Manually test matchKwd at position 0
+    // The first word is "function"
+    wrPos(buf, 0);
+    skipWS(srcInt, buf);
+    let pos: int = rdPos(buf);
+    wrStr(buf, "pos=");
+    wrInt(buf, pos);
+    wrStr(buf, "\n");
+
+    let isFunc: int = matchKwd(srcInt, buf, "function");
+    wrStr(buf, "matchKwd(function)=");
+    wrInt(buf, isFunc);
+    wrStr(buf, "\n");
+}
+
+function skipWS(src: int, buf: string): void {}
+function matchKwd(src: int, buf: string, kwd: string): int {
+    let pos: int = rdPos(buf);
+    let klen: int = len(kwd);
+    let i: int = 0;
+    while (i < klen) {
+        if (chr(src, pos + i) != charCode(kwd, i)) { return 0; }
+        i = i + 1;
+    }
+    if (isAlphaNum(chr(src, pos + klen)) == 1) { return 0; }
+    return 1;
+}
+
+function wrStr(buf: string, s: string): void {}
+function wrInt(buf: string, v: int): void {}
+function getOutbuf(): string { return ""; }
+
+testCollectFns();

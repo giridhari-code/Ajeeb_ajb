@@ -126,7 +126,7 @@ impl Parser {
         self.expect(&Token::Assign)?;
         let value = self.parse_expression()?;
         self.expect(&Token::Semicolon)?;
-        Ok(Stmt::Let { name, type_ann, value })
+        Ok(Stmt::Let { name, value })
     }
 
     fn parse_const_decl(&mut self) -> Result<Stmt, CompileError> {
@@ -142,7 +142,7 @@ impl Parser {
         self.expect(&Token::Assign)?;
         let value = self.parse_expression()?;
         self.expect(&Token::Semicolon)?;
-        Ok(Stmt::Const { name, type_ann, value })
+        Ok(Stmt::Const { name, value })
     }
 
     fn parse_if_stmt(&mut self) -> Result<Stmt, CompileError> {
@@ -229,12 +229,11 @@ impl Parser {
                     Token::Identifier(n) => n,
                     _ => return Err(CompileError::new(0, 0, "Field ka naam chahiye.".to_string())),
                 };
-                let ftype = match self.parse_type()? {
-                    Some(t) => t,
-                    None => return Err(CompileError::new(0, 0, "Field ka type batana zaroori hai.".to_string())),
-                };
+                if self.parse_type()?.is_none() {
+                    return Err(CompileError::new(0, 0, "Field ka type batana zaroori hai.".to_string()));
+                }
                 self.expect(&Token::Semicolon)?;
-                fields.push(ClassField { name: fname, type_ann: ftype });
+                fields.push(ClassField { name: fname });
             }
         }
         self.current_class = old_class;
@@ -281,9 +280,9 @@ impl Parser {
                     let value = self.parse_assignment()?;
                     Ok(Expr::Assign { name, value: Box::new(value) })
                 }
-                Expr::Field { obj, field, class_name } => {
+                Expr::Field { obj, field } => {
                     let value = self.parse_assignment()?;
-                    Ok(Expr::FieldAssign { obj, field, class_name, value: Box::new(value) })
+                    Ok(Expr::FieldAssign { obj, field, value: Box::new(value) })
                 }
                 _ => Err(CompileError::new(0, 0, "Assignment ka left side variable ya field hona chahiye.".to_string())),
             }
@@ -477,7 +476,7 @@ impl Parser {
                         };
                         expr = Expr::FnCall { name, args };
                     } else {
-                        expr = Expr::Field { obj: Box::new(expr), field, class_name };
+                        expr = Expr::Field { obj: Box::new(expr), field };
                     }
                 }
                 Token::LBracket => {
