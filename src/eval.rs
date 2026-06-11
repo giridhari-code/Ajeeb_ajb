@@ -53,6 +53,9 @@ impl Evaluator {
         for stmt in stmts {
             self.exec_stmt(stmt);
         }
+        if self.functions.contains_key("main") {
+            self.exec_fn_call("main", &[]);
+        }
     }
 
     fn exec_stmt(&mut self, stmt: &Stmt) -> RuntimeValue {
@@ -130,8 +133,16 @@ impl Evaluator {
                     }),
                     (RuntimeValue::String(a), RuntimeValue::String(b)) => match op {
                         Add => RuntimeValue::String(Rc::new(RefCell::new(a.borrow().clone() + &b.borrow()))),
-                        Eq => RuntimeValue::Bool(*a.borrow() == *b.borrow()),
-                        Neq => RuntimeValue::Bool(*a.borrow() != *b.borrow()),
+                        Eq => {
+                            let a_trim: String = a.borrow().chars().take_while(|&c| c != '\0').collect();
+                            let b_trim: String = b.borrow().chars().take_while(|&c| c != '\0').collect();
+                            RuntimeValue::Bool(a_trim == b_trim)
+                        },
+                        Neq => {
+                            let a_trim: String = a.borrow().chars().take_while(|&c| c != '\0').collect();
+                            let b_trim: String = b.borrow().chars().take_while(|&c| c != '\0').collect();
+                            RuntimeValue::Bool(a_trim != b_trim)
+                        },
                         _ => RuntimeValue::Int(0),
                     },
                     (RuntimeValue::Bool(a), RuntimeValue::Bool(b)) => match op {
@@ -268,7 +279,8 @@ impl Evaluator {
             "writeFile" => {
                 if arg_vals.len() >= 2 {
                     if let (RuntimeValue::String(path), RuntimeValue::String(content)) = (&arg_vals[0], &arg_vals[1]) {
-                        let _ = std::fs::write(path.borrow().as_str(), content.borrow().as_bytes());
+                        let bytes = content.borrow().as_bytes().to_vec();
+                        let _ = std::fs::write(path.borrow().as_str(), &bytes);
                     }
                 }
                 RuntimeValue::Void
@@ -420,6 +432,18 @@ impl Evaluator {
             "isSpace" => {
                 if let Some(RuntimeValue::Int(c)) = arg_vals.first() {
                     return RuntimeValue::Int((*c == 32 || *c == 9 || *c == 10 || *c == 13) as i64);
+                }
+                RuntimeValue::Int(0)
+            }
+            "strcmp_ajeeb" => {
+                if arg_vals.len() >= 2 {
+                    if let (RuntimeValue::String(a), RuntimeValue::String(b)) = (&arg_vals[0], &arg_vals[1]) {
+                        let a_trim: String = a.borrow().chars().take_while(|&c| c != '\0').collect();
+                        let b_trim: String = b.borrow().chars().take_while(|&c| c != '\0').collect();
+                        if a_trim == b_trim { return RuntimeValue::Int(0); }
+                        if a_trim < b_trim { return RuntimeValue::Int(-1); }
+                        return RuntimeValue::Int(1);
+                    }
                 }
                 RuntimeValue::Int(0)
             }

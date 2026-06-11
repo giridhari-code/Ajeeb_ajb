@@ -2,4 +2,9 @@
 *.o
 *.bin
 *.c
+!runtime/ajeeb_runtime.c
 bootstrap/
+build/
+build/output.c
+build/output.o
+build/ajeeb_native*

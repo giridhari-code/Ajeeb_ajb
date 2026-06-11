@@ -10,6 +10,8 @@ mod interop;
 use std::env;
 use std::fs::File;
 use std::io::{self, Read};
+use std::path::Path;
+use std::process::Command;
 use lexer::Lexer;
 use parser::Parser;
 use token::Token;
@@ -95,6 +97,27 @@ fn main() -> io::Result<()> {
     let mut evaluator = Evaluator::new();
     evaluator.evaluate_program(&ast);
     println!("--- Ajeeb Execution Ended ---\n🎉 Execution Completed Successfully!");
+
+    // 4. AUTO-COMPILE: if build/output.c was generated, compile it with runtime
+    if Path::new("build/output.c").exists() {
+        println!("\n🔨 Compiling build/output.c → build/ajeeb_native ...");
+        let status = Command::new("gcc")
+            .args(&[
+                "build/output.c",
+                "runtime/ajeeb_runtime.c",
+                "-o",
+                "build/ajeeb_native",
+                "-Wall",
+                "-Wno-int-to-pointer-cast",
+                "-Wno-pointer-to-int-cast",
+            ])
+            .status();
+        match status {
+            Ok(s) if s.success() => println!("✅ Compilation OK → ./ajeeb_native"),
+            Ok(s) => println!("❌ Compilation failed (exit: {})", s),
+            Err(e) => println!("❌ Could not run gcc: {}", e),
+        }
+    }
 
     Ok(())
 }

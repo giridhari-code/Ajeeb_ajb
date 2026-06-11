@@ -285,10 +285,21 @@ function emitEscapedStr(out: string, src: int, soff: int, slen: int): void {
     let i: int = 0;
     while (i < slen) {
         let c: int = chr(src, soff + i);
-        if (c == 10) { emitStr(out, "\\n"); }
-        else if (c == 9) { emitStr(out, "\\t"); }
-        else if (c == 34) { emitStr(out, "\\\""); }
-        else if (c == 92) { emitStr(out, "\\\\"); }
+        if (c == 10) { writeByte(out, 92); writeByte(out, 110); }
+        else if (c == 9) { writeByte(out, 92); writeByte(out, 116); }
+        else if (c == 34) { writeByte(out, 92); writeByte(out, 34); }
+        else if (c == 92) {
+            if (i + 1 < slen) {
+                let next: int = chr(src, soff + i + 1);
+                if (next == 110) { writeByte(out, 92); writeByte(out, 110); i = i + 1; }
+                else if (next == 116) { writeByte(out, 92); writeByte(out, 116); i = i + 1; }
+                else if (next == 34) { writeByte(out, 92); writeByte(out, 34); i = i + 1; }
+                else if (next == 92) { writeByte(out, 92); writeByte(out, 92); i = i + 1; }
+                else { writeByte(out, 92); writeByte(out, 92); writeByte(out, next); i = i + 1; }
+            } else {
+                writeByte(out, 92); writeByte(out, 92);
+            }
+        }
         else {
             writeByte(out, c);
         }
@@ -675,8 +686,8 @@ function parseStmt(src: int, buf: string, out: string): void {
         nextTok(src, buf);
         // params
         if (tokType(buf) == 35) { nextTok(src, buf); }
-        emitStr(out, "int ");
-        if (fnId == "main") {
+        if (strcmp_ajeeb(fnId, "main") == 0) { emitStr(out, "int "); } else { emitStr(out, "intptr_t "); }
+        if (strcmp_ajeeb(fnId, "main") == 0) {
             emitStr(out, "main(int argc, char** argv)");
             // skip params
             let depth: int = 1;
@@ -952,7 +963,7 @@ function main(): int {
     let src: string = readFile(inPath);
     wrSrc(buf, src);
 
-    let out: string = "output.c";
+    let out: string = "build/output.c";
     writeFile(out, "// Ajeeb self-hosted C output\n");
 
     // PASS 1: collect function names
@@ -979,8 +990,9 @@ function main(): int {
     emitStr(out, "intptr_t itoa(intptr_t n);\n");
     emitStr(out, "intptr_t println(intptr_t s);\n");
     emitStr(out, "intptr_t getStateBuf();\n");
-    emitStr(out, "int parseExpr(intptr_t src, intptr_t buf, intptr_t out);\n");
-    emitStr(out, "int parseStmt(intptr_t src, intptr_t buf, intptr_t out);\n");
+    emitStr(out, "intptr_t strcmp_ajeeb(intptr_t a, intptr_t b);\n");
+    emitStr(out, "intptr_t parseExpr(intptr_t src, intptr_t buf, intptr_t out);\n");
+    emitStr(out, "intptr_t parseStmt(intptr_t src, intptr_t buf, intptr_t out);\n");
     emitStr(out, "\n");
 
     // Parse all top-level statements
