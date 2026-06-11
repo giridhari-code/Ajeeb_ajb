@@ -53,7 +53,6 @@ impl Evaluator {
         for stmt in stmts {
             self.exec_stmt(stmt);
         }
-        self.exec_fn_call("main", &[]);
     }
 
     fn exec_stmt(&mut self, stmt: &Stmt) -> RuntimeValue {
@@ -83,11 +82,15 @@ impl Evaluator {
                 RuntimeValue::Void
             }
             Stmt::While { condition, body } => {
+                let max_iter: u64 = std::env::var("AJEEB_MAX_ITER")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(u64::MAX);
                 let mut _wi = 0u64;
                 while is_truthy(&self.eval_expr(condition)) {
                     _wi += 1;
-                    if _wi > 100000 {
-                        eprintln!("[ABORT] While loop exceeded 100K iterations");
+                    if _wi > max_iter {
+                        eprintln!("[ABORT] While loop exceeded {} iterations (set AJEEB_MAX_ITER to increase)", max_iter);
                         return RuntimeValue::Void;
                     }
                     for s in body {
@@ -107,7 +110,10 @@ impl Evaluator {
             Expr::StringLit(s) => RuntimeValue::String(Rc::new(RefCell::new(s.clone()))),
             Expr::Bool(b) => RuntimeValue::Bool(*b),
             Expr::Ident(id) => {
-                self.variables.get(id).cloned().unwrap_or(RuntimeValue::Int(0))
+                self.variables.get(id).cloned().unwrap_or_else(|| {
+                    eprintln!("[ERROR] Unknown variable '{}' — treating as 0", id);
+                    RuntimeValue::Int(0)
+                })
             }
             Expr::Binary { left, op, right } => {
                 let l = self.eval_expr(left);
@@ -444,7 +450,7 @@ impl Evaluator {
                     self.variables = saved;
                     return result;
                 } else {
-                    // Unknown function call — just return 0
+                    eprintln!("[ERROR] Unknown function '{}' called with {} args", name, args.len());
                 }
                 RuntimeValue::Void
             }

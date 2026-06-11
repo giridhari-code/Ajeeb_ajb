@@ -973,6 +973,7 @@ function main(): int {
     emitStr(out, "intptr_t readFile(intptr_t path);\n");
     emitStr(out, "void writeFile(intptr_t path, intptr_t content);\n");
     emitStr(out, "void writeAppend(intptr_t path, intptr_t content);\n");
+    emitStr(out, "void writeByte(intptr_t path, intptr_t byte);\n");
     emitStr(out, "intptr_t getOutbuf();\n");
     emitStr(out, "void strSet(intptr_t s, intptr_t i, intptr_t c);\n");
     emitStr(out, "intptr_t itoa(intptr_t n);\n");
