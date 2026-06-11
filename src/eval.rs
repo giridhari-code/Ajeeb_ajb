@@ -200,8 +200,12 @@ impl Evaluator {
         if self.iteration_count % 25000 == 0 {
             eprintln!("[ITER {}] fn: {} args:{}", self.iteration_count, name, args.len());
         }
-        if self.iteration_count > 10000000 {
-            eprintln!("[ITER {}] ABORT", self.iteration_count);
+        let max_iter: u64 = std::env::var("AJEEB_MAX_ITER")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(u64::MAX);
+        if self.iteration_count > max_iter {
+            eprintln!("[ITER {}] ABORT (set AJEEB_MAX_ITER to increase)", self.iteration_count);
             return RuntimeValue::Int(0);
         }
 

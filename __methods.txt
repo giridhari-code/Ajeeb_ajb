@@ -1,0 +1,15 @@
+int init(init* self, intptr_t v) {
+    self->count = v;
+    return 0;
+}
+
+int get(get* self) {
+    return self->count;
+    return 0;
+}
+
+int increment(increment* self) {
+    self->count = self->count + 1;
+    return 0;
+}
+

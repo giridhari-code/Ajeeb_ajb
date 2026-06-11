@@ -129,3 +129,14 @@ intptr_t itoa(intptr_t n) {
 intptr_t strcmp_ajeeb(intptr_t a, intptr_t b) {
     return (intptr_t)strcmp((const char*)a, (const char*)b);
 }
+
+intptr_t str_concat(intptr_t a, intptr_t b) {
+    const char* sa = (const char*)a;
+    const char* sb = (const char*)b;
+    size_t la = strlen(sa), lb = strlen(sb);
+    char* out = (char*)malloc(la + lb + 1);
+    if (!out) return (intptr_t)"";
+    memcpy(out, sa, la);
+    memcpy(out + la, sb, lb + 1);
+    return (intptr_t)out;
+}

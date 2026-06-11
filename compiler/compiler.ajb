@@ -489,12 +489,37 @@ function parseMul(src: int, buf: string, out: string): void {
 }
 
 function parseAdd(src: int, buf: string, out: string): void {
-    parseMul(src, buf, out);
-    while (tokType(buf) == 17 || tokType(buf) == 18) {
-        let op: int = tokType(buf);
-        nextTok(src, buf);
-        if (op == 17) { emitStr(out, " + "); } else { emitStr(out, " - "); }
+    let firstTok: int = tokType(buf);
+    if (firstTok == 3) {
+        let ctr: int = rdB(buf, 88);
+        wrB(buf, 88, ctr + 1);
+        let tmp: string = "build/ap" + itoa(ctr) + ".txt";
+        writeFile(tmp, "");
+        parseMul(src, buf, tmp);
+        if (tokType(buf) == 17) {
+            while (tokType(buf) == 17) {
+                nextTok(src, buf);
+                let left: string = readFile(tmp);
+                writeFile(tmp, "");
+                parseMul(src, buf, tmp);
+                let right: string = readFile(tmp);
+                writeFile(tmp, "");
+                let result: string = "str_concat(" + left + ", " + right + ")";
+                writeAppend(tmp, result);
+            }
+            writeAppend(out, readFile(tmp));
+            if (tokType(buf) == 18) { nextTok(src, buf); parseMul(src, buf, out); }
+        } else {
+            writeAppend(out, readFile(tmp));
+        }
+    } else {
         parseMul(src, buf, out);
+        while (tokType(buf) == 17 || tokType(buf) == 18) {
+            let op: int = tokType(buf);
+            nextTok(src, buf);
+            if (op == 17) { emitStr(out, " + "); } else { emitStr(out, " - "); }
+            parseMul(src, buf, out);
+        }
     }
 }
 
@@ -747,10 +772,10 @@ function parseStmt(src: int, buf: string, out: string): void {
         nextTok(src, buf);
         if (tokType(buf) == 37) { nextTok(src, buf); }
         emitStr(out, "typedef struct {\n");
-        writeFile("__methods.txt", "");
+        writeFile("build/__methods.txt", "");
         while (tokType(buf) != 38 && tokType(buf) != 0) {
             if (tokType(buf) == 9) { // method — emit to temp file
-                let mo: string = "__methods.txt";
+                let mo: string = "build/__methods.txt";
                 nextTok(src, buf);
                 let fnId: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
                 nextTok(src, buf);
@@ -799,7 +824,7 @@ function parseStmt(src: int, buf: string, out: string): void {
         if (tokType(buf) == 38) { nextTok(src, buf); }
         emitStr(out, "} "); emitStr(out, cn); emitStr(out, ";\n\n");
         // Append methods from temp file
-        let mb: string = readFile("__methods.txt");
+        let mb: string = readFile("build/__methods.txt");
         emitStr(out, mb);
     }
     else if (t == 38) { // } - empty block end
@@ -936,7 +961,7 @@ function emitFwdDecls(src: int, buf: string, out: string): void {
         let off: int = 96 + i * 24;
         let ns: int = rdB(buf, off);
         let nl: int = rdB(buf, off+8);
-        emitStr(out, "int fn_");
+        emitStr(out, "intptr_t ");
         let j: int = 0;
         while (j < nl) {
             let ch: int = chr(src, ns + j);
@@ -963,7 +988,8 @@ function main(): int {
     let src: string = readFile(inPath);
     wrSrc(buf, src);
 
-    let out: string = "build/output.c";
+    let out: string = readArg(2);
+    if (len(out) == 0) { out = "build/output.c"; }
     writeFile(out, "// Ajeeb self-hosted C output\n");
 
     // PASS 1: collect function names
@@ -991,6 +1017,7 @@ function main(): int {
     emitStr(out, "intptr_t println(intptr_t s);\n");
     emitStr(out, "intptr_t getStateBuf();\n");
     emitStr(out, "intptr_t strcmp_ajeeb(intptr_t a, intptr_t b);\n");
+    emitStr(out, "intptr_t str_concat(intptr_t a, intptr_t b);\n");
     emitStr(out, "intptr_t parseExpr(intptr_t src, intptr_t buf, intptr_t out);\n");
     emitStr(out, "intptr_t parseStmt(intptr_t src, intptr_t buf, intptr_t out);\n");
     emitStr(out, "\n");
