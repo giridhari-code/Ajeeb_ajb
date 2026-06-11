@@ -1,4 +1,4 @@
-# Ajeeb Compiler (অজীব কম্পাইলার)
+# Ajeeb Compiler
 
 A self-hosting compiler for the **Ajeeb** dynamic programming language, written in Ajeeb itself (with a Rust tree-walk interpreter as Stage 0).
 
