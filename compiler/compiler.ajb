@@ -138,7 +138,7 @@ function readString(src: int, buf: string): int {
 // 9=Fn 10=Ret 11=True 12=False 13=Int 14=String 15=Bool 16=Void
 // 17=+ 18=- 19=* 20=/ 21== 22=!= 23=< 24=> 25=<= 26=>= 27=&& 28=||
 // 29=! 30=; 31=: 32=, 33=-> 34=. 35=( 36=) 37={ 38=} 39=[ 40=]
-// 41== 42=Class 43=Self 44=New
+// 41== 42=Class 43=Self 44=New 45=Break 46=Continue 47=For
 
 // --- TOKEN CURSOR ---
 
@@ -196,6 +196,12 @@ function nextTok(src: int, buf: string): void {
         if (matchKwd(src, buf, "self") == 1) { setTok(buf, 43, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
         if (matchKwd(src, buf, "new") == 1) { setTok(buf, 44, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "for") == 1) { setTok(buf, 47, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "break") == 1) { setTok(buf, 45, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "continue") == 1) { setTok(buf, 46, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf);
         setTok(buf, 1, 0, start, slen);
         return;
@@ -293,9 +299,10 @@ function emitEscapedStr(out: string, src: int, soff: int, slen: int): void {
                 let next: int = chr(src, soff + i + 1);
                 if (next == 110) { writeByte(out, 92); writeByte(out, 110); i = i + 1; }
                 else if (next == 116) { writeByte(out, 92); writeByte(out, 116); i = i + 1; }
+                else if (next == 48) { writeByte(out, 92); writeByte(out, 48); i = i + 1; }
                 else if (next == 34) { writeByte(out, 92); writeByte(out, 34); i = i + 1; }
                 else if (next == 92) { writeByte(out, 92); writeByte(out, 92); i = i + 1; }
-                else { writeByte(out, 92); writeByte(out, 92); writeByte(out, next); i = i + 1; }
+                else { writeByte(out, 92); writeByte(out, next); i = i + 1; }
             } else {
                 writeByte(out, 92); writeByte(out, 92);
             }
@@ -691,6 +698,23 @@ function parseStmt(src: int, buf: string, out: string): void {
             }
         }
     }
+    else if (t == 47) { // for
+        nextTok(src, buf);
+        if (tokType(buf) == 35) { nextTok(src, buf); }
+        emitStr(out, "    for (");
+        parseStmt(src, buf, out);  // init (let decl or expr)
+        parseExpr(src, buf, out);  // condition
+        emitStr(out, "; ");
+        parseExpr(src, buf, out);  // update
+        if (tokType(buf) == 36) { nextTok(src, buf); }
+        emitStr(out, ") {\n");
+        if (tokType(buf) == 37) { nextTok(src, buf); }
+        while (tokType(buf) != 38 && tokType(buf) != 0) {
+            parseStmt(src, buf, out);
+        }
+        if (tokType(buf) == 38) { nextTok(src, buf); }
+        emitStr(out, "    }\n");
+    }
     else if (t == 8) { // while
         nextTok(src, buf);
         if (tokType(buf) == 35) { nextTok(src, buf); }
@@ -763,6 +787,18 @@ function parseStmt(src: int, buf: string, out: string): void {
         } else {
             emitStr(out, " 0");
         }
+        if (tokType(buf) == 30) { nextTok(src, buf); }
+        emitStr(out, ";\n");
+    }
+    else if (t == 45) { // break
+        nextTok(src, buf);
+        emitStr(out, "    break");
+        if (tokType(buf) == 30) { nextTok(src, buf); }
+        emitStr(out, ";\n");
+    }
+    else if (t == 46) { // continue
+        nextTok(src, buf);
+        emitStr(out, "    continue");
         if (tokType(buf) == 30) { nextTok(src, buf); }
         emitStr(out, ";\n");
     }

@@ -11,6 +11,8 @@ pub enum RuntimeValue {
     Void,
     ClassInstance { class_name: String, fields: HashMap<String, RuntimeValue> },
     Return(Box<RuntimeValue>),
+    Break,
+    Continue,
 }
 
 pub struct Evaluator {
@@ -19,6 +21,10 @@ pub struct Evaluator {
     class_fields: HashMap<String, Vec<ClassField>>,
     int_buffers: HashMap<String, Vec<i64>>,
     iteration_count: u64,
+    program_args: Vec<String>,
+    int_to_string: HashMap<i64, Rc<RefCell<String>>>,
+    next_string_ptr: i64,
+    outbuf_string: Rc<RefCell<String>>,
 }
 
 impl Evaluator {
@@ -29,7 +35,15 @@ impl Evaluator {
             class_fields: HashMap::new(),
             int_buffers: HashMap::new(),
             iteration_count: 0,
+            program_args: Vec::new(),
+            int_to_string: HashMap::new(),
+            next_string_ptr: 0x1000,
+            outbuf_string: Rc::new(RefCell::new(String::new())),
         }
+    }
+
+    pub fn set_program_args(&mut self, args: Vec<String>) {
+        self.program_args = args;
     }
 
     pub fn evaluate_program(&mut self, stmts: &[Stmt]) {
@@ -49,9 +63,6 @@ impl Evaluator {
                 }
                 _ => {}
             }
-        }
-        for stmt in stmts {
-            self.exec_stmt(stmt);
         }
         if self.functions.contains_key("main") {
             self.exec_fn_call("main", &[]);
@@ -84,13 +95,39 @@ impl Evaluator {
                 }
                 RuntimeValue::Void
             }
+            Stmt::ForLoop { init, condition, update, body } => {
+                self.exec_stmt(init);
+                let max_iter: u64 = std::env::var("AJEEB_MAX_ITER")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(u64::MAX);
+                let mut _fi = 0u64;
+                'for_loop: while is_truthy(&self.eval_expr(condition)) {
+                    _fi += 1;
+                    if _fi > max_iter {
+                        eprintln!("[ABORT] For loop exceeded {} iterations (set AJEEB_MAX_ITER to increase)", max_iter);
+                        return RuntimeValue::Void;
+                    }
+                    for s in body {
+                        let r = self.exec_stmt(s);
+                        match r {
+                            RuntimeValue::Return(_) => return r,
+                            RuntimeValue::Break => break 'for_loop,
+                            RuntimeValue::Continue => break,
+                            _ => {}
+                        }
+                    }
+                    self.exec_stmt(update);
+                }
+                RuntimeValue::Void
+            }
             Stmt::While { condition, body } => {
                 let max_iter: u64 = std::env::var("AJEEB_MAX_ITER")
                     .ok()
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(u64::MAX);
                 let mut _wi = 0u64;
-                while is_truthy(&self.eval_expr(condition)) {
+                'while_loop: while is_truthy(&self.eval_expr(condition)) {
                     _wi += 1;
                     if _wi > max_iter {
                         eprintln!("[ABORT] While loop exceeded {} iterations (set AJEEB_MAX_ITER to increase)", max_iter);
@@ -98,11 +135,18 @@ impl Evaluator {
                     }
                     for s in body {
                         let r = self.exec_stmt(s);
-                        if let RuntimeValue::Return(_) = r { return r; }
+                        match r {
+                            RuntimeValue::Return(_) => return r,
+                            RuntimeValue::Break => break 'while_loop,
+                            RuntimeValue::Continue => break,
+                            _ => {}
+                        }
                     }
                 }
                 RuntimeValue::Void
             }
+            Stmt::Break => RuntimeValue::Break,
+            Stmt::Continue => RuntimeValue::Continue,
             Stmt::FnDef { .. } | Stmt::Class { .. } => RuntimeValue::Void,
         }
     }
@@ -222,6 +266,8 @@ impl Evaluator {
                         RuntimeValue::ClassInstance { class_name, .. } => print!("<{} instance>", class_name),
                         RuntimeValue::Void => print!("void"),
                         RuntimeValue::Return(v) => print!("<return {:?}>", v),
+                        RuntimeValue::Break => print!("break"),
+                        RuntimeValue::Continue => print!("continue"),
                     }
                 }
                 if nl { println!(); }
@@ -243,12 +289,16 @@ impl Evaluator {
             }
             "charCode" => {
                 if arg_vals.len() >= 2 {
-                    if let (RuntimeValue::String(s), RuntimeValue::Int(i)) = (&arg_vals[0], &arg_vals[1]) {
+                    let s = match &arg_vals[0] {
+                        RuntimeValue::String(s) => Some(s.clone()),
+                        RuntimeValue::Int(ptr) => self.int_to_string.get(ptr).cloned(),
+                        _ => None,
+                    };
+                    if let (Some(s), RuntimeValue::Int(i)) = (s, &arg_vals[1]) {
                         let idx = *i as usize;
                         let b = s.borrow();
                         if idx < b.len() {
                             let val = b.as_bytes()[idx] as i64;
-
                             return RuntimeValue::Int(val);
                         }
                     }
@@ -303,9 +353,8 @@ impl Evaluator {
             }
             "readArg" => {
                 let idx = if let Some(RuntimeValue::Int(n)) = arg_vals.first() { *n as usize } else { 0 };
-                let args: Vec<String> = std::env::args().collect();
-                if idx < args.len() {
-                    RuntimeValue::String(Rc::new(RefCell::new(args[idx].clone())))
+                if idx < self.program_args.len() {
+                    RuntimeValue::String(Rc::new(RefCell::new(self.program_args[idx].clone())))
                 } else {
                     RuntimeValue::String(Rc::new(RefCell::new(String::new())))
                 }
@@ -316,7 +365,8 @@ impl Evaluator {
                 RuntimeValue::String(Rc::new(RefCell::new(key)))
             }
             "getOutbuf" => {
-                RuntimeValue::String(Rc::new(RefCell::new(String::new())))
+                self.outbuf_string.borrow_mut().clear();
+                RuntimeValue::String(self.outbuf_string.clone())
             }
             "rdB" | "getInt" => {
                 if arg_vals.len() >= 2 {
@@ -333,12 +383,23 @@ impl Evaluator {
             }
             "wrB" | "setInt" => {
                 if arg_vals.len() >= 3 {
-                    if let (RuntimeValue::String(buf_name), RuntimeValue::Int(offset), RuntimeValue::Int(value)) = (&arg_vals[0], &arg_vals[1], &arg_vals[2]) {
-                        let idx = (offset / 8) as usize;
-                        let name = buf_name.borrow().clone();
-                        let buf = self.int_buffers.entry(name).or_insert_with(|| vec![0i64; 16384]);
-                        if idx < buf.len() {
-                            buf[idx] = *value;
+                    if let RuntimeValue::String(buf_name) = &arg_vals[0] {
+                        if let RuntimeValue::Int(offset) = &arg_vals[1] {
+                            let idx = (offset / 8) as usize;
+                            let name = buf_name.borrow().clone();
+                            let buf = self.int_buffers.entry(name).or_insert_with(|| vec![0i64; 16384]);
+                            if idx < buf.len() {
+                                match &arg_vals[2] {
+                                    RuntimeValue::Int(v) => buf[idx] = *v,
+                                    RuntimeValue::String(s) => {
+                                        let ptr = self.next_string_ptr;
+                                        self.next_string_ptr += 1;
+                                        self.int_to_string.insert(ptr, s.clone());
+                                        buf[idx] = ptr;
+                                    }
+                                    _ => {}
+                                }
+                            }
                         }
                     }
                 }

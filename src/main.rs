@@ -36,7 +36,7 @@ fn main() -> io::Result<()> {
             let mut das_src = String::new();
             das_file.read_to_string(&mut das_src)?;
             let config = DasConfig::parse(&das_src);
-            println!("📦 Loaded .das config: '{}'", config.get("module", "name").unwrap_or(&"unnamed".into()));
+            println!("📦 Loaded .das config: '{}'", config.get("package", "name").unwrap_or(&"unnamed".into()));
 
             let mut bridge = LanguageBridge::new();
             if config.is_enabled("compatibility", "python_ai_core") {
@@ -52,11 +52,11 @@ fn main() -> io::Result<()> {
         }
     } else {
         // Look for ajeeb.das automatically in cwd
-        if let Ok(mut das_file) = File::open("ajeeb.das") {
+        if let Ok(mut das_file) = File::open("parth.das") {
             let mut das_src = String::new();
             das_file.read_to_string(&mut das_src)?;
             let config = DasConfig::parse(&das_src);
-            println!("📦 Auto-loaded ajeeb.das: '{}'", config.get("module", "name").unwrap_or(&"unnamed".into()));
+            println!("📦 parth.das loaded: '{}'", config.get("package", "name").unwrap_or(&"unnamed".into()));
         }
     }
 
@@ -95,6 +95,7 @@ fn main() -> io::Result<()> {
     // 3. DIRECT EXECUTION
     println!("\n🚀 --- Ajeeb Direct Run Started ---");
     let mut evaluator = Evaluator::new();
+    evaluator.set_program_args(args[1..].to_vec());
     evaluator.evaluate_program(&ast);
     println!("--- Ajeeb Execution Ended ---\n🎉 Execution Completed Successfully!");
 

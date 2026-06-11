@@ -57,6 +57,9 @@ impl Parser {
             Token::Class => "class",
             Token::SelfKwd => "self",
             Token::New => "new",
+            Token::For => "for",
+            Token::Break => "break",
+            Token::Continue => "continue",
             Token::And => "&&",
             Token::Or => "||",
             Token::Not => "!",
@@ -105,8 +108,11 @@ impl Parser {
             Token::Const => self.parse_const_decl(),
             Token::If => self.parse_if_stmt(),
             Token::While => self.parse_while_stmt(),
+            Token::For => self.parse_for_stmt(),
             Token::Function => self.parse_fn_def(),
             Token::Return => self.parse_return_stmt(),
+            Token::Break => { self.advance(); self.expect(&Token::Semicolon)?; Ok(Stmt::Break) }
+            Token::Continue => { self.advance(); self.expect(&Token::Semicolon)?; Ok(Stmt::Continue) }
             Token::Class => self.parse_class_def(),
             Token::RBrace => Err(CompileError::new(0, 0, "Extra '}' mil gaya. Kahi closing brace zyada hai.".to_string())),
             _ => self.parse_expr_stmt(),
@@ -178,6 +184,40 @@ impl Parser {
         let body = self.parse_block()?;
         self.expect(&Token::RBrace)?;
         Ok(Stmt::While { condition, body })
+    }
+
+    fn parse_for_stmt(&mut self) -> Result<Stmt, CompileError> {
+        self.advance();
+        self.expect(&Token::LParen)?;
+        // init
+        let init = if self.peek() == &Token::Let {
+            self.parse_let_decl()?
+        } else if self.peek() == &Token::Semicolon {
+            self.advance();
+            Stmt::Expr(Expr::Number(0))
+        } else {
+            self.parse_expr_stmt()?
+        };
+        // condition
+        let condition = if self.peek() == &Token::Semicolon {
+            Expr::Number(1)
+        } else {
+            let e = self.parse_expression()?;
+            self.expect(&Token::Semicolon)?;
+            e
+        };
+        // update
+        let update = if self.peek() == &Token::RParen {
+            Stmt::Expr(Expr::Number(0))
+        } else {
+            let e = self.parse_expression()?;
+            Stmt::Expr(e)
+        };
+        self.expect(&Token::RParen)?;
+        self.expect(&Token::LBrace)?;
+        let body = self.parse_block()?;
+        self.expect(&Token::RBrace)?;
+        Ok(Stmt::ForLoop { init: Box::new(init), condition, update: Box::new(update), body })
     }
 
     fn parse_fn_def(&mut self) -> Result<Stmt, CompileError> {

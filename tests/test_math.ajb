@@ -1,0 +1,6 @@
+function add(x: int, y: int): int { return x + y; }
+function main(): int {
+    let r: int = add(10, 32);
+    println(itoa(r));
+    return r;
+}

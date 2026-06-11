@@ -61,21 +61,23 @@ mod tests {
     #[test]
     fn test_basic_parse() {
         let src = r#"
-            [module]
-            name = "AlphaRobotMPC"
-            version = "1.0.0"
-
-            [compatibility]
-            python_ai_core = "enabled"
-            cpp_physics_engine = "enabled"
+            [package]
+            name = "my-project"
+            version = "0.1.0"
 
             [dependencies]
-            torch = "2.1"
-            tokio_network = "1.0"
+
+            [runtime]
+            max_threads = "8"
+            log_level = "info"
+
+            [compiler]
+            target = "native"
+            output = "build/"
+            runtime = "runtime/ajeeb_runtime.c"
         "#;
         let cfg = DasConfig::parse(src);
-        assert_eq!(cfg.get("module", "name").unwrap(), "AlphaRobotMPC");
-        assert!(cfg.is_enabled("compatibility", "python_ai_core"));
-        assert_eq!(cfg.get("dependencies", "torch").unwrap(), "2.1");
+        assert_eq!(cfg.get("package", "name").unwrap(), "my-project");
+        assert_eq!(cfg.get("compiler", "output").unwrap(), "build/");
     }
 }

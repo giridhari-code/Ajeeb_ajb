@@ -1,0 +1,6 @@
+function main(): int {
+    let x: int = 10;
+    if (x > 5) { println("bada hai"); }
+    else { println("chhota hai"); }
+    return 0;
+}

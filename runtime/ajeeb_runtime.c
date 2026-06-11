@@ -130,13 +130,25 @@ intptr_t strcmp_ajeeb(intptr_t a, intptr_t b) {
     return (intptr_t)strcmp((const char*)a, (const char*)b);
 }
 
+#define STR_POOL_SLOTS 256
+#define STR_POOL_SIZE 4096
+
+static char str_pool[STR_POOL_SLOTS][STR_POOL_SIZE];
+static int str_pool_idx = 0;
+
 intptr_t str_concat(intptr_t a, intptr_t b) {
     const char* sa = (const char*)a;
     const char* sb = (const char*)b;
     size_t la = strlen(sa), lb = strlen(sb);
-    char* out = (char*)malloc(la + lb + 1);
-    if (!out) return (intptr_t)"";
-    memcpy(out, sa, la);
-    memcpy(out + la, sb, lb + 1);
+    int slot = str_pool_idx;
+    str_pool_idx = (str_pool_idx + 1) % STR_POOL_SLOTS;
+    char* out = str_pool[slot];
+    size_t total = la + lb;
+    if (total >= STR_POOL_SIZE - 1) total = STR_POOL_SIZE - 1;
+    size_t copy_a = la < total ? la : total;
+    memcpy(out, sa, copy_a);
+    size_t copy_b = total - copy_a;
+    if (copy_b > 0) memcpy(out + copy_a, sb, copy_b);
+    out[total] = '\0';
     return (intptr_t)out;
 }

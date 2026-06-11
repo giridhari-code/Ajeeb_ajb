@@ -99,7 +99,8 @@ impl Lexer {
             "true" => Token::True, "false" => Token::False,
             "int" => Token::Int, "string" => Token::String,
             "bool" => Token::Bool, "void" => Token::Void,
-            "class" => Token::Class, "self" => Token::SelfKwd, "new" => Token::New,
+            "class" => Token::Class, "self" => Token::SelfKwd, "new" => Token::New, "for" => Token::For,
+            "break" => Token::Break, "continue" => Token::Continue,
             _ => Token::Identifier(s),
         }
     }

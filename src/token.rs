@@ -7,6 +7,7 @@ pub enum Token {
     Eq, Neq, Lt, Gt, Le, Ge, And, Or, Not,
     Semicolon, Colon, Comma, Arrow, Dot,
     LParen, RParen, LBrace, RBrace, LBracket, RBracket,
-    Class, SelfKwd, New,
+    Class, SelfKwd, New, For,
+    Break, Continue,
     Eof,
 }
