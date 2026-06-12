@@ -40,6 +40,7 @@ pub enum Expr {
     Index { obj: Box<Expr>, index: Box<Expr> },
     Field { obj: Box<Expr>, field: String },
     FieldAssign { obj: Box<Expr>, field: String, value: Box<Expr> },
+    UnaryNot(Box<Expr>),
     Group(Box<Expr>),
 }
 
