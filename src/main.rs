@@ -10,7 +10,6 @@ mod token;
 
 use das_parser::DasConfig;
 use eval::Evaluator;
-use interop::LanguageBridge;
 use lexer::Lexer;
 use parser::Parser;
 use semantic::SemanticAnalyzer;
@@ -30,40 +29,19 @@ fn main() -> io::Result<()> {
 
     let file_path = &args[1];
 
-    // .das configuration path: if a second arg is given, load it
-    if args.len() >= 3 {
-        let das_path = &args[2];
-        if let Ok(mut das_file) = File::open(das_path) {
+    // Auto-discover parth.das (check cwd, then parent)
+    for dir in [Path::new("."), Path::new("..")] {
+        let das_path = dir.join("parth.das");
+        if let Ok(mut das_file) = File::open(&das_path) {
             let mut das_src = String::new();
             das_file.read_to_string(&mut das_src)?;
             let config = DasConfig::parse(&das_src);
-            println!(
-                "📦 Loaded .das config: '{}'",
-                config.get("package", "name").unwrap_or(&"unnamed".into())
-            );
-
-            let mut bridge = LanguageBridge::new();
-            if config.is_enabled("compatibility", "python_ai_core") {
-                bridge.load_compatibility_block("Python", "AI_Core");
+            let name = config.get("package", "name").cloned().unwrap_or_default();
+            let version = config.get("package", "version").cloned().unwrap_or_default();
+            if !name.is_empty() {
+                println!("📦 parth: '{}' v{}", name, version);
             }
-            if config.is_enabled("compatibility", "cpp_physics_engine") {
-                bridge.load_compatibility_block("C++", "Physics_Engine");
-            }
-            println!("🔌 Bridge summary:");
-            bridge.summary();
-        } else {
-            println!("⚠️  .das file not found: {}", das_path);
-        }
-    } else {
-        // Look for ajeeb.das automatically in cwd
-        if let Ok(mut das_file) = File::open("parth.das") {
-            let mut das_src = String::new();
-            das_file.read_to_string(&mut das_src)?;
-            let config = DasConfig::parse(&das_src);
-            println!(
-                "📦 parth.das loaded: '{}'",
-                config.get("package", "name").unwrap_or(&"unnamed".into())
-            );
+            break;
         }
     }
 

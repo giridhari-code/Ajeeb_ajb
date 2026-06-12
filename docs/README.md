@@ -37,7 +37,7 @@ A self-hosting compiler for the **Ajeeb** dynamic programming language, written 
 | `src/interop.rs` | Cross-language FFI bridge (Python, C++) |
 | `compiler.ajb` | **Self-hosting compiler** (889 lines) — lexer + parser + C codegen in Ajeeb |
 | `main.ajb` | OOP demo (Counter class) |
-| `ajeeb.das` | Sample project config |
+| `parth.das` | Sample project config |
 
 ## Language Features
 

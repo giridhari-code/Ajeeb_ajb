@@ -27,7 +27,6 @@ impl LanguageBridge {
 
     pub fn summary(&self) {
         if self.external_registry.is_empty() {
-            println!("  ╰ No external bridges active");
             return;
         }
         for (module, lang) in &self.external_registry {

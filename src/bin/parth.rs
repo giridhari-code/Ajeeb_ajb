@@ -198,7 +198,7 @@ fn cmd_build() {
     let status = Command::new("cargo")
         .args(["run", "--bin", "ajeeb_compiler", "--manifest-path",
                root.join("Cargo.toml").to_string_lossy().as_ref(),
-               "--", entry])
+               "--", entry, "build/output.c"])
         .status().expect("Failed to run compiler");
     if !status.success() { eprintln!("❌ Compilation failed"); std::process::exit(1); }
 
@@ -543,28 +543,82 @@ fn cmd_workspace(args: &[String]) {
     }
 }
 
+// ── Version ────────────────────────────────────────────────────────
+
+fn cmd_version() {
+    println!("parth 0.1.0 — Ajeeb Package Manager");
+    if let Ok(content) = fs::read_to_string("parth.das") {
+        for line in content.lines() {
+            let t = line.trim();
+            if let Some(eq) = t.find('=') {
+                let key = t[..eq].trim();
+                let val = t[eq + 1..].trim().trim_matches('"');
+                if key == "name" {
+                    print!("{} v", val);
+                } else if key == "version" {
+                    println!("{}", val);
+                }
+            }
+        }
+    }
+}
+
+// ── Clean ──────────────────────────────────────────────────────────
+
+fn cmd_clean() {
+    let patterns = ["build/output.c", "build/output2.c", "build/*.o"];
+    for pattern in &patterns {
+        let path = Path::new(pattern);
+        if path.exists() {
+            let _ = fs::remove_file(path);
+        }
+    }
+    // Also remove any .o files in build/
+    if let Ok(entries) = fs::read_dir("build") {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.extension().map(|e| e == "o").unwrap_or(false) {
+                let _ = fs::remove_file(&p);
+            }
+        }
+    }
+    println!("🧹 Cleaned build directory");
+}
+
+// ── Help ───────────────────────────────────────────────────────────
+
+fn cmd_help() {
+    println!("Ajeeb Package Manager — parth v0.1.0");
+    println!();
+    println!("USAGE:");
+    println!("  parth <command> [arguments]");
+    println!();
+    println!("COMMANDS:");
+    println!("  new <name>       Create a new Ajeeb project");
+    println!("  add <pkg>[@v]    Add a dependency");
+    println!("  remove <pkg>     Remove a dependency");
+    println!("  build            Compile current project");
+    println!("  run              Build and run current project");
+    println!("  clean            Remove build artifacts");
+    println!("  info             Show project info from parth.das");
+    println!("  version          Show parth and project version");
+    println!("  help             Show this help message");
+    println!("  search <query>   Search packages");
+    println!("  install <pkg>    Install a package");
+    println!("  publish [url]    Publish the package");
+    println!("  sign <pkg> <v>   Sign a package");
+    println!("  verify <p> <v>   Verify package signature");
+    println!("  audit            Security audit");
+    println!("  cache <cmd>      Cache management");
+    println!("  workspace <cmd>  Workspace management");
+}
+
 // ── Main ───────────────────────────────────────────────────────────
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("Parth Package Manager v0.2");
-        eprintln!("Usage: parth <command> [args]");
-        eprintln!("Commands:");
-        eprintln!("  new <name>       Create a new project");
-        eprintln!("  add <pkg>[@v]    Add a dependency");
-        eprintln!("  remove <pkg>     Remove a dependency");
-        eprintln!("  install <pkg>    Install a package");
-        eprintln!("  search <query>   Search packages");
-        eprintln!("  build            Build the project");
-        eprintln!("  run              Build and run");
-        eprintln!("  publish [url]    Publish the package");
-        eprintln!("  sign <pkg> <v>   Sign a package");
-        eprintln!("  verify <p> <v>   Verify package signature");
-        eprintln!("  audit            Security audit");
-        eprintln!("  cache <cmd>      Cache management");
-        eprintln!("  workspace <cmd>  Workspace management");
-        eprintln!("  info             Show project info");
+        cmd_help();
         std::process::exit(1);
     }
 
@@ -583,6 +637,9 @@ fn main() {
         "audit" => cmd_audit(&args[2..]),
         "cache" => cmd_cache(&args[2..]),
         "workspace" => cmd_workspace(&args[2..]),
+        "version" => cmd_version(),
+        "clean" => cmd_clean(),
+        "help" | "-h" | "--help" => cmd_help(),
         _ => {
             eprintln!("Unknown command: {}", args[1]);
             std::process::exit(1);

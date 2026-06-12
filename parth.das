@@ -1,8 +1,8 @@
 [package]
-name = "my-project"
+name = "ajeeb-compiler"
 version = "0.1.0"
-author = ""
-description = ""
+author = "Ajeeb Team"
+description = "The Ajeeb self-hosting compiler"
 
 [dependencies]
 
