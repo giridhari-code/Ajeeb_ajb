@@ -1,0 +1,10 @@
+function main(): int {
+    let s: string = "  Hello World  ";
+    println(trim(s));
+    println(toUpperCase("hello"));
+    println(toLowerCase("AJEEB"));
+    println(itoa(indexOf("Hello", "ell")));
+    println(itoa(contains("Hello", "ell")));
+    println(substring("Hello World", 0, 5));
+    return 0;
+}

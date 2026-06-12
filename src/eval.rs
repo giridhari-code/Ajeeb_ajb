@@ -143,15 +143,21 @@ impl Evaluator {
                 if is_truthy(&self.eval_expr(condition)) {
                     for s in then_block {
                         let r = self.exec_stmt(s);
-                        if let RuntimeValue::Return(_) = r {
-                            return r;
+                        match r {
+                            RuntimeValue::Return(_) => return r,
+                            RuntimeValue::Break => return r,
+                            RuntimeValue::Continue => return r,
+                            _ => {}
                         }
                     }
                 } else if let Some(el) = else_block {
                     for s in el {
                         let r = self.exec_stmt(s);
-                        if let RuntimeValue::Return(_) = r {
-                            return r;
+                        match r {
+                            RuntimeValue::Return(_) => return r,
+                            RuntimeValue::Break => return r,
+                            RuntimeValue::Continue => return r,
+                            _ => {}
                         }
                     }
                 }
@@ -790,6 +796,17 @@ impl Evaluator {
                     }
                 }
                 RuntimeValue::Int(0)
+            }
+            "str_concat" => {
+                if arg_vals.len() >= 2 {
+                    if let (RuntimeValue::String(a), RuntimeValue::String(b)) =
+                        (&arg_vals[0], &arg_vals[1])
+                    {
+                        let result = format!("{}{}", a.borrow(), b.borrow());
+                        return RuntimeValue::String(Rc::new(RefCell::new(result)));
+                    }
+                }
+                RuntimeValue::String(Rc::new(RefCell::new(String::new())))
             }
             "substring" => {
                 let s = arg_vals

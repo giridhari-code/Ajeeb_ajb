@@ -49,6 +49,7 @@ impl SemanticAnalyzer {
         global.insert("isAlphaNum".to_string(), TypeAnnot::Bool);
         global.insert("isSpace".to_string(), TypeAnnot::Bool);
         global.insert("strcmp_ajeeb".to_string(), TypeAnnot::Int);
+        global.insert("str_concat".to_string(), TypeAnnot::String);
         SemanticAnalyzer {
             errors: Vec::new(),
             scopes: vec![global],
@@ -377,7 +378,7 @@ impl SemanticAnalyzer {
                         | "isDigit" | "isAlpha" | "isAlphaNum" | "isSpace" => TypeAnnot::Int,
                         "itoa" | "readFile" | "readArg" | "getStateBuf" | "getOutbuf"
                         | "substring" | "toUpperCase" | "toLowerCase"
-                        | "trim" | "split" | "replace" => TypeAnnot::String,
+                        | "trim" | "split" | "replace" | "str_concat" => TypeAnnot::String,
                         "contains" | "startsWith" | "endsWith" => TypeAnnot::Bool,
                         "chr" => TypeAnnot::Int,
                         _ => {
