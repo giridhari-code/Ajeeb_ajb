@@ -9,7 +9,6 @@ extern char __ajeeb_outbuf[65536];
 static char* saved_argv[256];
 static int saved_argc = 0;
 
-// Cached file handles for writeAppend/writeByte — avoid fopen/fclose per call
 #define FILE_CACHE_SIZE 256
 static struct { const char* path; FILE* fp; } file_cache[FILE_CACHE_SIZE];
 static int file_cache_count = 0;
@@ -42,6 +41,7 @@ static void init_args(void) {
     if (args_init) return;
     args_init = 1;
     atexit(flush_cached_files);
+#if defined(__linux__)
     FILE* f = fopen("/proc/self/cmdline", "rb");
     if (!f) return;
     char buf[4096];
@@ -64,6 +64,34 @@ static void init_args(void) {
             start = i + 1;
         }
     }
+#elif defined(__APPLE__)
+    extern int _NSGetArgc(int*);
+    extern char*** _NSGetArgv(void);
+    int mac_argc;
+    char** mac_argv = *_NSGetArgv();
+    _NSGetArgc(&mac_argc);
+    for (int i = 0; i < mac_argc && i < 256; i++) {
+        saved_argv[i] = strdup(mac_argv[i]);
+        saved_argc++;
+    }
+#elif defined(_WIN32)
+    int wargc;
+    wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
+    if (wargv) {
+        for (int i = 0; i < wargc && i < 256; i++) {
+            int len = WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, NULL, 0, NULL, NULL);
+            saved_argv[i] = (char*)malloc(len);
+            if (saved_argv[i]) {
+                WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, saved_argv[i], len, NULL, NULL);
+            }
+            saved_argc++;
+        }
+        LocalFree(wargv);
+    }
+#else
+    saved_argv[0] = strdup("ajeeb");
+    saved_argc = 1;
+#endif
 }
 
 intptr_t getInt(intptr_t buf, intptr_t off) {
@@ -148,9 +176,6 @@ intptr_t println(intptr_t s) {
     return 0;
 }
 
-// Unique string allocation — no circular pool, no aliasing.
-// Memory is allocated via malloc and reclaimed by OS at process exit.
-// This eliminates all string corruption from buffer reuse.
 static char* alloc_str(const char* src, size_t len) {
     if (len == 0) return strdup("");
     char* out = (char*)malloc(len + 1);

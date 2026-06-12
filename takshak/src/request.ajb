@@ -1,0 +1,14 @@
+// takshak request module
+// Read incoming HTTP request data.
+
+function takshakReqPath(req: int): string {
+    return _takshak_req_path(req);
+}
+
+function takshakReqMethod(req: int): string {
+    return _takshak_req_method(req);
+}
+
+function takshakReqBody(req: int): string {
+    return _takshak_req_body(req);
+}

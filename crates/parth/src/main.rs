@@ -3,17 +3,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-mod parth_mod { include!("../parth/mod.rs"); }
-use parth_mod::config;
-use parth_mod::config::ProjectConfig;
-use parth_mod::registry;
-use parth_mod::resolver;
-use parth_mod::types::PkgDep;
+mod config;
+mod registry;
+mod resolver;
+mod types;
+
+use config::ProjectConfig;
+use types::PkgDep;
 
 fn find_ajeeb_root() -> PathBuf {
     if let Ok(manifest) = env::var("CARGO_MANIFEST_DIR") {
-        let root = PathBuf::from(manifest);
-        if root.join("compiler").join("compiler.ajb").exists() { return root; }
+        let mut dir = PathBuf::from(manifest);
+        loop {
+            if dir.join("compiler").join("compiler.ajb").exists() { return dir; }
+            if !dir.pop() { break; }
+        }
     }
     let mut dir = env::current_dir().unwrap_or_default();
     loop {
@@ -121,16 +125,15 @@ fn cmd_add(args: &[String]) {
         return;
     }
 
-    // Try to download if not in local cache
     let _ = registry::download_package(&pkg_name, &"latest".to_string(), &registry_url);
 
-    let new_dep = PkgDep { name: pkg_name.clone(), version_req };
+    let new_dep = types::PkgDep { name: pkg_name.clone(), version_req };
     let mut all_deps = deps.clone();
     all_deps.push(new_dep);
 
     match resolver::resolve_and_cache(&all_deps, Path::new("."), &registry_url) {
         Ok((_resolved, _lock)) => {
-            deps.push(PkgDep { name: pkg_name.clone(), version_req: original_req });
+            deps.push(types::PkgDep { name: pkg_name.clone(), version_req: original_req });
             config::update_deps(Path::new("parth.das"), &deps).unwrap_or_else(|e| {
                 eprintln!("Error: {}", e); std::process::exit(1);
             });
@@ -153,7 +156,7 @@ fn cmd_remove(args: &[String]) {
         eprintln!("Error: no parth.das found"); std::process::exit(1);
     }
     let (_, _, deps) = config::read_config_basic(Path::new("parth.das"));
-    let new_deps: Vec<PkgDep> = deps.into_iter().filter(|d| d.name != *name).collect();
+    let new_deps: Vec<types::PkgDep> = deps.into_iter().filter(|d| d.name != *name).collect();
     config::update_deps(Path::new("parth.das"), &new_deps).unwrap_or_else(|e| {
         eprintln!("Error: {}", e); std::process::exit(1);
     });
@@ -163,7 +166,7 @@ fn cmd_remove(args: &[String]) {
     println!("✓ Removed '{}'", name);
 }
 
-fn collect_library_sources(deps: &[PkgDep]) -> (String, Vec<String>) {
+fn collect_library_sources(deps: &[types::PkgDep]) -> (String, Vec<String>) {
     let mut combined = String::new();
     let mut runtime_c_files: Vec<String> = Vec::new();
 
@@ -174,7 +177,6 @@ fn collect_library_sources(deps: &[PkgDep]) -> (String, Vec<String>) {
             continue;
         }
 
-        // Collect all .ajb files from lib/<name>/src/
         let src_dir = lib_dir.join("src");
         if src_dir.exists() {
             if let Ok(entries) = fs::read_dir(&src_dir) {
@@ -195,7 +197,6 @@ fn collect_library_sources(deps: &[PkgDep]) -> (String, Vec<String>) {
             }
         }
 
-        // Collect all .c files from lib/<name>/runtime/
         let runtime_dir = lib_dir.join("runtime");
         if runtime_dir.exists() {
             if let Ok(entries) = fs::read_dir(&runtime_dir) {
@@ -221,7 +222,6 @@ fn cmd_build() {
     });
     let registry_url = get_registry_url(&cfg);
 
-    // Resolve dependencies
     if !cfg.deps.is_empty() {
         match resolver::resolve_and_cache(&cfg.deps, Path::new("."), &registry_url) {
             Ok((_resolved, lock)) => {
@@ -234,7 +234,6 @@ fn cmd_build() {
         }
     }
 
-    // Build with profile
     let profile = cfg.profiles.first().cloned().unwrap_or_default();
     let opt_flag = if profile.opt_level > 0 { format!("-O{}", profile.opt_level) } else { String::new() };
 
@@ -243,10 +242,8 @@ fn cmd_build() {
     let runtime_src = root.join(&runtime);
     let runtime_src_str = runtime_src.to_string_lossy().to_string();
 
-    // Collect library sources and runtime files
     let (lib_ajb_sources, lib_runtime_c) = collect_library_sources(&cfg.deps);
 
-    // Combine user source with library sources
     let entry = "src/main.ajb";
     let mut user_src = fs::read_to_string(entry).unwrap_or_default();
     user_src.push('\n');
@@ -258,9 +255,9 @@ fn cmd_build() {
     });
 
     let status = Command::new("cargo")
-        .args(["run", "--bin", "ajeeb_compiler", "--manifest-path",
-               root.join("Cargo.toml").to_string_lossy().as_ref(),
+        .args(["run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
                "--", combined_path, "build/output.c"])
+        .current_dir(&root)
         .status().expect("Failed to run compiler");
     if !status.success() { eprintln!("❌ Compilation failed"); std::process::exit(1); }
 
@@ -268,7 +265,6 @@ fn cmd_build() {
 
     let bin_path = format!("{}{}", output_dir, name);
     let mut gcc_args: Vec<String> = vec![out_path.clone(), runtime_src_str.clone(), "-o".to_string(), bin_path.clone()];
-    // Add library runtime .c files and includes
     for dep in &cfg.deps {
         let lib_dir = Path::new("libs").join(&dep.name);
         let runtime_dir = lib_dir.join("runtime");
@@ -328,8 +324,6 @@ fn cmd_info() {
     }
 }
 
-// ── Phase 2: Search ────────────────────────────────────────────────
-
 fn cmd_search(args: &[String]) {
     let query = args.first().map(|s| s.as_str()).unwrap_or("");
 
@@ -351,8 +345,6 @@ fn cmd_search(args: &[String]) {
     }
     println!("{} packages found", results.len());
 }
-
-// ── Phase 2: Install ───────────────────────────────────────────────
 
 fn cmd_install(args: &[String]) {
     if args.is_empty() {
@@ -376,9 +368,8 @@ fn cmd_install(args: &[String]) {
     match registry::download_package(&name, &version, &registry_url) {
         Ok(path) => {
             println!("✓ Installed '{}@{}' to {}", name, version, path.display());
-            // Add to dependencies
             if Path::new("parth.das").exists() {
-                let deps = vec![PkgDep { name: name.clone(), version_req: format!("={}", version) }];
+                let deps = vec![types::PkgDep { name: name.clone(), version_req: format!("={}", version) }];
                 config::update_deps(Path::new("parth.das"), &deps).unwrap_or_else(|e| {
                     eprintln!("Warning: could not update parth.das: {}", e);
                 });
@@ -390,8 +381,6 @@ fn cmd_install(args: &[String]) {
         }
     }
 }
-
-// ── Phase 2: Publish (enhanced with remote) ────────────────────────
 
 fn cmd_publish(args: &[String]) {
     if !Path::new("parth.das").exists() {
@@ -421,7 +410,6 @@ fn cmd_publish(args: &[String]) {
         eprintln!("❌ Registry update failed: {}", e); std::process::exit(1);
     });
 
-    // Sign the package
     match registry::sign_package(&cfg.pkg_name, &cfg.pkg_version, "default") {
         Ok(sig) => println!("🔑 Signed (hash: {}...)", &sig.hash[..16]),
         Err(e) => eprintln!("Warning: signing failed: {}", e),
@@ -434,8 +422,6 @@ fn cmd_publish(args: &[String]) {
     }
 }
 
-// ── Phase 4: Sign ──────────────────────────────────────────────────
-
 fn cmd_sign(args: &[String]) {
     if args.len() < 1 {
         eprintln!("Usage: parth sign <package> [version] [signer]");
@@ -446,7 +432,6 @@ fn cmd_sign(args: &[String]) {
     let signer = args.get(2).cloned().unwrap_or_else(|| "default".to_string());
 
     let (pkg_name, pkg_version) = if name == "." {
-        // Sign current project
         if !Path::new("parth.das").exists() {
             eprintln!("Error: no parth.das found"); std::process::exit(1);
         }
@@ -477,8 +462,6 @@ fn cmd_verify(args: &[String]) {
     }
 }
 
-// ── Phase 4: Audit ─────────────────────────────────────────────────
-
 fn cmd_audit(_args: &[String]) {
     if !Path::new("parth.lock").exists() {
         eprintln!("No lock file found. Run `parth build` first.");
@@ -486,7 +469,6 @@ fn cmd_audit(_args: &[String]) {
     }
     let lock = resolver::read_lock(Path::new("."));
 
-    // Security scan
     let scan_issues = registry::security_scan(&lock);
     if !scan_issues.is_empty() {
         println!("🔒 Security issues:");
@@ -497,7 +479,6 @@ fn cmd_audit(_args: &[String]) {
         println!("🔒 No security issues found.");
     }
 
-    // Advisory audit
     let advisories = registry::audit_deps(&lock);
     if !advisories.is_empty() {
         println!("\n📋 Vulnerabilities found:");
@@ -508,7 +489,6 @@ fn cmd_audit(_args: &[String]) {
         println!("📋 No known vulnerabilities.");
     }
 
-    // Cache size
     if let Ok(size) = registry::get_cache_size() {
         if size > 0 {
             println!("\n💾 Cache size: {} bytes", size);
@@ -519,8 +499,6 @@ fn cmd_audit(_args: &[String]) {
         println!("✅ All checks passed.");
     }
 }
-
-// ── Phase 2: Cache management ──────────────────────────────────────
 
 fn cmd_cache(args: &[String]) {
     match args.first().map(|s| s.as_str()).unwrap_or("info") {
@@ -538,7 +516,6 @@ fn cmd_cache(args: &[String]) {
             }
         }
         "prune" => {
-            // Remove packages not in any lock file
             let lock = if Path::new("parth.lock").exists() {
                 resolver::read_lock(Path::new("."))
             } else {
@@ -567,11 +544,8 @@ fn cmd_cache(args: &[String]) {
     }
 }
 
-// ── Workspace ──────────────────────────────────────────────────────
-
 fn cmd_workspace(args: &[String]) {
     if args.is_empty() {
-        // List workspace members
         let cfg = config::read_config(Path::new("parth.das")).unwrap_or_default();
         if cfg.workspace.is_empty() {
             println!("No workspace members configured.");
@@ -593,7 +567,6 @@ fn cmd_workspace(args: &[String]) {
                 lines.push(String::new());
                 lines.push("[workspace]".to_string());
             }
-            // Find workspace section and add member
             let mut in_ws = false;
             for i in 0..lines.len() {
                 if lines[i].trim() == "[workspace]" { in_ws = true; continue; }
@@ -619,8 +592,6 @@ fn cmd_workspace(args: &[String]) {
     }
 }
 
-// ── Version ────────────────────────────────────────────────────────
-
 fn cmd_version() {
     println!("parth 0.1.0 — Ajeeb Package Manager");
     if let Ok(content) = fs::read_to_string("parth.das") {
@@ -639,8 +610,6 @@ fn cmd_version() {
     }
 }
 
-// ── Clean ──────────────────────────────────────────────────────────
-
 fn cmd_clean() {
     let patterns = ["build/output.c", "build/output2.c", "build/*.o"];
     for pattern in &patterns {
@@ -649,7 +618,6 @@ fn cmd_clean() {
             let _ = fs::remove_file(path);
         }
     }
-    // Also remove any .o files in build/
     if let Ok(entries) = fs::read_dir("build") {
         for entry in entries.flatten() {
             let p = entry.path();
@@ -660,8 +628,6 @@ fn cmd_clean() {
     }
     println!("🧹 Cleaned build directory");
 }
-
-// ── Help ───────────────────────────────────────────────────────────
 
 fn cmd_help() {
     println!("Ajeeb Package Manager — parth v0.1.0");
@@ -688,8 +654,6 @@ fn cmd_help() {
     println!("  cache <cmd>      Cache management");
     println!("  workspace <cmd>  Workspace management");
 }
-
-// ── Main ───────────────────────────────────────────────────────────
 
 fn main() {
     let args: Vec<String> = env::args().collect();

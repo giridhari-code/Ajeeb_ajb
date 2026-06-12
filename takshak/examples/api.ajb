@@ -1,0 +1,27 @@
+// takshak example — REST API with multiple endpoints
+
+function handleUsers(req: int, res: int): void {
+    takshakResJson(res, "{ \"users\": [\"Alice\", \"Bob\", \"Charlie\"] }");
+}
+
+function handleCreate(req: int, res: int): void {
+    let body: string = takshakReqBody(req);
+    takshakResStatus(res, 201);
+    takshakResJson(res, "{ \"created\": true, \"data\": " + body + " }");
+}
+
+function handleNotFound(req: int, res: int): void {
+    takshakResStatus(res, 404);
+    takshakResJson(res, "{ \"error\": \"Not Found\" }");
+}
+
+function main(): int {
+    takshakInit();
+    takshakGet("/api/users", handleUsers);
+    takshakPost("/api/users", handleCreate);
+    takshakPost("/api/echo", handleEcho);
+    takshakGet("/*", handleNotFound);
+    takshakPost("/*", handleNotFound);
+    takshakListen(8080);
+    return 0;
+}

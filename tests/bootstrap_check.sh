@@ -23,7 +23,7 @@ fail() {
 }
 
 step "Build Rust interpreter and compile compiler.ajb → output.c"
-cargo run --bin ajeeb_compiler compiler/compiler.ajb build/output.c 2>/dev/null
+cargo run --bin ajeeb_compiler compiler/compiler.ajb compiler/compiler.ajb build/output.c 2>/dev/null
 if [ ! -s build/output.c ]; then
   fail "output.c is empty or missing"
 fi

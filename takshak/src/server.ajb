@@ -1,0 +1,18 @@
+// takshak server module
+// Ajeeb wrapper functions that delegate to C implementation.
+
+function takshakInit(): void {
+    _takshak_init();
+}
+
+function takshakGet(path: string, handler: int): void {
+    _takshak_get(path, handler);
+}
+
+function takshakPost(path: string, handler: int): void {
+    _takshak_post(path, handler);
+}
+
+function takshakListen(port: int): void {
+    _takshak_listen(port);
+}
