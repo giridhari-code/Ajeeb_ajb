@@ -67,10 +67,16 @@ fn main() -> io::Result<()> {
     // 1. LEX
     let mut lexer = Lexer::new(&contents);
     let mut tokens = Vec::new();
+    let mut token_lines = Vec::new();
+    let mut token_cols = Vec::new();
     loop {
-        match lexer.next_token() {
-            Ok(Token::Eof) => break,
-            Ok(tok) => tokens.push(tok),
+        match lexer.next_token_spanned() {
+            Ok((Token::Eof, _, _)) => break,
+            Ok((tok, line, col)) => {
+                tokens.push(tok);
+                token_lines.push(line);
+                token_cols.push(col);
+            }
             Err(e) => {
                 println!("{}\n😡 Lexing error! Tokenize karte waqt problem aayi.", e);
                 return Ok(());
@@ -81,7 +87,7 @@ fn main() -> io::Result<()> {
     println!("✓ Lexer: {} tokens mil gaye", tokens.len());
 
     // 2. PARSE
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::with_positions(tokens, token_lines, token_cols);
     let ast = match parser.parse_program() {
         Ok(stmts) => stmts,
         Err(e) => {

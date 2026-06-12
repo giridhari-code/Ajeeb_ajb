@@ -5,6 +5,8 @@ use crate::token::Token;
 
 pub struct Parser {
     tokens: Vec<Token>,
+    token_lines: Vec<usize>,
+    token_cols: Vec<usize>,
     pos: usize,
     var_types: HashMap<String, TypeAnnot>,
     current_class: Option<String>,
@@ -12,7 +14,29 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Parser { tokens, pos: 0, var_types: HashMap::new(), current_class: None }
+        let token_lines = vec![0; tokens.len()];
+        let token_cols = vec![0; tokens.len()];
+        Parser { tokens, token_lines, token_cols, pos: 0, var_types: HashMap::new(), current_class: None }
+    }
+
+    pub fn with_positions(tokens: Vec<Token>, lines: Vec<usize>, cols: Vec<usize>) -> Self {
+        Parser { tokens, token_lines: lines, token_cols: cols, pos: 0, var_types: HashMap::new(), current_class: None }
+    }
+
+    fn line(&self) -> usize {
+        self.token_lines.get(self.pos.checked_sub(1).unwrap_or(0)).copied().unwrap_or(0)
+    }
+
+    fn col(&self) -> usize {
+        self.token_cols.get(self.pos.checked_sub(1).unwrap_or(0)).copied().unwrap_or(0)
+    }
+
+    fn err_at(&self, msg: &str, line: usize, col: usize) -> CompileError {
+        CompileError::new(line, col, msg.to_string())
+    }
+
+    fn err(&self, msg: impl Into<String>) -> CompileError {
+        CompileError::new(self.line(), self.col(), msg.into())
     }
 
     fn peek(&self) -> &Token {
@@ -28,11 +52,11 @@ impl Parser {
     fn expect(&mut self, expected: &Token) -> Result<Token, CompileError> {
         let t = self.advance();
         if std::mem::discriminant(&t) != std::mem::discriminant(expected) {
-            return Err(CompileError::new(0, 0, format!("'{}' expected but kuch aur mila. Check karo.", self.token_debug(expected))));
+            return Err(self.err(&format!("'{}' expected but kuch aur mila. Check karo.", self.token_debug(expected))));
         }
         match expected {
             Token::Identifier(_) => {
-                if let Token::Identifier(_) = &t { Ok(t) } else { Err(CompileError::new(0, 0, "Identifier expected tha.".to_string())) }
+                if let Token::Identifier(_) = &t { Ok(t) } else { Err(self.err("Identifier expected tha.")) }
             }
             _ => Ok(t),
         }
@@ -80,7 +104,7 @@ impl Parser {
                 Token::Bool => TypeAnnot::Bool,
                 Token::Void => TypeAnnot::Void,
                 Token::Identifier(name) => TypeAnnot::Class(name),
-                other => return Err(CompileError::new(0, 0, format!("Unknown type {:?}. Sirf int, string, bool, void aur class names allowed hain.", other))),
+                other => return Err(self.err(&format!("Unknown type {:?}. Sirf int, string, bool, void aur class names allowed hain.", other))),
             };
             if self.peek() == &Token::LBracket {
                 self.advance();
@@ -114,7 +138,7 @@ impl Parser {
             Token::Break => { self.advance(); self.expect(&Token::Semicolon)?; Ok(Stmt::Break) }
             Token::Continue => { self.advance(); self.expect(&Token::Semicolon)?; Ok(Stmt::Continue) }
             Token::Class => self.parse_class_def(),
-            Token::RBrace => Err(CompileError::new(0, 0, "Extra '}' mil gaya. Kahi closing brace zyada hai.".to_string())),
+            Token::RBrace => Err(self.err("Extra '}' mil gaya. Kahi closing brace zyada hai.")),
             _ => self.parse_expr_stmt(),
         }
     }
@@ -123,7 +147,7 @@ impl Parser {
         self.advance();
         let name = match self.advance() {
             Token::Identifier(n) => n,
-            _ => return Err(CompileError::new(0, 0, "'let' ke baad variable ka naam chahiye.".to_string())),
+            _ => return Err(self.err("'let' ke baad variable ka naam chahiye.")),
         };
         let type_ann = self.parse_type()?;
         if let Some(ref t) = type_ann {
@@ -139,7 +163,7 @@ impl Parser {
         self.advance();
         let name = match self.advance() {
             Token::Identifier(n) => n,
-            _ => return Err(CompileError::new(0, 0, "'const' ke baad variable ka naam chahiye.".to_string())),
+            _ => return Err(self.err("'const' ke baad variable ka naam chahiye.")),
         };
         let type_ann = self.parse_type()?;
         if let Some(ref t) = type_ann {
@@ -224,18 +248,18 @@ impl Parser {
         self.advance();
         let name = match self.advance() {
             Token::Identifier(n) => n,
-            _ => return Err(CompileError::new(0, 0, "'function' ke baad function ka naam chahiye.".to_string())),
+            _ => return Err(self.err("'function' ke baad function ka naam chahiye.")),
         };
         self.expect(&Token::LParen)?;
         let mut params = Vec::new();
         while self.peek() != &Token::RParen {
             let pname = match self.advance() {
                 Token::Identifier(n) => n,
-                _ => return Err(CompileError::new(0, 0, "Function parameter ka naam chahiye.".to_string())),
+                _ => return Err(self.err( "Function parameter ka naam chahiye.")),
             };
             let ptype = match self.parse_type()? {
                 Some(t) => t,
-                None => return Err(CompileError::new(0, 0, "Parameter ka type batana zaroori hai (jaise x: int).".to_string())),
+                None => return Err(self.err( "Parameter ka type batana zaroori hai (jaise x: int).")),
             };
             params.push((pname, ptype));
             if self.peek() == &Token::Comma { self.advance(); }
@@ -255,7 +279,7 @@ impl Parser {
         self.advance();
         let name = match self.advance() {
             Token::Identifier(n) => n,
-            _ => return Err(CompileError::new(0, 0, "'class' ke baad naam chahiye.".to_string())),
+            _ => return Err(self.err( "'class' ke baad naam chahiye.")),
         };
         self.expect(&Token::LBrace)?;
         let mut fields = Vec::new();
@@ -267,10 +291,10 @@ impl Parser {
             } else {
                 let fname = match self.advance() {
                     Token::Identifier(n) => n,
-                    _ => return Err(CompileError::new(0, 0, "Field ka naam chahiye.".to_string())),
+                    _ => return Err(self.err( "Field ka naam chahiye.")),
                 };
                 if self.parse_type()?.is_none() {
-                    return Err(CompileError::new(0, 0, "Field ka type batana zaroori hai.".to_string()));
+                    return Err(self.err( "Field ka type batana zaroori hai."));
                 }
                 self.expect(&Token::Semicolon)?;
                 fields.push(ClassField { name: fname });
@@ -324,7 +348,11 @@ impl Parser {
                     let value = self.parse_assignment()?;
                     Ok(Expr::FieldAssign { obj, field, value: Box::new(value) })
                 }
-                _ => Err(CompileError::new(0, 0, "Assignment ka left side variable ya field hona chahiye.".to_string())),
+                Expr::Index { obj, index } => {
+                    let value = self.parse_assignment()?;
+                    Ok(Expr::IndexAssign { obj, index, value: Box::new(value) })
+                }
+                _ => Err(self.err( "Assignment ka left side variable, field, ya index hona chahiye.")),
             }
         } else {
             Ok(expr)
@@ -419,11 +447,7 @@ impl Parser {
         } else if self.peek() == &Token::Not {
             self.advance();
             let expr = self.parse_unary()?;
-            Ok(Expr::Binary {
-                left: Box::new(Expr::Number(0)),
-                op: BinOp::Eq,
-                right: Box::new(expr),
-            })
+            Ok(Expr::UnaryNot(Box::new(expr)))
         } else {
             self.parse_primary()
         }
@@ -440,7 +464,7 @@ impl Parser {
                 self.advance();
                 let class_name = match self.advance() {
                     Token::Identifier(n) => n,
-                    _ => return Err(CompileError::new(0, 0, "'new' ke baad class ka naam chahiye.".to_string())),
+                    _ => return Err(self.err( "'new' ke baad class ka naam chahiye.")),
                 };
                 Expr::New { class_name }
             }
@@ -465,14 +489,14 @@ impl Parser {
                 self.advance();
                 Expr::Ident(name)
             }
-            _ => return Err(CompileError::new(0, 0, format!("Unexpected token. Expecting expression, mila {:?}.", self.peek()))),
+            _ => return Err(self.err( format!("Unexpected token. Expecting expression, mila {:?}.", self.peek()))),
         };
         loop {
             match self.peek() {
                 Token::LParen => {
                     let name = match &expr {
                         Expr::Ident(n) => n.clone(),
-                        _ => return Err(CompileError::new(0, 0, "Sirf identifier ko call kar sakte ho.".to_string())),
+                        _ => return Err(self.err( "Sirf identifier ko call kar sakte ho.")),
                     };
                     self.advance();
                     let mut args = Vec::new();
@@ -499,7 +523,7 @@ impl Parser {
                     };
                     let field = match self.advance() {
                         Token::Identifier(n) => n,
-                        _ => return Err(CompileError::new(0, 0, "'.' ke baad field/method ka naam chahiye.".to_string())),
+                        _ => return Err(self.err( "'.' ke baad field/method ka naam chahiye.")),
                     };
                     if self.peek() == &Token::LParen {
                         self.advance();

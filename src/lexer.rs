@@ -106,6 +106,11 @@ impl Lexer {
     }
 
     pub fn next_token(&mut self) -> Result<Token, CompileError> {
+        let (tok, _line, _col) = self.next_token_spanned()?;
+        Ok(tok)
+    }
+
+    pub fn next_token_spanned(&mut self) -> Result<(Token, usize, usize), CompileError> {
         loop {
             self.skip_whitespace();
             if self.peek() == Some('/') {
@@ -125,52 +130,52 @@ impl Lexer {
         let start_col = self.col;
 
         match self.advance() {
-            None => Ok(Token::Eof),
+            None => Ok((Token::Eof, start_line, start_col)),
             Some(c) => match c {
-                '+' => Ok(Token::Plus),
+                '+' => Ok((Token::Plus, start_line, start_col)),
                 '-' => {
-                    if self.peek() == Some('>') { self.advance(); Ok(Token::Arrow) }
-                    else { Ok(Token::Minus) }
+                    if self.peek() == Some('>') { self.advance(); Ok((Token::Arrow, start_line, start_col)) }
+                    else { Ok((Token::Minus, start_line, start_col)) }
                 }
-                '*' => Ok(Token::Star),
-                '/' => Ok(Token::Slash),
+                '*' => Ok((Token::Star, start_line, start_col)),
+                '/' => Ok((Token::Slash, start_line, start_col)),
                 '=' => {
-                    if self.peek() == Some('=') { self.advance(); Ok(Token::Eq) }
-                    else { Ok(Token::Assign) }
+                    if self.peek() == Some('=') { self.advance(); Ok((Token::Eq, start_line, start_col)) }
+                    else { Ok((Token::Assign, start_line, start_col)) }
                 }
                 '!' => {
-                    if self.peek() == Some('=') { self.advance(); Ok(Token::Neq) }
-                    else { Ok(Token::Not) }
+                    if self.peek() == Some('=') { self.advance(); Ok((Token::Neq, start_line, start_col)) }
+                    else { Ok((Token::Not, start_line, start_col)) }
                 }
                 '&' => {
-                    if self.peek() == Some('&') { self.advance(); Ok(Token::And) }
+                    if self.peek() == Some('&') { self.advance(); Ok((Token::And, start_line, start_col)) }
                     else { Err(CompileError::new(start_line, start_col, "Akela '&' kaam nahi karega. '&&' use karo.".to_string())) }
                 }
                 '|' => {
-                    if self.peek() == Some('|') { self.advance(); Ok(Token::Or) }
+                    if self.peek() == Some('|') { self.advance(); Ok((Token::Or, start_line, start_col)) }
                     else { Err(CompileError::new(start_line, start_col, "Akela '|' kaam nahi karega. '||' use karo.".to_string())) }
                 }
                 '<' => {
-                    if self.peek() == Some('=') { self.advance(); Ok(Token::Le) }
-                    else { Ok(Token::Lt) }
+                    if self.peek() == Some('=') { self.advance(); Ok((Token::Le, start_line, start_col)) }
+                    else { Ok((Token::Lt, start_line, start_col)) }
                 }
                 '>' => {
-                    if self.peek() == Some('=') { self.advance(); Ok(Token::Ge) }
-                    else { Ok(Token::Gt) }
+                    if self.peek() == Some('=') { self.advance(); Ok((Token::Ge, start_line, start_col)) }
+                    else { Ok((Token::Gt, start_line, start_col)) }
                 }
-                ';' => Ok(Token::Semicolon),
-                ':' => Ok(Token::Colon),
-                ',' => Ok(Token::Comma),
-                '(' => Ok(Token::LParen),
-                ')' => Ok(Token::RParen),
-                '{' => Ok(Token::LBrace),
-                '}' => Ok(Token::RBrace),
-                '[' => Ok(Token::LBracket),
-                ']' => Ok(Token::RBracket),
-                '.' => Ok(Token::Dot),
-                '"' => self.read_string(),
-                c if c.is_ascii_digit() => self.read_number(c),
-                c if c.is_alphabetic() || c == '_' => Ok(self.read_identifier(c)),
+                ';' => Ok((Token::Semicolon, start_line, start_col)),
+                ':' => Ok((Token::Colon, start_line, start_col)),
+                ',' => Ok((Token::Comma, start_line, start_col)),
+                '(' => Ok((Token::LParen, start_line, start_col)),
+                ')' => Ok((Token::RParen, start_line, start_col)),
+                '{' => Ok((Token::LBrace, start_line, start_col)),
+                '}' => Ok((Token::RBrace, start_line, start_col)),
+                '[' => Ok((Token::LBracket, start_line, start_col)),
+                ']' => Ok((Token::RBracket, start_line, start_col)),
+                '.' => Ok((Token::Dot, start_line, start_col)),
+                '"' => self.read_string().map(|t| (t, start_line, start_col)),
+                c if c.is_ascii_digit() => self.read_number(c).map(|t| (t, start_line, start_col)),
+                c if c.is_alphabetic() || c == '_' => Ok((self.read_identifier(c), start_line, start_col)),
                 _ => Err(CompileError::new(start_line, start_col, format!("Unexpected character '{}'. Yeh kya hai bhai?", c))),
             }
         }
