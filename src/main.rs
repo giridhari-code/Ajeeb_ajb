@@ -5,6 +5,7 @@ mod eval;
 mod interop;
 mod lexer;
 mod parser;
+mod semantic;
 mod token;
 
 use das_parser::DasConfig;
@@ -12,6 +13,7 @@ use eval::Evaluator;
 use interop::LanguageBridge;
 use lexer::Lexer;
 use parser::Parser;
+use semantic::SemanticAnalyzer;
 use std::env;
 use std::fs::File;
 use std::io::{self, Read};
@@ -103,7 +105,17 @@ fn main() -> io::Result<()> {
 
     println!("✓ Parser: {} statements parse ho gaye", ast.len());
 
-    // 3. DIRECT EXECUTION
+    // 3. SEMANTIC ANALYSIS
+    let mut analyzer = SemanticAnalyzer::new();
+    analyzer.analyze(&ast);
+    if !analyzer.errors.is_empty() {
+        for err in &analyzer.errors {
+            println!("{}", err);
+        }
+        println!("\n😤 Semantic analysis failed! Code mein type ya scope ki problem hai.");
+    }
+
+    // 4. DIRECT EXECUTION
     println!("\n🚀 --- Ajeeb Direct Run Started ---");
     let mut evaluator = Evaluator::new();
     // Include program name at index 0 to match C runtime's argv convention

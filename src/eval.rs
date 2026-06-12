@@ -75,6 +75,7 @@ impl Evaluator {
                     name,
                     fields,
                     methods,
+                    ..
                 } => {
                     self.class_fields.insert(name.clone(), fields.clone());
                     for m in methods {
@@ -83,6 +84,7 @@ impl Evaluator {
                             params,
                             body,
                             return_type,
+                            ..
                         } = m.clone()
                         {
                             let mangled = format!("{}_{}", name, mname);
@@ -95,6 +97,7 @@ impl Evaluator {
                     params,
                     body,
                     return_type,
+                    ..
                 } => {
                     self.functions.insert(
                         name.clone(),
@@ -122,8 +125,8 @@ impl Evaluator {
                 self.variables.insert(name.clone(), val);
                 RuntimeValue::Void
             }
-            Stmt::Expr(expr) => self.eval_expr(expr),
-            Stmt::Return { value } => {
+            Stmt::Expr(expr, ..) => self.eval_expr(expr),
+            Stmt::Return { value, .. } => {
                 let val = if let Some(expr) = value {
                     self.eval_expr(expr)
                 } else {
@@ -135,6 +138,7 @@ impl Evaluator {
                 condition,
                 then_block,
                 else_block,
+                ..
             } => {
                 if is_truthy(&self.eval_expr(condition)) {
                     for s in then_block {
@@ -158,6 +162,7 @@ impl Evaluator {
                 condition,
                 update,
                 body,
+                ..
             } => {
                 self.exec_stmt(init);
                 let max_iter: u64 = std::env::var("AJEEB_MAX_ITER")
@@ -184,7 +189,7 @@ impl Evaluator {
                 }
                 RuntimeValue::Void
             }
-            Stmt::While { condition, body } => {
+            Stmt::While { condition, body, .. } => {
                 let max_iter: u64 = std::env::var("AJEEB_MAX_ITER")
                     .ok()
                     .and_then(|v| v.parse().ok())
@@ -208,22 +213,22 @@ impl Evaluator {
                 }
                 RuntimeValue::Void
             }
-            Stmt::Break => RuntimeValue::Break,
-            Stmt::Continue => RuntimeValue::Continue,
+            Stmt::Break { .. } => RuntimeValue::Break,
+            Stmt::Continue { .. } => RuntimeValue::Continue,
             Stmt::FnDef { .. } | Stmt::Class { .. } => RuntimeValue::Void,
         }
     }
 
     fn eval_expr(&mut self, expr: &Expr) -> RuntimeValue {
         match expr {
-            Expr::Number(n) => RuntimeValue::Int(*n),
-            Expr::StringLit(s) => RuntimeValue::String(Rc::new(RefCell::new(s.clone()))),
-            Expr::Bool(b) => RuntimeValue::Bool(*b),
-            Expr::Ident(id) => self.variables.get(id).cloned().unwrap_or_else(|| {
+            Expr::Number(n, ..) => RuntimeValue::Int(*n),
+            Expr::StringLit(s, ..) => RuntimeValue::String(Rc::new(RefCell::new(s.clone()))),
+            Expr::Bool(b, ..) => RuntimeValue::Bool(*b),
+            Expr::Ident(id, ..) => self.variables.get(id).cloned().unwrap_or_else(|| {
                 eprintln!("[ERROR] Unknown variable '{}' — treating as 0", id);
                 RuntimeValue::Int(0)
             }),
-            Expr::Binary { left, op, right } => {
+            Expr::Binary { left, op, right, .. } => {
                 let l = self.eval_expr(left);
                 let r = self.eval_expr(right);
                 use BinOp::*;
@@ -279,13 +284,13 @@ impl Evaluator {
                     _ => RuntimeValue::Int(0),
                 }
             }
-            Expr::Assign { name, value } => {
+            Expr::Assign { name, value, .. } => {
                 let val = self.eval_expr(value);
                 self.variables.insert(name.clone(), val.clone());
                 val
             }
-            Expr::FnCall { name, args } => self.exec_fn_call(name, args),
-            Expr::New { class_name } => {
+            Expr::FnCall { name, args, .. } => self.exec_fn_call(name, args),
+            Expr::New { class_name, .. } => {
                 let mut fields = HashMap::new();
                 if let Some(field_list) = self.class_fields.get(class_name) {
                     for f in field_list {
@@ -297,18 +302,18 @@ impl Evaluator {
                     fields,
                 }
             }
-            Expr::Field { obj, field } => {
+            Expr::Field { obj, field, .. } => {
                 if let RuntimeValue::ClassInstance { fields, .. } = self.eval_expr(obj) {
                     fields.get(field).cloned().unwrap_or(RuntimeValue::Int(0))
                 } else {
                     RuntimeValue::Int(0)
                 }
             }
-            Expr::FieldAssign { obj, field, value } => {
+            Expr::FieldAssign { obj, field, value, .. } => {
                 let val = self.eval_expr(value);
                 // Handle obj.field = value through index chains like arr[i].field = val
                 match obj.as_ref() {
-                    Expr::Ident(var) => {
+                    Expr::Ident(var, ..) => {
                         if let RuntimeValue::ClassInstance {
                             class_name,
                             mut fields,
@@ -325,6 +330,7 @@ impl Evaluator {
                     Expr::Index {
                         obj: inner_obj,
                         index,
+                        ..
                     } => {
                         // arr[i].field = val — evaluate array, mutate element, store back
                         let idx_val = self.eval_expr(index);
@@ -345,7 +351,7 @@ impl Evaluator {
                                 }
                             }
                         }
-                        if let Expr::Ident(arr_name) = inner_obj.as_ref() {
+                        if let Expr::Ident(arr_name, ..) = inner_obj.as_ref() {
                             self.variables.insert(arr_name.clone(), arr_val.clone());
                         }
                         val
@@ -353,16 +359,16 @@ impl Evaluator {
                     _ => RuntimeValue::Int(0),
                 }
             }
-            Expr::UnaryNot(inner) => {
+            Expr::UnaryNot(inner, ..) => {
                 let val = self.eval_expr(inner);
                 RuntimeValue::Bool(!is_truthy(&val))
             }
-            Expr::Group(inner) => self.eval_expr(inner),
-            Expr::ArrayLit(elems) => {
+            Expr::Group(inner, ..) => self.eval_expr(inner),
+            Expr::ArrayLit(elems, ..) => {
                 let vals: Vec<RuntimeValue> = elems.iter().map(|e| self.eval_expr(e)).collect();
                 RuntimeValue::Array(vals)
             }
-            Expr::Index { obj, index } => {
+            Expr::Index { obj, index, .. } => {
                 let obj_val = self.eval_expr(obj);
                 let idx_val = self.eval_expr(index);
                 match (obj_val, idx_val) {
@@ -386,7 +392,7 @@ impl Evaluator {
                     _ => RuntimeValue::Int(0),
                 }
             }
-            Expr::IndexAssign { obj, index, value } => {
+            Expr::IndexAssign { obj, index, value, .. } => {
                 let idx_val = self.eval_expr(index);
                 let val_val = self.eval_expr(value);
                 let mut arr_val = self.eval_expr(obj);
@@ -398,7 +404,7 @@ impl Evaluator {
                         }
                     }
                 }
-                if let Expr::Ident(name) = obj.as_ref() {
+                if let Expr::Ident(name, ..) = obj.as_ref() {
                     self.variables.insert(name.clone(), arr_val.clone());
                 }
                 val_val

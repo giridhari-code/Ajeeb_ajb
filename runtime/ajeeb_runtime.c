@@ -148,36 +148,37 @@ intptr_t println(intptr_t s) {
     return 0;
 }
 
-static char itoa_buf[32];
+// Unique string allocation — no circular pool, no aliasing.
+// Memory is allocated via malloc and reclaimed by OS at process exit.
+// This eliminates all string corruption from buffer reuse.
+static char* alloc_str(const char* src, size_t len) {
+    if (len == 0) return strdup("");
+    char* out = (char*)malloc(len + 1);
+    if (!out) return strdup("");
+    memcpy(out, src, len);
+    out[len] = '\0';
+    return out;
+}
 
 intptr_t itoa(intptr_t n) {
-    snprintf(itoa_buf, sizeof(itoa_buf), "%ld", (long)n);
-    return (intptr_t)itoa_buf;
+    char tmp[32];
+    int len = snprintf(tmp, sizeof(tmp), "%ld", (long)n);
+    return (intptr_t)alloc_str(tmp, len);
 }
 
 intptr_t strcmp_ajeeb(intptr_t a, intptr_t b) {
     return (intptr_t)strcmp((const char*)a, (const char*)b);
 }
 
-#define STR_POOL_SLOTS 256
-#define STR_POOL_SIZE 4096
-
-static char str_pool[STR_POOL_SLOTS][STR_POOL_SIZE];
-static int str_pool_idx = 0;
-
 intptr_t str_concat(intptr_t a, intptr_t b) {
     const char* sa = (const char*)a;
     const char* sb = (const char*)b;
     size_t la = strlen(sa), lb = strlen(sb);
-    int slot = str_pool_idx;
-    str_pool_idx = (str_pool_idx + 1) % STR_POOL_SLOTS;
-    char* out = str_pool[slot];
     size_t total = la + lb;
-    if (total >= STR_POOL_SIZE - 1) total = STR_POOL_SIZE - 1;
-    size_t copy_a = la < total ? la : total;
-    memcpy(out, sa, copy_a);
-    size_t copy_b = total - copy_a;
-    if (copy_b > 0) memcpy(out + copy_a, sb, copy_b);
+    char* out = (char*)malloc(total + 1);
+    if (!out) return (intptr_t)"";
+    memcpy(out, sa, la);
+    memcpy(out + la, sb, lb);
     out[total] = '\0';
     return (intptr_t)out;
 }
@@ -190,14 +191,7 @@ intptr_t substring(intptr_t s, intptr_t start, intptr_t end) {
     if (st > slen) st = slen;
     if (en > slen) en = slen;
     if (en < st) en = st;
-    size_t len = en - st;
-    int slot = str_pool_idx;
-    str_pool_idx = (str_pool_idx + 1) % STR_POOL_SLOTS;
-    char* out = str_pool[slot];
-    if (len >= STR_POOL_SIZE) len = STR_POOL_SIZE - 1;
-    memcpy(out, src + st, len);
-    out[len] = '\0';
-    return (intptr_t)out;
+    return (intptr_t)alloc_str(src + st, en - st);
 }
 
 intptr_t indexOf(intptr_t s, intptr_t search) {
@@ -216,33 +210,27 @@ intptr_t contains(intptr_t s, intptr_t search) {
 
 intptr_t toUpperCase(intptr_t s) {
     const char* src = (const char*)s;
-    int slot = str_pool_idx;
-    str_pool_idx = (str_pool_idx + 1) % STR_POOL_SLOTS;
-    char* out = str_pool[slot];
-    size_t i = 0;
-    while (src[i] && i < STR_POOL_SIZE - 1) {
+    size_t slen = strlen(src);
+    char* out = (char*)malloc(slen + 1);
+    if (!out) return (intptr_t)"";
+    for (size_t i = 0; i < slen; i++) {
         char c = src[i];
-        if (c >= 'a' && c <= 'z') out[i] = c - 32;
-        else out[i] = c;
-        i++;
+        out[i] = (c >= 'a' && c <= 'z') ? c - 32 : c;
     }
-    out[i] = '\0';
+    out[slen] = '\0';
     return (intptr_t)out;
 }
 
 intptr_t toLowerCase(intptr_t s) {
     const char* src = (const char*)s;
-    int slot = str_pool_idx;
-    str_pool_idx = (str_pool_idx + 1) % STR_POOL_SLOTS;
-    char* out = str_pool[slot];
-    size_t i = 0;
-    while (src[i] && i < STR_POOL_SIZE - 1) {
+    size_t slen = strlen(src);
+    char* out = (char*)malloc(slen + 1);
+    if (!out) return (intptr_t)"";
+    for (size_t i = 0; i < slen; i++) {
         char c = src[i];
-        if (c >= 'A' && c <= 'Z') out[i] = c + 32;
-        else out[i] = c;
-        i++;
+        out[i] = (c >= 'A' && c <= 'Z') ? c + 32 : c;
     }
-    out[i] = '\0';
+    out[slen] = '\0';
     return (intptr_t)out;
 }
 
@@ -252,14 +240,7 @@ intptr_t trim(intptr_t s) {
     if (*src == '\0') return (intptr_t)"";
     const char* end = src + strlen(src) - 1;
     while (end > src && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) end--;
-    size_t len = end - src + 1;
-    int slot = str_pool_idx;
-    str_pool_idx = (str_pool_idx + 1) % STR_POOL_SLOTS;
-    char* out = str_pool[slot];
-    if (len >= STR_POOL_SIZE) len = STR_POOL_SIZE - 1;
-    memcpy(out, src, len);
-    out[len] = '\0';
-    return (intptr_t)out;
+    return (intptr_t)alloc_str(src, end - src + 1);
 }
 
 intptr_t startsWith(intptr_t s, intptr_t prefix) {
@@ -282,16 +263,16 @@ intptr_t replace(intptr_t s, intptr_t from, intptr_t to) {
     const char* src = (const char*)s;
     const char* f = (const char*)from;
     const char* t = (const char*)to;
-    int slot = str_pool_idx;
-    str_pool_idx = (str_pool_idx + 1) % STR_POOL_SLOTS;
-    char* out = str_pool[slot];
-    size_t out_pos = 0;
     size_t flen = strlen(f);
     size_t tlen = strlen(t);
-    while (*src && out_pos < STR_POOL_SIZE - 1) {
+    size_t capacity = strlen(src) * 2 + 1;
+    char* out = (char*)malloc(capacity);
+    if (!out) return (intptr_t)"";
+    size_t out_pos = 0;
+    while (*src && out_pos < capacity - 1) {
         if (strncmp(src, f, flen) == 0) {
             size_t copy = tlen;
-            if (out_pos + copy >= STR_POOL_SIZE - 1) copy = STR_POOL_SIZE - 1 - out_pos;
+            if (out_pos + copy >= capacity - 1) copy = capacity - 1 - out_pos;
             memcpy(out + out_pos, t, copy);
             out_pos += copy;
             src += flen;

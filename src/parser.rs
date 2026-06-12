@@ -91,6 +91,26 @@ impl Parser {
         }
     }
 
+    fn expr_pos(e: &Expr) -> (usize, usize) {
+        match e {
+            Expr::Number(_, l, c)
+            | Expr::StringLit(_, l, c)
+            | Expr::Bool(_, l, c)
+            | Expr::Ident(_, l, c)
+            | Expr::ArrayLit(_, l, c)
+            | Expr::UnaryNot(_, l, c)
+            | Expr::Group(_, l, c) => (*l, *c),
+            Expr::Binary { line, col, .. }
+            | Expr::Assign { line, col, .. }
+            | Expr::IndexAssign { line, col, .. }
+            | Expr::FnCall { line, col, .. }
+            | Expr::New { line, col, .. }
+            | Expr::Index { line, col, .. }
+            | Expr::Field { line, col, .. }
+            | Expr::FieldAssign { line, col, .. } => (*line, *col),
+        }
+    }
+
     fn token_debug(&self, t: &Token) -> &'static str {
         match t {
             Token::Let => "let",
@@ -190,13 +210,17 @@ impl Parser {
             Token::Return => self.parse_return_stmt(),
             Token::Break => {
                 self.advance();
+                let line = self.line();
+                let col = self.col();
                 self.expect(&Token::Semicolon)?;
-                Ok(Stmt::Break)
+                Ok(Stmt::Break { line, col })
             }
             Token::Continue => {
                 self.advance();
+                let line = self.line();
+                let col = self.col();
                 self.expect(&Token::Semicolon)?;
-                Ok(Stmt::Continue)
+                Ok(Stmt::Continue { line, col })
             }
             Token::Class => self.parse_class_def(),
             Token::RBrace => Err(self.err("Extra '}' mil gaya. Kahi closing brace zyada hai.")),
@@ -206,6 +230,8 @@ impl Parser {
 
     fn parse_let_decl(&mut self) -> Result<Stmt, CompileError> {
         self.advance();
+        let line = self.line();
+        let col = self.col();
         let name = match self.advance() {
             Token::Identifier(n) => n,
             _ => return Err(self.err("'let' ke baad variable ka naam chahiye.")),
@@ -217,11 +243,13 @@ impl Parser {
         self.expect(&Token::Assign)?;
         let value = self.parse_expression()?;
         self.expect(&Token::Semicolon)?;
-        Ok(Stmt::Let { name, value })
+        Ok(Stmt::Let { name, type_ann, value, line, col })
     }
 
     fn parse_const_decl(&mut self) -> Result<Stmt, CompileError> {
         self.advance();
+        let line = self.line();
+        let col = self.col();
         let name = match self.advance() {
             Token::Identifier(n) => n,
             _ => return Err(self.err("'const' ke baad variable ka naam chahiye.")),
@@ -233,11 +261,13 @@ impl Parser {
         self.expect(&Token::Assign)?;
         let value = self.parse_expression()?;
         self.expect(&Token::Semicolon)?;
-        Ok(Stmt::Const { name, value })
+        Ok(Stmt::Const { name, type_ann, value, line, col })
     }
 
     fn parse_if_stmt(&mut self) -> Result<Stmt, CompileError> {
         self.advance();
+        let line = self.line();
+        let col = self.col();
         self.expect(&Token::LParen)?;
         let condition = self.parse_expression()?;
         self.expect(&Token::RParen)?;
@@ -261,35 +291,41 @@ impl Parser {
             condition,
             then_block,
             else_block,
+            line,
+            col,
         })
     }
 
     fn parse_while_stmt(&mut self) -> Result<Stmt, CompileError> {
         self.advance();
+        let line = self.line();
+        let col = self.col();
         self.expect(&Token::LParen)?;
         let condition = self.parse_expression()?;
         self.expect(&Token::RParen)?;
         self.expect(&Token::LBrace)?;
         let body = self.parse_block()?;
         self.expect(&Token::RBrace)?;
-        Ok(Stmt::While { condition, body })
+        Ok(Stmt::While { condition, body, line, col })
     }
 
     fn parse_for_stmt(&mut self) -> Result<Stmt, CompileError> {
         self.advance();
+        let line = self.line();
+        let col = self.col();
         self.expect(&Token::LParen)?;
         // init
         let init = if self.peek() == &Token::Let {
             self.parse_let_decl()?
         } else if self.peek() == &Token::Semicolon {
             self.advance();
-            Stmt::Expr(Expr::Number(0))
+            Stmt::Expr(Expr::Number(0, 0, 0), 0, 0)
         } else {
             self.parse_expr_stmt()?
         };
         // condition
         let condition = if self.peek() == &Token::Semicolon {
-            Expr::Number(1)
+            Expr::Number(1, 0, 0)
         } else {
             let e = self.parse_expression()?;
             self.expect(&Token::Semicolon)?;
@@ -297,10 +333,10 @@ impl Parser {
         };
         // update
         let update = if self.peek() == &Token::RParen {
-            Stmt::Expr(Expr::Number(0))
+            Stmt::Expr(Expr::Number(0, 0, 0), 0, 0)
         } else {
             let e = self.parse_expression()?;
-            Stmt::Expr(e)
+            Stmt::Expr(e, line, col)
         };
         self.expect(&Token::RParen)?;
         self.expect(&Token::LBrace)?;
@@ -311,11 +347,15 @@ impl Parser {
             condition,
             update: Box::new(update),
             body,
+            line,
+            col,
         })
     }
 
     fn parse_fn_def(&mut self) -> Result<Stmt, CompileError> {
         self.advance();
+        let line = self.line();
+        let col = self.col();
         let name = match self.advance() {
             Token::Identifier(n) => n,
             _ => return Err(self.err("'function' ke baad function ka naam chahiye.")),
@@ -351,11 +391,15 @@ impl Parser {
             params,
             return_type,
             body,
+            line,
+            col,
         })
     }
 
     fn parse_class_def(&mut self) -> Result<Stmt, CompileError> {
         self.advance();
+        let line = self.line();
+        let col = self.col();
         let name = match self.advance() {
             Token::Identifier(n) => n,
             _ => return Err(self.err("'class' ke baad naam chahiye.")),
@@ -385,25 +429,31 @@ impl Parser {
             name,
             fields,
             methods,
+            line,
+            col,
         })
     }
 
     fn parse_return_stmt(&mut self) -> Result<Stmt, CompileError> {
         self.advance();
+        let line = self.line();
+        let col = self.col();
         if self.peek() == &Token::Semicolon {
             self.advance();
-            Ok(Stmt::Return { value: None })
+            Ok(Stmt::Return { value: None, line, col })
         } else {
             let value = self.parse_expression()?;
             self.expect(&Token::Semicolon)?;
-            Ok(Stmt::Return { value: Some(value) })
+            Ok(Stmt::Return { value: Some(value), line, col })
         }
     }
 
     fn parse_expr_stmt(&mut self) -> Result<Stmt, CompileError> {
+        let line = self.line();
+        let col = self.col();
         let expr = self.parse_expression()?;
         self.expect(&Token::Semicolon)?;
-        Ok(Stmt::Expr(expr))
+        Ok(Stmt::Expr(expr, line, col))
     }
 
     fn parse_block(&mut self) -> Result<Vec<Stmt>, CompileError> {
@@ -422,28 +472,36 @@ impl Parser {
         let expr = self.parse_or()?;
         if self.peek() == &Token::Assign {
             self.advance();
+            let line = self.line();
+            let col = self.col();
             match expr {
-                Expr::Ident(name) => {
+                Expr::Ident(name, ..) => {
                     let value = self.parse_assignment()?;
                     Ok(Expr::Assign {
                         name,
                         value: Box::new(value),
+                        line,
+                        col,
                     })
                 }
-                Expr::Field { obj, field } => {
+                Expr::Field { obj, field, .. } => {
                     let value = self.parse_assignment()?;
                     Ok(Expr::FieldAssign {
                         obj,
                         field,
                         value: Box::new(value),
+                        line,
+                        col,
                     })
                 }
-                Expr::Index { obj, index } => {
+                Expr::Index { obj, index, .. } => {
                     let value = self.parse_assignment()?;
                     Ok(Expr::IndexAssign {
                         obj,
                         index,
                         value: Box::new(value),
+                        line,
+                        col,
                     })
                 }
                 _ => {
@@ -459,11 +517,15 @@ impl Parser {
         let mut expr = self.parse_and()?;
         while self.peek() == &Token::Or {
             self.advance();
+            let line = self.line();
+            let col = self.col();
             let right = self.parse_and()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
                 op: BinOp::Or,
                 right: Box::new(right),
+                line,
+                col,
             };
         }
         Ok(expr)
@@ -473,11 +535,15 @@ impl Parser {
         let mut expr = self.parse_equality()?;
         while self.peek() == &Token::And {
             self.advance();
+            let line = self.line();
+            let col = self.col();
             let right = self.parse_equality()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
                 op: BinOp::And,
                 right: Box::new(right),
+                line,
+                col,
             };
         }
         Ok(expr)
@@ -490,11 +556,15 @@ impl Parser {
                 Token::Eq => BinOp::Eq,
                 _ => BinOp::Neq,
             };
+            let line = self.line();
+            let col = self.col();
             let right = self.parse_comparison()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
+                line,
+                col,
             };
         }
         Ok(expr)
@@ -513,11 +583,15 @@ impl Parser {
                 Token::Le => BinOp::Le,
                 _ => BinOp::Ge,
             };
+            let line = self.line();
+            let col = self.col();
             let right = self.parse_term()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
+                line,
+                col,
             };
         }
         Ok(expr)
@@ -530,11 +604,15 @@ impl Parser {
                 Token::Plus => BinOp::Add,
                 _ => BinOp::Sub,
             };
+            let line = self.line();
+            let col = self.col();
             let right = self.parse_factor()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
+                line,
+                col,
             };
         }
         Ok(expr)
@@ -547,11 +625,15 @@ impl Parser {
                 Token::Star => BinOp::Mul,
                 _ => BinOp::Div,
             };
+            let line = self.line();
+            let col = self.col();
             let right = self.parse_unary()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
                 op,
                 right: Box::new(right),
+                line,
+                col,
             };
         }
         Ok(expr)
@@ -560,16 +642,22 @@ impl Parser {
     fn parse_unary(&mut self) -> Result<Expr, CompileError> {
         if self.peek() == &Token::Minus {
             self.advance();
+            let line = self.line();
+            let col = self.col();
             let expr = self.parse_unary()?;
             Ok(Expr::Binary {
-                left: Box::new(Expr::Number(0)),
+                left: Box::new(Expr::Number(0, line, col)),
                 op: BinOp::Sub,
                 right: Box::new(expr),
+                line,
+                col,
             })
         } else if self.peek() == &Token::Not {
             self.advance();
+            let line = self.line();
+            let col = self.col();
             let expr = self.parse_unary()?;
-            Ok(Expr::UnaryNot(Box::new(expr)))
+            Ok(Expr::UnaryNot(Box::new(expr), line, col))
         } else {
             self.parse_primary()
         }
@@ -580,35 +668,49 @@ impl Parser {
             Token::Number(n) => {
                 let v = *n;
                 self.advance();
-                Expr::Number(v)
+                let line = self.line();
+                let col = self.col();
+                Expr::Number(v, line, col)
             }
             Token::StringLiteral(s) => {
                 let v = s.clone();
                 self.advance();
-                Expr::StringLit(v)
+                let line = self.line();
+                let col = self.col();
+                Expr::StringLit(v, line, col)
             }
             Token::True => {
                 self.advance();
-                Expr::Bool(true)
+                let line = self.line();
+                let col = self.col();
+                Expr::Bool(true, line, col)
             }
             Token::False => {
                 self.advance();
-                Expr::Bool(false)
+                let line = self.line();
+                let col = self.col();
+                Expr::Bool(false, line, col)
             }
             Token::SelfKwd => {
                 self.advance();
-                Expr::Ident("self".to_string())
+                let line = self.line();
+                let col = self.col();
+                Expr::Ident("self".to_string(), line, col)
             }
             Token::New => {
                 self.advance();
+                let line = self.line();
+                let col = self.col();
                 let class_name = match self.advance() {
                     Token::Identifier(n) => n,
                     _ => return Err(self.err("'new' ke baad class ka naam chahiye.")),
                 };
-                Expr::New { class_name }
+                Expr::New { class_name, line, col }
             }
             Token::LBracket => {
                 self.advance();
+                let line = self.line();
+                let col = self.col();
                 let mut elems = Vec::new();
                 while self.peek() != &Token::RBracket {
                     elems.push(self.parse_expression()?);
@@ -617,18 +719,22 @@ impl Parser {
                     }
                 }
                 self.expect(&Token::RBracket)?;
-                Expr::ArrayLit(elems)
+                Expr::ArrayLit(elems, line, col)
             }
             Token::LParen => {
                 self.advance();
+                let line = self.line();
+                let col = self.col();
                 let e = self.parse_expression()?;
                 self.expect(&Token::RParen)?;
-                Expr::Group(Box::new(e))
+                Expr::Group(Box::new(e), line, col)
             }
             Token::Identifier(name) => {
                 let name = name.clone();
                 self.advance();
-                Expr::Ident(name)
+                let line = self.line();
+                let col = self.col();
+                Expr::Ident(name, line, col)
             }
             _ => {
                 return Err(self.err(format!(
@@ -640,8 +746,9 @@ impl Parser {
         loop {
             match self.peek() {
                 Token::LParen => {
+                    let (line, col) = Self::expr_pos(&expr);
                     let name = match &expr {
-                        Expr::Ident(n) => n.clone(),
+                        Expr::Ident(n, ..) => n.clone(),
                         _ => return Err(self.err("Sirf identifier ko call kar sakte ho.")),
                     };
                     self.advance();
@@ -653,12 +760,13 @@ impl Parser {
                         }
                     }
                     self.expect(&Token::RParen)?;
-                    expr = Expr::FnCall { name, args };
+                    expr = Expr::FnCall { name, args, line, col };
                 }
                 Token::Dot => {
+                    let (line, col) = Self::expr_pos(&expr);
                     self.advance();
                     let class_name = match &expr {
-                        Expr::Ident(n) => {
+                        Expr::Ident(n, ..) => {
                             if n == "self" {
                                 self.current_class.clone()
                             } else {
@@ -692,15 +800,18 @@ impl Parser {
                         } else {
                             field
                         };
-                        expr = Expr::FnCall { name, args };
+                        expr = Expr::FnCall { name, args, line, col };
                     } else {
                         expr = Expr::Field {
                             obj: Box::new(expr),
                             field,
+                            line,
+                            col,
                         };
                     }
                 }
                 Token::LBracket => {
+                    let (line, col) = Self::expr_pos(&expr);
                     self.advance();
                     let index = self.parse_expression()?;
                     self.expect(&Token::RBracket)?;
@@ -711,11 +822,15 @@ impl Parser {
                             obj: Box::new(expr),
                             index: Box::new(index),
                             value: Box::new(value),
+                            line,
+                            col,
                         };
                     } else {
                         expr = Expr::Index {
                             obj: Box::new(expr),
                             index: Box::new(index),
+                            line,
+                            col,
                         };
                     }
                 }
