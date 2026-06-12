@@ -106,7 +106,10 @@ fn main() -> io::Result<()> {
     // 3. DIRECT EXECUTION
     println!("\n🚀 --- Ajeeb Direct Run Started ---");
     let mut evaluator = Evaluator::new();
-    evaluator.set_program_args(args[1..].to_vec());
+    // Include program name at index 0 to match C runtime's argv convention
+    let mut program_args = vec![args[0].clone()];
+    program_args.extend_from_slice(&args[1..]);
+    evaluator.set_program_args(program_args);
     evaluator.evaluate_program(&ast);
     println!("--- Ajeeb Execution Ended ---\n🎉 Execution Completed Successfully!");
 

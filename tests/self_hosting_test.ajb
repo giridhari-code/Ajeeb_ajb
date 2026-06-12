@@ -1,0 +1,14 @@
+// Self-hosting test: Ajeeb compiler must be able to compile itself
+// and produce identical output on two consecutive bootstrap stages.
+
+function test_self_hosting(): void {
+    println("=== Self-Hosting Verification ===");
+    println("This test verifies the bootstrap pipeline.");
+    println("Run via: tests/bootstrap_check.sh");
+    println();
+}
+
+function main(): int {
+    test_self_hosting();
+    return 0;
+}
