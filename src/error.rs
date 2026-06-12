@@ -15,6 +15,10 @@ impl CompileError {
 
 impl fmt::Display for CompileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "❌ Line {}, Col {}: {}", self.line, self.col, self.message)
+        write!(
+            f,
+            "❌ Line {}, Col {}: {}",
+            self.line, self.col, self.message
+        )
     }
 }

@@ -33,6 +33,9 @@ impl LanguageBridge {
         for (module, lang) in &self.external_registry {
             println!("  ├── {}  →  via [{}] bridge", module, lang);
         }
-        println!("  ╰ Total: {} external module(s)", self.external_registry.len());
+        println!(
+            "  ╰ Total: {} external module(s)",
+            self.external_registry.len()
+        );
     }
 }

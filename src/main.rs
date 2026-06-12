@@ -1,26 +1,25 @@
-mod token;
-mod lexer;
-mod parser;
 mod ast;
+mod das_parser;
 mod error;
 mod eval;
-mod das_parser;
 mod interop;
+mod lexer;
+mod parser;
+mod token;
 
+use das_parser::DasConfig;
+use eval::Evaluator;
+use interop::LanguageBridge;
+use lexer::Lexer;
+use parser::Parser;
 use std::env;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::Path;
 use std::process::Command;
-use lexer::Lexer;
-use parser::Parser;
 use token::Token;
-use eval::Evaluator;
-use das_parser::DasConfig;
-use interop::LanguageBridge;
 
 fn main() -> io::Result<()> {
-
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         println!("Arre Bhai! File ka naam toh do. Example: cargo run test.ajb");
@@ -36,7 +35,10 @@ fn main() -> io::Result<()> {
             let mut das_src = String::new();
             das_file.read_to_string(&mut das_src)?;
             let config = DasConfig::parse(&das_src);
-            println!("📦 Loaded .das config: '{}'", config.get("package", "name").unwrap_or(&"unnamed".into()));
+            println!(
+                "📦 Loaded .das config: '{}'",
+                config.get("package", "name").unwrap_or(&"unnamed".into())
+            );
 
             let mut bridge = LanguageBridge::new();
             if config.is_enabled("compatibility", "python_ai_core") {
@@ -56,7 +58,10 @@ fn main() -> io::Result<()> {
             let mut das_src = String::new();
             das_file.read_to_string(&mut das_src)?;
             let config = DasConfig::parse(&das_src);
-            println!("📦 parth.das loaded: '{}'", config.get("package", "name").unwrap_or(&"unnamed".into()));
+            println!(
+                "📦 parth.das loaded: '{}'",
+                config.get("package", "name").unwrap_or(&"unnamed".into())
+            );
         }
     }
 
@@ -109,7 +114,7 @@ fn main() -> io::Result<()> {
     if Path::new("build/output.c").exists() {
         println!("\n🔨 Compiling build/output.c → build/ajeeb_native ...");
         let status = Command::new("gcc")
-            .args(&[
+            .args([
                 "build/output.c",
                 "runtime/ajeeb_runtime.c",
                 "-o",

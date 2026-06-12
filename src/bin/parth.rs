@@ -28,10 +28,10 @@ fn read_config() -> (String, String, String) {
     for line in content.lines() {
         let t = line.trim();
         if t.starts_with('[') && t.ends_with(']') {
-            current_section = t[1..t.len()-1].trim().to_string();
+            current_section = t[1..t.len() - 1].trim().to_string();
         } else if let Some(eq) = t.find('=') {
             let key = t[..eq].trim();
-            let val = t[eq+1..].trim().trim_matches('"');
+            let val = t[eq + 1..].trim().trim_matches('"');
             if current_section == "package" && key == "name" {
                 name = val.to_string();
             } else if current_section == "compiler" && key == "output" {
@@ -79,7 +79,8 @@ fn cmd_new(args: &[String]) {
     );
     fs::write(dir.join("parth.das"), das).expect("Cannot write parth.das");
 
-    let main_ajb = "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n";
+    let main_ajb =
+        "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n";
     fs::write(dir.join("src").join("main.ajb"), main_ajb).expect("Cannot write main.ajb");
 
     println!("✓ Created Ajeeb project '{}'", name);
@@ -94,7 +95,16 @@ fn cmd_build() {
     let compiler_src_str = compiler_src.to_string_lossy().to_string();
 
     let status = Command::new("cargo")
-        .args(&["run", "--bin", "ajeeb_compiler", "--manifest-path", root.join("Cargo.toml").to_string_lossy().as_ref(), "--", &compiler_src_str, "src/main.ajb"])
+        .args(&[
+            "run",
+            "--bin",
+            "ajeeb_compiler",
+            "--manifest-path",
+            root.join("Cargo.toml").to_string_lossy().as_ref(),
+            "--",
+            &compiler_src_str,
+            "src/main.ajb",
+        ])
         .status()
         .expect("Failed to run compiler");
     if !status.success() {
@@ -105,7 +115,15 @@ fn cmd_build() {
     let out_path = format!("{}output.c", output_dir);
     let bin_path = format!("{}{}", output_dir, name);
     let status = Command::new("gcc")
-        .args(&[&out_path, &runtime_src_str, "-o", &bin_path, "-Wall", "-Wno-int-to-pointer-cast", "-Wno-pointer-to-int-cast"])
+        .args(&[
+            &out_path,
+            &runtime_src_str,
+            "-o",
+            &bin_path,
+            "-Wall",
+            "-Wno-int-to-pointer-cast",
+            "-Wno-pointer-to-int-cast",
+        ])
         .status()
         .expect("Failed to run gcc");
     if !status.success() {

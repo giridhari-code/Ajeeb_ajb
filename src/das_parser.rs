@@ -50,7 +50,7 @@ impl DasConfig {
     }
 
     pub fn is_enabled(&self, section: &str, key: &str) -> bool {
-        self.get(section, key).map_or(false, |v| v == "enabled")
+        self.get(section, key).is_some_and(|v| v == "enabled")
     }
 }
 
