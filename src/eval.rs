@@ -9,6 +9,7 @@ pub enum RuntimeValue {
     String(Rc<RefCell<String>>),
     Bool(bool),
     Void,
+    Array(Vec<RuntimeValue>),
     ClassInstance { class_name: String, fields: HashMap<String, RuntimeValue> },
     Return(Box<RuntimeValue>),
     Break,
@@ -47,6 +48,7 @@ impl Evaluator {
     }
 
     pub fn evaluate_program(&mut self, stmts: &[Stmt]) {
+        let mut top_stmts: Vec<Stmt> = Vec::new();
         for stmt in stmts {
             match stmt {
                 Stmt::Class { name, fields, methods } => {
@@ -61,8 +63,14 @@ impl Evaluator {
                 Stmt::FnDef { name, params, body, return_type } => {
                     self.functions.insert(name.clone(), (params.clone(), body.clone(), return_type.clone()));
                 }
-                _ => {}
+                other => {
+                    top_stmts.push(other.clone());
+                }
             }
+        }
+        // Execute top-level statements (globals) before calling main
+        for s in &top_stmts {
+            self.exec_stmt(s);
         }
         if self.functions.contains_key("main") {
             self.exec_fn_call("main", &[]);
@@ -168,7 +176,8 @@ impl Evaluator {
                 use BinOp::*;
                 match (l, r) {
                     (RuntimeValue::Int(a), RuntimeValue::Int(b)) => RuntimeValue::Int(match op {
-                        Add => a + b, Sub => a - b, Mul => a * b, Div => a / b,
+                        Add => a + b, Sub => a - b, Mul => a * b,
+                        Div => { if b == 0 { eprintln!("[ERROR] Division by zero — returning 0"); 0 } else { a / b } },
                         Eq => (a == b) as i64, Neq => (a != b) as i64,
                         Lt => (a < b) as i64, Gt => (a > b) as i64,
                         Le => (a <= b) as i64, Ge => (a >= b) as i64,
@@ -222,27 +231,89 @@ impl Evaluator {
                 }
             }
             Expr::FieldAssign { obj, field, value } => {
-                if let RuntimeValue::ClassInstance { class_name, mut fields } = self.eval_expr(obj) {
-                    let val = self.eval_expr(value);
-                    fields.insert(field.clone(), val);
-                    let updated = RuntimeValue::ClassInstance { class_name, fields };
-                    if let Expr::Ident(var) = obj.as_ref() {
-                        self.variables.insert(var.clone(), updated.clone());
+                let val = self.eval_expr(value);
+                // Handle obj.field = value through index chains like arr[i].field = val
+                match obj.as_ref() {
+                    Expr::Ident(var) => {
+                        if let RuntimeValue::ClassInstance { class_name, mut fields } = self.eval_expr(obj) {
+                            fields.insert(field.clone(), val.clone());
+                            let updated = RuntimeValue::ClassInstance { class_name, fields };
+                            self.variables.insert(var.clone(), updated.clone());
+                            updated
+                        } else { RuntimeValue::Int(0) }
                     }
-                    updated
-                } else {
-                    RuntimeValue::Int(0)
+                    Expr::Index { obj: inner_obj, index } => {
+                        // arr[i].field = val — evaluate array, mutate element, store back
+                        let idx_val = self.eval_expr(index);
+                        let mut arr_val = self.eval_expr(inner_obj);
+                        if let RuntimeValue::Array(ref mut arr) = arr_val {
+                            if let RuntimeValue::Int(i) = idx_val {
+                                let idx = i as usize;
+                                if idx < arr.len() {
+                                    if let RuntimeValue::ClassInstance { class_name, mut fields } = std::mem::replace(&mut arr[idx], RuntimeValue::Int(0)) {
+                                        fields.insert(field.clone(), val.clone());
+                                        arr[idx] = RuntimeValue::ClassInstance { class_name, fields };
+                                    }
+                                }
+                            }
+                        }
+                        if let Expr::Ident(arr_name) = inner_obj.as_ref() {
+                            self.variables.insert(arr_name.clone(), arr_val.clone());
+                        }
+                        val
+                    }
+                    _ => RuntimeValue::Int(0),
                 }
             }
+            Expr::UnaryNot(inner) => {
+                let val = self.eval_expr(inner);
+                RuntimeValue::Bool(!is_truthy(&val))
+            }
             Expr::Group(inner) => self.eval_expr(inner),
-            _ => RuntimeValue::Int(0),
+            Expr::ArrayLit(elems) => {
+                let vals: Vec<RuntimeValue> = elems.iter().map(|e| self.eval_expr(e)).collect();
+                RuntimeValue::Array(vals)
+            }
+            Expr::Index { obj, index } => {
+                let obj_val = self.eval_expr(obj);
+                let idx_val = self.eval_expr(index);
+                match (obj_val, idx_val) {
+                    (RuntimeValue::Array(arr), RuntimeValue::Int(i)) => {
+                        let idx = i as usize;
+                        if idx < arr.len() { arr[idx].clone() } else { RuntimeValue::Int(0) }
+                    }
+                    (RuntimeValue::String(s), RuntimeValue::Int(i)) => {
+                        let idx = i as usize;
+                        let b = s.borrow();
+                        if idx < b.len() { RuntimeValue::Int(b.as_bytes()[idx] as i64) } else { RuntimeValue::Int(0) }
+                    }
+                    _ => RuntimeValue::Int(0),
+                }
+            }
+            Expr::IndexAssign { obj, index, value } => {
+                let idx_val = self.eval_expr(index);
+                let val_val = self.eval_expr(value);
+                let mut arr_val = self.eval_expr(obj);
+                if let RuntimeValue::Array(ref mut arr) = arr_val {
+                    if let RuntimeValue::Int(i) = idx_val {
+                        let idx = i as usize;
+                        if idx < arr.len() { arr[idx] = val_val.clone(); }
+                    }
+                }
+                if let Expr::Ident(name) = obj.as_ref() {
+                    self.variables.insert(name.clone(), arr_val.clone());
+                }
+                val_val
+            }
         }
     }
 
     pub fn exec_fn_call(&mut self, name: &str, args: &[Expr]) -> RuntimeValue {
         self.iteration_count += 1;
-        if self.iteration_count % 25000 == 0 {
-            eprintln!("[ITER {}] fn: {} args:{}", self.iteration_count, name, args.len());
+        if self.iteration_count % 100000 == 0 {
+            if std::env::var("AJEEB_TRACE").is_ok() {
+                eprintln!("[ITER {}] fn: {} args:{}", self.iteration_count, name, args.len());
+            }
         }
         let max_iter: u64 = std::env::var("AJEEB_MAX_ITER")
             .ok()
@@ -263,6 +334,32 @@ impl Evaluator {
                         RuntimeValue::Int(n) => print!("{}", n),
                         RuntimeValue::String(s) => print!("{}", s.borrow()),
                         RuntimeValue::Bool(b) => print!("{}", b),
+                        RuntimeValue::Array(arr) => {
+                            print!("[");
+                            for (i, e) in arr.iter().enumerate() {
+                                if i > 0 { print!(", "); }
+                                match e {
+                                    RuntimeValue::Int(n) => print!("{}", n),
+                                    RuntimeValue::String(s) => print!("\"{}\"", s.borrow()),
+                                    RuntimeValue::Bool(b) => print!("{}", b),
+                                    RuntimeValue::Array(inner) => {
+                                        print!("[");
+                                        for (j, ee) in inner.iter().enumerate() {
+                                            if j > 0 { print!(", "); }
+                                            match ee {
+                                                RuntimeValue::Int(n) => print!("{}", n),
+                                                RuntimeValue::String(s) => print!("\"{}\"", s.borrow()),
+                                                RuntimeValue::Bool(b) => print!("{}", b),
+                                                _ => print!("<?>"),
+                                            }
+                                        }
+                                        print!("]");
+                                    }
+                                    _ => print!("<?>"),
+                                }
+                            }
+                            print!("]");
+                        }
                         RuntimeValue::ClassInstance { class_name, .. } => print!("<{} instance>", class_name),
                         RuntimeValue::Void => print!("void"),
                         RuntimeValue::Return(v) => print!("<return {:?}>", v),
@@ -512,6 +609,62 @@ impl Evaluator {
                 }
                 RuntimeValue::Int(0)
             }
+            "substring" => {
+                let s = arg_vals.first().and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                let start = arg_vals.get(1).and_then(|a| if let RuntimeValue::Int(i) = a { Some(*i as usize) } else { None }).unwrap_or(0);
+                let end = arg_vals.get(2).and_then(|a| if let RuntimeValue::Int(i) = a { Some(*i as usize) } else { None }).unwrap_or(s.len());
+                let end = end.min(s.len());
+                let sub: String = s.chars().skip(start).take(end.saturating_sub(start)).collect();
+                RuntimeValue::String(Rc::new(RefCell::new(sub)))
+            }
+            "indexOf" => {
+                let s = arg_vals.first().and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                let search = arg_vals.get(1).and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                if let Some(pos) = s.find(&search) { RuntimeValue::Int(pos as i64) } else { RuntimeValue::Int(-1) }
+            }
+            "contains" => {
+                let s = arg_vals.first().and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                let search = arg_vals.get(1).and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                RuntimeValue::Int(if s.contains(&search) { 1 } else { 0 })
+            }
+            "toUpperCase" => {
+                let s = arg_vals.first().and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                RuntimeValue::String(Rc::new(RefCell::new(s.to_uppercase())))
+            }
+            "toLowerCase" => {
+                let s = arg_vals.first().and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                RuntimeValue::String(Rc::new(RefCell::new(s.to_lowercase())))
+            }
+            "trim" => {
+                let s = arg_vals.first().and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                RuntimeValue::String(Rc::new(RefCell::new(s.trim().to_string())))
+            }
+            "split" => {
+                let s = arg_vals.first().and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                let delim = arg_vals.get(1).and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                let parts: Vec<RuntimeValue> = if delim.is_empty() {
+                    s.chars().map(|c| RuntimeValue::String(Rc::new(RefCell::new(c.to_string())))).collect()
+                } else {
+                    s.split(&delim).map(|p| RuntimeValue::String(Rc::new(RefCell::new(p.to_string())))).collect()
+                };
+                RuntimeValue::Array(parts)
+            }
+            "replace" => {
+                let s = arg_vals.first().and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                let from = arg_vals.get(1).and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                let to = arg_vals.get(2).and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                RuntimeValue::String(Rc::new(RefCell::new(s.replace(&from, &to))))
+            }
+            "startsWith" => {
+                let s = arg_vals.first().and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                let prefix = arg_vals.get(1).and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                RuntimeValue::Int(if s.starts_with(&prefix) { 1 } else { 0 })
+            }
+            "endsWith" => {
+                let s = arg_vals.first().and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                let suffix = arg_vals.get(1).and_then(|a| if let RuntimeValue::String(ss) = a { Some(ss.borrow().clone()) } else { None }).unwrap_or_default();
+                RuntimeValue::Int(if s.ends_with(&suffix) { 1 } else { 0 })
+            }
             _ => {
                 if self.class_fields.contains_key(name) && args.is_empty() {
                     let mut fields = HashMap::new();
@@ -523,11 +676,14 @@ impl Evaluator {
                     return RuntimeValue::ClassInstance { class_name: name.to_string(), fields };
                 }
                 if let Some((params, body, _)) = self.functions.get(name).cloned() {
-                    let saved = std::mem::take(&mut self.variables);
+                    // Clone current scope and overlay parameters onto it
+                    // This lets functions access globals while local params shadow them
+                    let mut local_scope = self.variables.clone();
                     for (i, (pname, _)) in params.iter().enumerate() {
                         let val = if i < arg_vals.len() { arg_vals[i].clone() } else { RuntimeValue::Int(0) };
-                        self.variables.insert(pname.clone(), val);
+                        local_scope.insert(pname.clone(), val);
                     }
+                    let saved = std::mem::replace(&mut self.variables, local_scope);
                     let mut result = RuntimeValue::Void;
                     for s in &body {
                         let r = self.exec_stmt(s);
@@ -552,6 +708,7 @@ fn is_truthy(val: &RuntimeValue) -> bool {
         RuntimeValue::Int(n) => *n != 0,
         RuntimeValue::Bool(b) => *b,
         RuntimeValue::String(s) => !s.borrow().is_empty(),
+        RuntimeValue::Array(arr) => !arr.is_empty(),
         RuntimeValue::Return(val) => is_truthy(val),
         _ => true,
     }
