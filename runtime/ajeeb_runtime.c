@@ -152,3 +152,124 @@ intptr_t str_concat(intptr_t a, intptr_t b) {
     out[total] = '\0';
     return (intptr_t)out;
 }
+
+intptr_t substring(intptr_t s, intptr_t start, intptr_t end) {
+    const char* src = (const char*)s;
+    size_t slen = strlen(src);
+    size_t st = (size_t)start;
+    size_t en = (size_t)end;
+    if (st > slen) st = slen;
+    if (en > slen) en = slen;
+    if (en < st) en = st;
+    size_t len = en - st;
+    int slot = str_pool_idx;
+    str_pool_idx = (str_pool_idx + 1) % STR_POOL_SLOTS;
+    char* out = str_pool[slot];
+    if (len >= STR_POOL_SIZE) len = STR_POOL_SIZE - 1;
+    memcpy(out, src + st, len);
+    out[len] = '\0';
+    return (intptr_t)out;
+}
+
+intptr_t indexOf(intptr_t s, intptr_t search) {
+    const char* str = (const char*)s;
+    const char* sub = (const char*)search;
+    const char* found = strstr(str, sub);
+    if (found) return (intptr_t)(found - str);
+    return (intptr_t)-1;
+}
+
+intptr_t contains(intptr_t s, intptr_t search) {
+    const char* str = (const char*)s;
+    const char* sub = (const char*)search;
+    return (intptr_t)(strstr(str, sub) != NULL ? 1 : 0);
+}
+
+intptr_t toUpperCase(intptr_t s) {
+    const char* src = (const char*)s;
+    int slot = str_pool_idx;
+    str_pool_idx = (str_pool_idx + 1) % STR_POOL_SLOTS;
+    char* out = str_pool[slot];
+    size_t i = 0;
+    while (src[i] && i < STR_POOL_SIZE - 1) {
+        char c = src[i];
+        if (c >= 'a' && c <= 'z') out[i] = c - 32;
+        else out[i] = c;
+        i++;
+    }
+    out[i] = '\0';
+    return (intptr_t)out;
+}
+
+intptr_t toLowerCase(intptr_t s) {
+    const char* src = (const char*)s;
+    int slot = str_pool_idx;
+    str_pool_idx = (str_pool_idx + 1) % STR_POOL_SLOTS;
+    char* out = str_pool[slot];
+    size_t i = 0;
+    while (src[i] && i < STR_POOL_SIZE - 1) {
+        char c = src[i];
+        if (c >= 'A' && c <= 'Z') out[i] = c + 32;
+        else out[i] = c;
+        i++;
+    }
+    out[i] = '\0';
+    return (intptr_t)out;
+}
+
+intptr_t trim(intptr_t s) {
+    const char* src = (const char*)s;
+    while (*src == ' ' || *src == '\t' || *src == '\n' || *src == '\r') src++;
+    if (*src == '\0') return (intptr_t)"";
+    const char* end = src + strlen(src) - 1;
+    while (end > src && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) end--;
+    size_t len = end - src + 1;
+    int slot = str_pool_idx;
+    str_pool_idx = (str_pool_idx + 1) % STR_POOL_SLOTS;
+    char* out = str_pool[slot];
+    if (len >= STR_POOL_SIZE) len = STR_POOL_SIZE - 1;
+    memcpy(out, src, len);
+    out[len] = '\0';
+    return (intptr_t)out;
+}
+
+intptr_t startsWith(intptr_t s, intptr_t prefix) {
+    const char* str = (const char*)s;
+    const char* pre = (const char*)prefix;
+    size_t n = strlen(pre);
+    return (intptr_t)(strncmp(str, pre, n) == 0 ? 1 : 0);
+}
+
+intptr_t endsWith(intptr_t s, intptr_t suffix) {
+    const char* str = (const char*)s;
+    const char* suf = (const char*)suffix;
+    size_t slen = strlen(str);
+    size_t suflen = strlen(suf);
+    if (suflen > slen) return 0;
+    return (intptr_t)(strncmp(str + slen - suflen, suf, suflen) == 0 ? 1 : 0);
+}
+
+intptr_t replace(intptr_t s, intptr_t from, intptr_t to) {
+    const char* src = (const char*)s;
+    const char* f = (const char*)from;
+    const char* t = (const char*)to;
+    int slot = str_pool_idx;
+    str_pool_idx = (str_pool_idx + 1) % STR_POOL_SLOTS;
+    char* out = str_pool[slot];
+    size_t out_pos = 0;
+    size_t flen = strlen(f);
+    size_t tlen = strlen(t);
+    while (*src && out_pos < STR_POOL_SIZE - 1) {
+        if (strncmp(src, f, flen) == 0) {
+            size_t copy = tlen;
+            if (out_pos + copy >= STR_POOL_SIZE - 1) copy = STR_POOL_SIZE - 1 - out_pos;
+            memcpy(out + out_pos, t, copy);
+            out_pos += copy;
+            src += flen;
+        } else {
+            out[out_pos++] = *src++;
+        }
+    }
+    out[out_pos] = '\0';
+    return (intptr_t)out;
+}
