@@ -8,11 +8,40 @@ extern char __ajeeb_outbuf[65536];
 
 static char* saved_argv[256];
 static int saved_argc = 0;
+
+// Cached file handles for writeAppend/writeByte — avoid fopen/fclose per call
+#define FILE_CACHE_SIZE 256
+static struct { const char* path; FILE* fp; } file_cache[FILE_CACHE_SIZE];
+static int file_cache_count = 0;
+
+static void flush_cached_files(void) {
+    for (int i = 0; i < file_cache_count; i++) {
+        fflush(file_cache[i].fp);
+        fclose(file_cache[i].fp);
+        free((void*)file_cache[i].path);
+    }
+    file_cache_count = 0;
+}
+
+static FILE* get_cached_file(const char* path) {
+    for (int i = 0; i < file_cache_count; i++) {
+        if (strcmp(file_cache[i].path, path) == 0)
+            return file_cache[i].fp;
+    }
+    if (file_cache_count >= FILE_CACHE_SIZE) return NULL;
+    FILE* fp = fopen(path, "ab");
+    if (!fp) return NULL;
+    file_cache[file_cache_count].path = strdup(path);
+    file_cache[file_cache_count].fp = fp;
+    file_cache_count++;
+    return fp;
+}
 static int args_init = 0;
 
 static void init_args(void) {
     if (args_init) return;
     args_init = 1;
+    atexit(flush_cached_files);
     FILE* f = fopen("/proc/self/cmdline", "rb");
     if (!f) return;
     char buf[4096];
@@ -100,18 +129,18 @@ void writeFile(intptr_t path, intptr_t content) {
 void writeAppend(intptr_t path, intptr_t content) {
     const char* fname = (const char*)path;
     const char* data = (const char*)content;
-    FILE* f = fopen(fname, "ab");
+    FILE* f = get_cached_file(fname);
     if (!f) return;
     fwrite(data, 1, strlen(data), f);
-    fclose(f);
+    fflush(f);
 }
 
 void writeByte(intptr_t path, intptr_t byte) {
     const char* fname = (const char*)path;
-    FILE* f = fopen(fname, "ab");
+    FILE* f = get_cached_file(fname);
     if (!f) return;
     fputc((char)byte, f);
-    fclose(f);
+    fflush(f);
 }
 
 intptr_t println(intptr_t s) {

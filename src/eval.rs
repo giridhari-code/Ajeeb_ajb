@@ -1,6 +1,8 @@
 use crate::ast::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
@@ -19,6 +21,12 @@ pub enum RuntimeValue {
     Continue,
 }
 
+impl Drop for Evaluator {
+    fn drop(&mut self) {
+        self.close_files();
+    }
+}
+
 pub struct Evaluator {
     variables: HashMap<String, RuntimeValue>,
     functions: HashMap<String, (Vec<(String, TypeAnnot)>, Vec<Stmt>, TypeAnnot)>,
@@ -29,6 +37,7 @@ pub struct Evaluator {
     int_to_string: HashMap<i64, Rc<RefCell<String>>>,
     next_string_ptr: i64,
     outbuf_string: Rc<RefCell<String>>,
+    open_files: HashMap<String, std::fs::File>,
 }
 
 impl Evaluator {
@@ -43,11 +52,19 @@ impl Evaluator {
             int_to_string: HashMap::new(),
             next_string_ptr: 0x1000,
             outbuf_string: Rc::new(RefCell::new(String::new())),
+            open_files: HashMap::new(),
         }
     }
 
     pub fn set_program_args(&mut self, args: Vec<String>) {
         self.program_args = args;
+    }
+
+    /// Flush and close all cached file handles
+    pub fn close_files(&mut self) {
+        for (_path, mut f) in self.open_files.drain() {
+            let _ = f.flush();
+        }
     }
 
     pub fn evaluate_program(&mut self, stmts: &[Stmt]) {
@@ -542,16 +559,17 @@ impl Evaluator {
                     if let (RuntimeValue::String(path), RuntimeValue::String(content)) =
                         (&arg_vals[0], &arg_vals[1])
                     {
-                        use std::io::Write;
-                        if let Ok(mut f) = std::fs::OpenOptions::new()
-                            .create(true)
-                            .append(true)
-                            .open(path.borrow().as_str())
-                        {
-                            let bytes: Vec<u8> =
-                                content.borrow().bytes().filter(|&b| b != 0).collect();
-                            let _ = f.write_all(&bytes);
-                        }
+                        let path_str = path.borrow().clone();
+                        let f = self.open_files.entry(path_str.clone()).or_insert_with(|| {
+                            OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(&path_str)
+                                .expect("writeAppend: failed to open file")
+                        });
+                        let bytes: Vec<u8> =
+                            content.borrow().bytes().filter(|&b| b != 0).collect();
+                        let _ = f.write_all(&bytes);
                     }
                 }
                 RuntimeValue::Void
@@ -658,14 +676,15 @@ impl Evaluator {
                     if let (RuntimeValue::String(path), RuntimeValue::Int(byte)) =
                         (&arg_vals[0], &arg_vals[1])
                     {
-                        use std::io::Write;
-                        if let Ok(mut f) = std::fs::OpenOptions::new()
-                            .create(true)
-                            .append(true)
-                            .open(path.borrow().as_str())
-                        {
-                            let _ = f.write_all(&[*byte as u8]);
-                        }
+                        let path_str = path.borrow().clone();
+                        let f = self.open_files.entry(path_str.clone()).or_insert_with(|| {
+                            OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(&path_str)
+                                .expect("writeByte: failed to open file")
+                        });
+                        let _ = f.write_all(&[*byte as u8]);
                     }
                 }
                 RuntimeValue::Void
