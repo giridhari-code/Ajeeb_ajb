@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -9,7 +10,6 @@ mod resolver;
 mod types;
 
 use config::ProjectConfig;
-use types::PkgDep;
 
 fn find_ajeeb_root() -> PathBuf {
     if let Ok(manifest) = env::var("CARGO_MANIFEST_DIR") {
@@ -283,6 +283,30 @@ fn cmd_build() {
     let status = Command::new("gcc").args(&gcc_args).status().expect("Failed to run gcc");
     if !status.success() { eprintln!("❌ GCC compilation failed"); std::process::exit(1); }
     println!("✓ Build: {} (opt-level: {})", bin_path, profile.opt_level);
+
+    // Build workspace members
+    for member in &cfg.workspace {
+        let member_dir = Path::new(&member.path);
+        if !member_dir.exists() {
+            eprintln!("⚠️  Workspace member '{}' not found, skipping", member.path);
+            continue;
+        }
+        if !member_dir.join("parth.das").exists() {
+            eprintln!("⚠️  Workspace member '{}' has no parth.das, skipping", member.path);
+            continue;
+        }
+        println!("\n📦 Building workspace member: {}", member.path);
+        let status = Command::new("cargo")
+            .args(["run", "-p", "parth", "--", "build"])
+            .current_dir(member_dir)
+            .status()
+            .expect("Failed to run parth build for workspace member");
+        if !status.success() {
+            eprintln!("❌ Workspace member '{}' build failed", member.path);
+            std::process::exit(1);
+        }
+        println!("✓ Workspace member '{}' built successfully", member.path);
+    }
 }
 
 fn read_config_basic_for_build() -> (String, String, String) {
@@ -310,9 +334,50 @@ fn cmd_run() {
     cmd_build();
     let (name, output_dir, _) = read_config_basic_for_build();
     let bin_path = format!("{}{}", output_dir, name);
-    let entry = "src/main.ajb";
-    let status = Command::new(&bin_path).arg(entry).status().expect("Failed to run binary");
+    let status = Command::new(&bin_path).status().expect("Failed to run binary");
     std::process::exit(status.code().unwrap_or(1));
+}
+
+fn cmd_test() {
+    let test_dir = Path::new("tests");
+    if !test_dir.exists() {
+        eprintln!("Error: tests/ directory not found");
+        std::process::exit(1);
+    }
+    let mut passed = 0u32;
+    let mut failed = 0u32;
+    let mut entries: Vec<_> = fs::read_dir(test_dir)
+        .unwrap_or_else(|e| { eprintln!("Error: {}", e); std::process::exit(1); })
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|ex| ex == "ajb").unwrap_or(false))
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    let root = find_ajeeb_root();
+    for entry in &entries {
+        let path = entry.path();
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        print!("  {} ... ", name);
+        std::io::stdout().flush().ok();
+
+        let status = Command::new("cargo")
+            .args(["run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
+                   "--", &path.to_string_lossy()])
+            .current_dir(&root)
+            .status()
+            .unwrap_or_default();
+
+        if status.success() {
+            println!("PASS");
+            passed += 1;
+        } else {
+            println!("FAIL");
+            failed += 1;
+        }
+    }
+
+    println!("\nTest results: {} passed, {} failed", passed, failed);
+    if failed > 0 { std::process::exit(1); }
 }
 
 fn cmd_info() {
@@ -592,6 +657,15 @@ fn cmd_workspace(args: &[String]) {
     }
 }
 
+fn cmd_fmt(args: &[String]) {
+    let root = find_ajeeb_root();
+    let mut cmd = Command::new("cargo");
+    cmd.args(["run", "-p", "ajeeb-fmt", "--"]);
+    cmd.args(args);
+    let status = cmd.current_dir(&root).status().expect("Failed to run ajeeb-fmt");
+    std::process::exit(status.code().unwrap_or(1));
+}
+
 fn cmd_version() {
     println!("parth 0.1.0 — Ajeeb Package Manager");
     if let Ok(content) = fs::read_to_string("parth.das") {
@@ -641,6 +715,8 @@ fn cmd_help() {
     println!("  remove <pkg>     Remove a dependency");
     println!("  build            Compile current project");
     println!("  run              Build and run current project");
+    println!("  test             Run all tests in tests/ directory");
+    println!("  fmt [files..]    Format Ajeeb source files");
     println!("  clean            Remove build artifacts");
     println!("  info             Show project info from parth.das");
     println!("  version          Show parth and project version");
@@ -668,6 +744,8 @@ fn main() {
         "remove" => cmd_remove(&args[2..]),
         "build" => cmd_build(),
         "run" => cmd_run(),
+        "test" => cmd_test(),
+        "fmt" => cmd_fmt(&args[2..]),
         "publish" => cmd_publish(&args[2..]),
         "info" => cmd_info(),
         "search" => cmd_search(&args[2..]),
