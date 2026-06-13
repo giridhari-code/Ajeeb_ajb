@@ -20,8 +20,30 @@ pub struct LockEntry {
 
 pub type LockFile = HashMap<String, LockEntry>;
 
-/// Registry index: package_name → version → (checksum, metadata)
+/// Registry index: package_name → version → (checksum, metadata_json)
 pub type RegistryIndex = HashMap<String, HashMap<String, String>>;
+
+/// Registry package metadata stored alongside the index
+#[derive(Debug, Clone, PartialEq)]
+pub struct RegistryMetadata {
+    pub description: String,
+    pub author: String,
+    pub homepage: String,
+    pub license: String,
+    pub yanked: bool,
+}
+
+impl RegistryMetadata {
+    pub fn new(_name: &str) -> Self {
+        RegistryMetadata {
+            description: String::new(),
+            author: String::new(),
+            homepage: String::new(),
+            license: String::new(),
+            yanked: false,
+        }
+    }
+}
 
 /// Workspace definition
 #[derive(Debug, Clone, PartialEq)]
@@ -57,12 +79,15 @@ impl Profile {
     }
 }
 
-/// Signed package metadata
+/// Ed25519-based package signature
 #[derive(Debug, Clone, PartialEq)]
 pub struct PackageSignature {
     pub signer: String,
     pub hash: String,
-    pub signature: String,
+    /// Hex-encoded Ed25519 signature
+    pub signature_hex: String,
+    /// Hex-encoded Ed25519 public key of the signer
+    pub public_key_hex: String,
     pub timestamp: u64,
 }
 
@@ -285,6 +310,22 @@ impl VersionConstraint {
             _ => None,
         }
     }
+
+    /// Human-readable conflict explanation
+    pub fn description(&self) -> String {
+        match self {
+            VersionConstraint::Any => "any version".into(),
+            VersionConstraint::Exact(v) => format!("exactly {}", v),
+            VersionConstraint::Caret(v) => format!("^{}", v),
+            VersionConstraint::Tilde(v) => format!("~{}", v),
+            VersionConstraint::Gte(v) => format!(">= {}", v),
+            VersionConstraint::Gt(v) => format!("> {}", v),
+            VersionConstraint::Lte(v) => format!("<= {}", v),
+            VersionConstraint::Lt(v) => format!("< {}", v),
+            VersionConstraint::And(a, b) => format!("({} and {})", a.description(), b.description()),
+            VersionConstraint::Or(a, b) => format!("({} or {})", a.description(), b.description()),
+        }
+    }
 }
 
 /// A decision in the resolution trail (for PubGrub/incremental solver)
@@ -333,5 +374,12 @@ mod tests {
     fn test_pre_release() {
         assert!(Version::parse("1.0.0-alpha").unwrap() < Version::parse("1.0.0").unwrap());
         assert!(Version::parse("1.0.0-beta").unwrap() > Version::parse("1.0.0-alpha").unwrap());
+    }
+
+    #[test]
+    fn test_constraint_description() {
+        let c = VersionConstraint::parse(">=1.0.0 <2.0.0").unwrap();
+        let desc = c.description();
+        assert!(desc.contains(">= 1.0.0") || desc.contains("1.0.0"));
     }
 }

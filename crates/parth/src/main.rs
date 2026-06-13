@@ -406,9 +406,76 @@ fn cmd_search(args: &[String]) {
     }
     println!("📦 Search results for '{}':", query);
     for r in &results {
-        println!("  {}@{}", r.name, r.latest_version);
+        let desc = if r.description.is_empty() { "".to_string() } else { format!(" — {}", r.description) };
+        println!("  \u{1b}[1m{}@{}\u{1b}[0m{}", r.name, r.latest_version, desc);
     }
     println!("{} packages found", results.len());
+}
+
+fn cmd_yank(args: &[String]) {
+    if args.len() < 2 {
+        eprintln!("Usage: parth yank <package> <version>");
+        std::process::exit(1);
+    }
+    match registry::yank_package(&args[0], &args[1]) {
+        Ok(()) => println!("✓ Yanked '{}@{}'", args[0], args[1]),
+        Err(e) => { eprintln!("❌ {}", e); std::process::exit(1); }
+    }
+}
+
+fn cmd_unyank(args: &[String]) {
+    if args.len() < 2 {
+        eprintln!("Usage: parth unyank <package> <version>");
+        std::process::exit(1);
+    }
+    match registry::unyank_package(&args[0], &args[1]) {
+        Ok(()) => println!("✓ Un-yanked '{}@{}'", args[0], args[1]),
+        Err(e) => { eprintln!("❌ {}", e); std::process::exit(1); }
+    }
+}
+
+fn cmd_keygen() {
+    match registry::generate_keypair() {
+        Ok((_, pub_hex)) => {
+            println!("🔑 Ed25519 keypair generated");
+            println!("📁 Keys stored in: {}", registry::keys_dir().display());
+            println!("🔓 Public key: {}...", &pub_hex[..16]);
+        }
+        Err(e) => { eprintln!("❌ Key generation failed: {}", e); std::process::exit(1); }
+    }
+}
+
+fn cmd_update() {
+    if !Path::new("parth.das").exists() {
+        eprintln!("Error: no parth.das found"); std::process::exit(1);
+    }
+    let cfg = config::read_config(Path::new("parth.das")).unwrap_or_else(|e| {
+        eprintln!("Error: {}", e); std::process::exit(1);
+    });
+    if cfg.deps.is_empty() {
+        println!("No dependencies to update.");
+        return;
+    }
+    let registry_url = get_registry_url(&cfg);
+
+    // Delete existing lock to force re-resolution
+    let lock_path = Path::new("parth.lock");
+    if lock_path.exists() {
+        let _ = fs::remove_file(lock_path);
+    }
+
+    match resolver::resolve_and_cache(&cfg.deps, Path::new("."), &registry_url) {
+        Ok((resolved, _lock)) => {
+            println!("✓ Dependencies updated:");
+            for dep in &resolved {
+                println!("  {}@{}", dep.name, dep.version_req);
+            }
+        }
+        Err(e) => {
+            eprintln!("❌ Update failed: {}", e);
+            std::process::exit(1);
+        }
+    }
 }
 
 fn cmd_install(args: &[String]) {
@@ -713,6 +780,7 @@ fn cmd_help() {
     println!("  new <name>       Create a new Ajeeb project");
     println!("  add <pkg>[@v]    Add a dependency");
     println!("  remove <pkg>     Remove a dependency");
+    println!("  update           Update all dependencies");
     println!("  build            Compile current project");
     println!("  run              Build and run current project");
     println!("  test             Run all tests in tests/ directory");
@@ -726,6 +794,9 @@ fn cmd_help() {
     println!("  publish [url]    Publish the package");
     println!("  sign <pkg> <v>   Sign a package");
     println!("  verify <p> <v>   Verify package signature");
+    println!("  keygen           Generate Ed25519 signing keypair");
+    println!("  yank <pkg> <v>   Yank a package version");
+    println!("  unyank <pkg> <v>  Un-yank a package version");
     println!("  audit            Security audit");
     println!("  cache <cmd>      Cache management");
     println!("  workspace <cmd>  Workspace management");
@@ -747,11 +818,15 @@ fn main() {
         "test" => cmd_test(),
         "fmt" => cmd_fmt(&args[2..]),
         "publish" => cmd_publish(&args[2..]),
+        "update" => cmd_update(),
         "info" => cmd_info(),
         "search" => cmd_search(&args[2..]),
         "install" => cmd_install(&args[2..]),
         "sign" => cmd_sign(&args[2..]),
         "verify" => cmd_verify(&args[2..]),
+        "keygen" => cmd_keygen(),
+        "yank" => cmd_yank(&args[2..]),
+        "unyank" => cmd_unyank(&args[2..]),
         "audit" => cmd_audit(&args[2..]),
         "cache" => cmd_cache(&args[2..]),
         "workspace" => cmd_workspace(&args[2..]),

@@ -7,10 +7,14 @@ const DEPS_SECTION: &str = "dependencies";
 const PKG_SECTION: &str = "package";
 
 /// Full project configuration including workspace, features, profiles
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ProjectConfig {
     pub pkg_name: String,
     pub pkg_version: String,
+    pub pkg_description: String,
+    pub pkg_author: String,
+    pub pkg_homepage: String,
+    pub pkg_license: String,
     pub deps: Vec<PkgDep>,
     pub features: Vec<Feature>,
     pub profiles: Vec<Profile>,
@@ -38,6 +42,10 @@ pub fn read_config(path: &Path) -> Result<ProjectConfig, String> {
 
     let mut pkg_name = String::from("project");
     let mut pkg_version = String::new();
+    let mut pkg_description = String::new();
+    let mut pkg_author = String::new();
+    let mut pkg_homepage = String::new();
+    let mut pkg_license = String::new();
     let mut registry_url = String::new();
     let mut deps = Vec::new();
     let mut features = Vec::new();
@@ -55,6 +63,10 @@ pub fn read_config(path: &Path) -> Result<ProjectConfig, String> {
                 match key {
                     "name" => pkg_name = val.to_string(),
                     "version" => pkg_version = val.to_string(),
+                    "description" => pkg_description = val.to_string(),
+                    "author" => pkg_author = val.to_string(),
+                    "homepage" => pkg_homepage = val.to_string(),
+                    "license" => pkg_license = val.to_string(),
                     "registry" => registry_url = val.to_string(),
                     _ => {}
                 }
@@ -122,7 +134,7 @@ pub fn read_config(path: &Path) -> Result<ProjectConfig, String> {
         }
     }
 
-    Ok(ProjectConfig { pkg_name, pkg_version, deps, features, profiles, workspace, registry_url })
+    Ok(ProjectConfig { pkg_name, pkg_version, pkg_description, pkg_author, pkg_homepage, pkg_license, deps, features, profiles, workspace, registry_url })
 }
 
 pub fn read_config_basic(path: &Path) -> (String, String, Vec<PkgDep>) {

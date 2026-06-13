@@ -4,8 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+ed25519-dalek = { version = "2.2.0", features = ["rand_core"] }
+getrandom = "0.3"
+hex = "0.4"
+rand = "0.8"
+rand_core = "0.6"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
+sha2 = "0.10"
 
 [features]
 default = ["remote-registry"]
