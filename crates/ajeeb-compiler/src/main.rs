@@ -44,7 +44,7 @@ fn main() -> io::Result<()> {
             let config = DasConfig::parse(&das_src);
             let name = config.get("package", "name").cloned().unwrap_or_default();
             let version = config.get("package", "version").cloned().unwrap_or_default();
-            if !name.is_empty() {
+            if !name.is_empty() && name != "project" {
                 println!("📦 parth: '{}' v{}", name, version);
             }
             break;
@@ -176,13 +176,16 @@ fn main() -> io::Result<()> {
     }
 
     // 5. LLVM IR CODEGEN (Phase 2 native compilation)
-    {
+    let mut llvm_ok = false;
+    let mut gcc_ok = false;
+
+    if Command::new("llc").arg("--version").status().is_ok() {
         let mut codegen = codegen::Codegen::new();
         match codegen.compile(&all_stmts) {
             Ok(_) => {
                 std::fs::create_dir_all("build").ok();
                 codegen.write_ir_to_file("build/output.ll").ok();
-                println!("\n🔨 Compiling build/output.ll → build/ajeeb_native (via llc + gcc) ...");
+                println!("\n🔨 Compiling build/output.ll → build/ajeeb_llvm (via llc + gcc) ...");
                 let status = Command::new("llc")
                     .args(["-O2", "build/output.ll", "-o", "build/output.s"])
                     .status()
@@ -194,13 +197,16 @@ fn main() -> io::Result<()> {
                         Ok(s)
                     });
                 match status {
-                    Ok(s) if s.success() => println!("✅ LLVM Compilation OK → ./build/ajeeb_llvm"),
+                    Ok(s) if s.success() => { println!("✅ LLVM Compilation OK → ./build/ajeeb_llvm"); llvm_ok = true; }
                     Ok(s) => println!("❌ LLVM Compilation failed (exit: {})", s),
                     Err(e) => println!("❌ Could not run clang: {}", e),
                 }
             }
             Err(e) => println!("⚠️  LLVM codegen skipped: {}", e),
         }
+    } else {
+        println!("ℹ️  llc not found — skipping LLVM codegen");
+        println!("   Install LLVM to enable native compilation");
     }
 
     // 6. LEGACY C CODEGEN: if build/output.c was generated, compile it with runtime
@@ -211,7 +217,7 @@ fn main() -> io::Result<()> {
                 "build/output.c",
                 "runtime/ajeeb_runtime.c",
                 "-o",
-                "build/ajeeb_gcc",
+                "build/ajeeb_native",
                 "-Wall",
                 "-Wno-int-to-pointer-cast",
                 "-Wno-pointer-to-int-cast",
@@ -219,11 +225,23 @@ fn main() -> io::Result<()> {
             ])
             .status();
         match status {
-            Ok(s) if s.success() => println!("✅ GCC Compilation OK → ./ajeeb_native"),
+            Ok(s) if s.success() => { println!("✅ GCC Compilation OK → ./build/ajeeb_native"); gcc_ok = true; }
             Ok(s) => println!("❌ GCC Compilation failed (exit: {})", s),
             Err(e) => println!("❌ Could not run gcc: {}", e),
         }
     }
+
+    // 7. BUILD SUMMARY
+    println!("\n═══════════════════════════════");
+    println!("📦 Build Summary:");
+    if llvm_ok {
+        println!("  ⚡ Native (LLVM): build/ajeeb_llvm");
+    }
+    if gcc_ok {
+        println!("  🔧 Native (GCC):  build/ajeeb_native");
+    }
+    println!("  🐢 Interpreter:   cargo run -p ajeeb-compiler --bin ajeeb_compiler");
+    println!("═══════════════════════════════");
 
     Ok(())
 }

@@ -779,7 +779,10 @@ impl Evaluator {
                     match a {
                         RuntimeValue::Int(n) => print!("{}", n),
                         RuntimeValue::Float(f) => print!("{}", f),
-                        RuntimeValue::String(s) => print!("{}", s.borrow()),
+                        RuntimeValue::String(s) => {
+                            let s_clean: String = s.borrow().chars().take_while(|&c| c != '\0').collect();
+                            print!("{}", s_clean);
+                        }
                         RuntimeValue::Bool(b) => print!("{}", b),
                         RuntimeValue::Array(arr_rc) => {
                             let arr = arr_rc.borrow();
@@ -790,7 +793,10 @@ impl Evaluator {
                                 }
                                 match e {
                                     RuntimeValue::Int(n) => print!("{}", n),
-                                    RuntimeValue::String(s) => print!("\"{}\"", s.borrow()),
+                                    RuntimeValue::String(s) => {
+                                        let s_clean: String = s.borrow().chars().take_while(|&c| c != '\0').collect();
+                                        print!("\"{}\"", s_clean);
+                                    }
                                     RuntimeValue::Bool(b) => print!("{}", b),
                                     RuntimeValue::Array(inner_rc) => {
                                         let inner = inner_rc.borrow();
@@ -914,7 +920,8 @@ impl Evaluator {
                     if let (RuntimeValue::String(path), RuntimeValue::String(content)) =
                         (&arg_vals[0], &arg_vals[1])
                     {
-                        let _ = std::fs::write(path.borrow().as_str(), content.borrow().as_bytes());
+                        let bytes: Vec<u8> = content.borrow().bytes().take_while(|&b| b != 0).collect();
+                        let _ = std::fs::write(path.borrow().as_str(), &bytes);
                     }
                 }
                 RuntimeValue::Void
@@ -932,7 +939,8 @@ impl Evaluator {
                                 .open(key.as_str())
                                 .expect("writeAppend: failed to open file")
                         });
-                        let _ = f.write_all(content.borrow().as_bytes());
+                        let bytes: Vec<u8> = content.borrow().bytes().take_while(|&b| b != 0).collect();
+                        let _ = f.write_all(&bytes);
                     }
                 }
                 RuntimeValue::Void

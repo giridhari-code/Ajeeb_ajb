@@ -132,7 +132,11 @@ fn cmd_new(args: &[String]) {
     fs::write(dir.join("parth.das"), das).expect("Cannot write parth.das");
     let main_ajb = "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n";
     fs::write(dir.join("src").join("main.ajb"), main_ajb).expect("Cannot write main.ajb");
-    println!("✓ Created Ajeeb project '{}'", raw_name);
+    println!("✓ Created '{}' — Ajeeb project", raw_name);
+    println!("");
+    println!("  Next steps:");
+    println!("  cd {}", raw_name);
+    println!("  parth run");
 }
 
 fn cmd_add(args: &[String]) {
@@ -210,42 +214,67 @@ fn collect_library_sources(deps: &[types::PkgDep]) -> (String, Vec<String>) {
     let mut runtime_c_files: Vec<String> = Vec::new();
 
     for dep in deps {
-        let lib_dir = Path::new("libs").join(&dep.name);
-        if !lib_dir.exists() {
-            eprintln!("⚠️  Library '{}' not found in libs/", dep.name);
-            continue;
-        }
+        let mut found = false;
+        // Search locations in priority order: libs/, packages/, ~/.parth/packages/<name>/
+        let search_roots = {
+            let home = registry::parth_home().join("packages").join(&dep.name);
+            let mut roots = vec![
+                PathBuf::from("libs").join(&dep.name),
+                PathBuf::from("packages").join(&dep.name),
+            ];
+            if home.exists() {
+                if let Ok(entries) = fs::read_dir(&home) {
+                    let mut versions: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+                    versions.sort_by_key(|e| e.file_name());
+                    for entry in versions {
+                        roots.push(entry.path());
+                    }
+                }
+            }
+            roots
+        };
 
-        let src_dir = lib_dir.join("src");
-        if src_dir.exists() {
-            if let Ok(entries) = fs::read_dir(&src_dir) {
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if p.extension().map(|e| e == "ajb").unwrap_or(false) {
-                        if let Ok(content) = fs::read_to_string(&p) {
-                            combined.push_str("\n// --- ");
-                            combined.push_str(dep.name.as_str());
-                            combined.push_str(": ");
-                            combined.push_str(p.file_name().unwrap().to_string_lossy().as_ref());
-                            combined.push_str(" ---\n");
-                            combined.push_str(&content);
-                            combined.push('\n');
+        for root in &search_roots {
+            if !root.exists() { continue; }
+
+            let src_dir = root.join("src");
+            if src_dir.exists() {
+                if let Ok(entries) = fs::read_dir(&src_dir) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.extension().map(|e| e == "ajb").unwrap_or(false) {
+                            if let Ok(content) = fs::read_to_string(&p) {
+                                combined.push_str("\n// --- ");
+                                combined.push_str(dep.name.as_str());
+                                combined.push_str(": ");
+                                combined.push_str(p.file_name().unwrap().to_string_lossy().as_ref());
+                                combined.push_str(" ---\n");
+                                combined.push_str(&content);
+                                combined.push('\n');
+                            }
+                        }
+                    }
+                }
+                found = true;
+            }
+
+            let runtime_dir = root.join("runtime");
+            if runtime_dir.exists() {
+                if let Ok(entries) = fs::read_dir(&runtime_dir) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.extension().map(|e| e == "c").unwrap_or(false) {
+                            runtime_c_files.push(p.to_string_lossy().to_string());
                         }
                     }
                 }
             }
+
+            if found { break; }
         }
 
-        let runtime_dir = lib_dir.join("runtime");
-        if runtime_dir.exists() {
-            if let Ok(entries) = fs::read_dir(&runtime_dir) {
-                for entry in entries.flatten() {
-                    let p = entry.path();
-                    if p.extension().map(|e| e == "c").unwrap_or(false) {
-                        runtime_c_files.push(p.to_string_lossy().to_string());
-                    }
-                }
-            }
+        if !found {
+            eprintln!("⚠️  Library '{}' not found in libs/, packages/, or ~/.parth/packages/", dep.name);
         }
     }
 
@@ -262,61 +291,173 @@ fn cmd_build_file(args: &[String]) {
         eprintln!("Error: expected a .ajb file");
         std::process::exit(1);
     }
-    if !Path::new(file_path).exists() {
-        eprintln!("Error: file '{}' not found", file_path);
+
+    // Resolve absolute paths to work regardless of where cargo runs
+    let abs_file_path = std::fs::canonicalize(file_path).unwrap_or_else(|e| {
+        eprintln!("Error: cannot resolve path '{}': {}", file_path, e);
         std::process::exit(1);
-    }
+    });
+    let project_dir = abs_file_path.parent().unwrap();
+    let build_dir = project_dir.join("build");
+    fs::create_dir_all(&build_dir).ok();
+    let output_c = build_dir.join("output.c");
 
     let root = find_ajeeb_root();
-    let status = Command::new("cargo")
-        .args(["run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
-               "--", file_path, "build/output.c"])
-        .current_dir(&root)
-        .status().expect("Failed to run compiler");
-    if !status.success() {
-        eprintln!("❌ Compilation failed");
-        std::process::exit(1);
-    }
-
-    // Build with gcc
-    let bin_name = format!("build/{}", Path::new(file_path).file_stem().unwrap().to_string_lossy());
+    let bin_name = build_dir.join(abs_file_path.file_stem().unwrap());
     let runtime_src = root.join("runtime/ajeeb_runtime.c");
-    let gcc_status = Command::new("gcc")
-        .args(["build/output.c", &runtime_src.to_string_lossy(), "-o", &bin_name, "-Wall"])
-        .current_dir(&root)
-        .status().expect("Failed to run gcc");
-    if !gcc_status.success() {
-        eprintln!("❌ GCC compilation failed");
-        std::process::exit(1);
+    let native_binary = root.join("build/ajeeb_native");
+
+    if native_binary.exists() {
+        println!("⚡ Using self-hosted compiler");
+        let status = Command::new(&native_binary)
+            .args([&abs_file_path.to_string_lossy().to_string(), &output_c.to_string_lossy().to_string()])
+            .status()
+            .expect("Failed to run ajeeb_native");
+        if !status.success() {
+            eprintln!("❌ Self-hosted compilation failed");
+            std::process::exit(1);
+        }
+        let gcc_status = Command::new("gcc")
+            .args([
+                &output_c.to_string_lossy(),
+                &runtime_src.to_string_lossy(),
+                "-o", &bin_name.to_string_lossy(),
+                "-Wall", "-Wno-int-to-pointer-cast", "-Wno-pointer-to-int-cast",
+            ])
+            .status().expect("Failed to run gcc");
+        if !gcc_status.success() {
+            eprintln!("❌ Native compilation failed");
+            std::process::exit(1);
+        }
+        println!("✓ Built: {}", bin_name.display());
+    } else {
+        // Fall back to Rust interpreter + LLVM pipeline
+        println!("🔧 Using Rust interpreter");
+        let status = Command::new("cargo")
+            .args(["run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
+                   "--", &abs_file_path.to_string_lossy().to_string(), "--skip-run"])
+            .current_dir(&root)
+            .status().expect("Failed to run compiler");
+        if !status.success() {
+            eprintln!("❌ Compilation failed");
+            std::process::exit(1);
+        }
+
+        let llvm_ir = root.join("build/output.ll");
+        let asm_file = build_dir.join("output.s");
+        let llc_status = Command::new("llc")
+            .args(["-O2", &llvm_ir.to_string_lossy(), "-o", &asm_file.to_string_lossy()])
+            .status();
+        match llc_status {
+            Ok(s) if s.success() => {
+                let gcc_status = Command::new("gcc")
+                    .args([
+                        &asm_file.to_string_lossy(),
+                        &runtime_src.to_string_lossy(),
+                        "-o", &bin_name.to_string_lossy(),
+                        "-lm", "-ldl", "-Wl,--allow-multiple-definition",
+                    ])
+                    .status().expect("Failed to run gcc");
+                if !gcc_status.success() {
+                    eprintln!("❌ Native compilation failed");
+                    std::process::exit(1);
+                }
+                println!("✓ Built: {}", bin_name.display());
+            }
+            Ok(_) => { eprintln!("❌ LLVM -> asm compilation failed"); std::process::exit(1); }
+            Err(e) => { eprintln!("❌ Could not run llc: {}", e); std::process::exit(1); }
+        }
     }
-    println!("✓ Built: {}", bin_name);
+    println!("  Run with: parth run {}", file_path);
 }
 
 fn cmd_run_file(args: &[String]) {
     if args.is_empty() {
-        eprintln!("Usage: parth run <file.ajb>");
+        eprintln!("Usage: parth run <file.ajb> [args...]");
         std::process::exit(1);
     }
     let file_path = &args[0];
     if !file_path.ends_with(".ajb") {
-        // Try as project mode (parth run) with a flag that isn't a file
-        cmd_run();
-        return;
+        eprintln!("Error: expected a .ajb file");
+        std::process::exit(1);
+    }
+    if !Path::new(file_path).exists() {
+        eprintln!("Error: '{}' not found", file_path);
+        std::process::exit(1);
     }
 
     let root = find_ajeeb_root();
-    let status = Command::new("cargo")
-        .args(["run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
-               "--", file_path])
-        .current_dir(&root)
-        .status().expect("Failed to run compiler");
-    std::process::exit(status.code().unwrap_or(1));
+
+    // Step 1 — Choose compiler: self-hosted or cargo
+    let native = root.join("build/ajeeb_native");
+    let output_c = "build/output.c";
+
+    fs::create_dir_all("build").ok();
+
+    if native.exists() {
+        // Self-hosted path: compile to C, GCC, then run
+        println!("⚡ Compiling with ajeeb_native...");
+        let compile_status = Command::new(&native)
+            .args([file_path, output_c])
+            .status()
+            .expect("Failed to run ajeeb_native");
+        if !compile_status.success() {
+            eprintln!("❌ Compilation failed");
+            std::process::exit(1);
+        }
+
+        let stem = Path::new(file_path)
+            .file_stem()
+            .unwrap()
+            .to_string_lossy();
+        let bin_path = format!("build/{}", stem);
+        let runtime = root.join("runtime/ajeeb_runtime.c");
+
+        println!("🔨 Linking → {}", bin_path);
+
+        let gcc_status = Command::new("gcc")
+            .args([
+                output_c,
+                &runtime.to_string_lossy(),
+                "-o", &bin_path,
+                "-Wno-int-to-pointer-cast",
+                "-Wno-pointer-to-int-cast",
+            ])
+            .status()
+            .expect("Failed to run gcc");
+
+        if !gcc_status.success() {
+            eprintln!("❌ GCC failed");
+            std::process::exit(1);
+        }
+
+        println!("🚀 Running {}...\n", bin_path);
+        let run_status = Command::new(&bin_path)
+            .args(&args[1..])
+            .status()
+            .expect("Failed to run binary");
+
+        std::process::exit(run_status.code().unwrap_or(0));
+    } else {
+        // Fallback: run through Rust interpreter directly
+        let status = Command::new("cargo")
+            .args(["run", "-p", "ajeeb-compiler",
+                   "--bin", "ajeeb_compiler",
+                   "--", file_path])
+            .current_dir(&root)
+            .status()
+            .expect("Failed to run compiler");
+        std::process::exit(status.code().unwrap_or(1));
+    }
 }
 
 fn cmd_build() {
     if !Path::new("parth.das").exists() {
         eprintln!("Error: no parth.das found"); std::process::exit(1);
     }
+    let project_dir = std::env::current_dir().unwrap_or_else(|e| {
+        eprintln!("Error: {}", e); std::process::exit(1);
+    });
     let cfg = config::read_config(Path::new("parth.das")).unwrap_or_else(|e| {
         eprintln!("Error: {}", e); std::process::exit(1);
     });
@@ -335,58 +476,96 @@ fn cmd_build() {
     }
 
     let profile = cfg.profiles.first().cloned().unwrap_or_default();
-    let opt_flag = if profile.opt_level > 0 { format!("-O{}", profile.opt_level) } else { String::new() };
 
     let (name, output_dir, runtime) = read_config_basic_for_build();
     let root = find_ajeeb_root();
+
+    // Use absolute paths throughout
+    let build_dir = project_dir.join(&output_dir);
+    fs::create_dir_all(&build_dir).ok();
+    let entry = project_dir.join("src/main.ajb");
+    let combined_path = build_dir.join("combined.ajb");
+    let bin_path = build_dir.join(&name);
+
     let runtime_src = root.join(&runtime);
-    let runtime_src_str = runtime_src.to_string_lossy().to_string();
 
-    let (lib_ajb_sources, lib_runtime_c) = collect_library_sources(&cfg.deps);
+    let (lib_ajb_sources, _lib_runtime_c) = collect_library_sources(&cfg.deps);
 
-    let entry = "src/main.ajb";
-    let mut user_src = fs::read_to_string(entry).unwrap_or_default();
+    let mut user_src = fs::read_to_string(&entry).unwrap_or_default();
     user_src.push('\n');
     user_src.push_str(&lib_ajb_sources);
 
-    let combined_path = "build/combined.ajb";
-    fs::write(combined_path, &user_src).unwrap_or_else(|e| {
+    fs::write(&combined_path, &user_src).unwrap_or_else(|e| {
         eprintln!("Error writing combined source: {}", e); std::process::exit(1);
     });
 
-    let status = Command::new("cargo")
-        .args(["run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
-               "--", combined_path, "build/output.c"])
-        .current_dir(&root)
-        .status().expect("Failed to run compiler");
-    if !status.success() { eprintln!("❌ Compilation failed"); std::process::exit(1); }
+    let native_binary = root.join("build/ajeeb_native");
+    let combined_str = combined_path.to_string_lossy().to_string();
 
-    let out_path = format!("{}output.c", output_dir);
+    if native_binary.exists() {
+        // Use self-hosted binary (no cargo needed!)
+        println!("⚡ Using self-hosted compiler");
+        let output_c = build_dir.join("output.c");
+        let status = Command::new(&native_binary)
+            .args([&combined_str, &output_c.to_string_lossy().to_string()])
+            .status()
+            .expect("Failed to run ajeeb_native");
+        if !status.success() {
+            eprintln!("❌ Self-hosted compilation failed");
+            std::process::exit(1);
+        }
+        let gcc_status = Command::new("gcc")
+            .args([
+                &output_c.to_string_lossy(),
+                &runtime_src.to_string_lossy(),
+                "-o", &bin_path.to_string_lossy(),
+                "-Wall", "-Wno-int-to-pointer-cast", "-Wno-pointer-to-int-cast",
+            ])
+            .status().expect("Failed to run gcc");
+        if !gcc_status.success() {
+            eprintln!("❌ Native compilation failed");
+            std::process::exit(1);
+        }
+        println!("✓ Build: {} (opt-level: {})", bin_path.display(), profile.opt_level);
+    } else {
+        // Fall back to Rust interpreter + LLVM pipeline
+        println!("🔧 Using Rust interpreter (run `scripts/install.sh` for faster builds)");
+        let status = Command::new("cargo")
+            .args(["run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
+                   "--", &combined_str, "--skip-run"])
+            .current_dir(&root)
+            .status().expect("Failed to run compiler");
+        if !status.success() { eprintln!("❌ Compilation failed"); std::process::exit(1); }
 
-    let bin_path = format!("{}{}", output_dir, name);
-    let mut gcc_args: Vec<String> = vec![out_path.clone(), runtime_src_str.clone(), "-o".to_string(), bin_path.clone()];
-    for dep in &cfg.deps {
-        let lib_dir = Path::new("libs").join(&dep.name);
-        let runtime_dir = lib_dir.join("runtime");
-        if runtime_dir.exists() {
-            let h_path = runtime_dir.join(format!("{}_runtime.h", dep.name));
-            if h_path.exists() {
-                gcc_args.push("-include".to_string());
-                gcc_args.push(h_path.to_string_lossy().into_owned());
+        let llvm_ir = root.join("build/output.ll");
+        let asm_file = build_dir.join("output.s");
+        let llc_status = Command::new("llc")
+            .args(["-O2", &llvm_ir.to_string_lossy(), "-o", &asm_file.to_string_lossy()])
+            .status();
+        match llc_status {
+            Ok(s) if s.success() => {
+                let gcc_status = Command::new("gcc")
+                    .args([
+                        &asm_file.to_string_lossy(),
+                        &runtime_src.to_string_lossy(),
+                        "-o", &bin_path.to_string_lossy(),
+                        "-lm", "-ldl", "-Wl,--allow-multiple-definition",
+                    ])
+                    .status().expect("Failed to run gcc");
+                if !gcc_status.success() {
+                    eprintln!("❌ Native compilation failed");
+                    std::process::exit(1);
+                }
+                println!("✓ Build: {} (opt-level: {})", bin_path.display(), profile.opt_level);
             }
+            Ok(_) => { eprintln!("❌ LLVM -> asm compilation failed"); std::process::exit(1); }
+            Err(e) => { eprintln!("❌ Could not run llc: {}", e); std::process::exit(1); }
         }
     }
-    gcc_args.extend(lib_runtime_c.iter().cloned());
-    if !opt_flag.is_empty() { gcc_args.push(opt_flag.clone()); }
-    gcc_args.extend_from_slice(&["-Wall".to_string(), "-Wno-int-to-pointer-cast".to_string(), "-Wno-pointer-to-int-cast".to_string(), "-Wno-int-conversion".to_string()]);
-
-    let status = Command::new("gcc").args(&gcc_args).status().expect("Failed to run gcc");
-    if !status.success() { eprintln!("❌ GCC compilation failed"); std::process::exit(1); }
-    println!("✓ Build: {} (opt-level: {})", bin_path, profile.opt_level);
 
     // Build workspace members
     for member in &cfg.workspace {
-        let member_dir = Path::new(&member.path);
+        let member_dir = project_dir.join(&member.path);
         if !member_dir.exists() {
             eprintln!("⚠️  Workspace member '{}' not found, skipping", member.path);
             continue;
@@ -398,7 +577,7 @@ fn cmd_build() {
         println!("\n📦 Building workspace member: {}", member.path);
         let status = Command::new("cargo")
             .args(["run", "-p", "parth", "--", "build"])
-            .current_dir(member_dir)
+            .current_dir(&member_dir)
             .status()
             .expect("Failed to run parth build for workspace member");
         if !status.success() {
@@ -432,8 +611,11 @@ fn read_config_basic_for_build() -> (String, String, String) {
 
 fn cmd_run() {
     cmd_build();
+    let project_dir = std::env::current_dir().unwrap_or_else(|e| {
+        eprintln!("Error: {}", e); std::process::exit(1);
+    });
     let (name, output_dir, _) = read_config_basic_for_build();
-    let bin_path = format!("{}{}", output_dir, name);
+    let bin_path = project_dir.join(&output_dir).join(&name);
     let status = Command::new(&bin_path).status().expect("Failed to run binary");
     std::process::exit(status.code().unwrap_or(1));
 }
@@ -1024,20 +1206,30 @@ fn cmd_version() {
 }
 
 fn cmd_clean() {
-    let patterns = ["build/output.c", "build/output2.c", "build/*.o"];
+    let build_dir = Path::new("build");
+    if !build_dir.exists() { return; }
+
+    let patterns = ["output.c", "output2.c", "combined.ajb", "output.s", "output.ll"];
     for pattern in &patterns {
-        let path = Path::new(pattern);
+        let path = build_dir.join(pattern);
         if path.exists() {
-            let _ = fs::remove_file(path);
+            let _ = fs::remove_file(&path);
         }
     }
-    if let Ok(entries) = fs::read_dir("build") {
+    if let Ok(entries) = fs::read_dir(build_dir) {
         for entry in entries.flatten() {
             let p = entry.path();
             if p.extension().map(|e| e == "o").unwrap_or(false) {
                 let _ = fs::remove_file(&p);
             }
         }
+    }
+    // Also remove the project binary
+    let (name, _, _) = read_config_basic_for_build();
+    let bin_path = build_dir.join(&name);
+    if bin_path.exists() {
+        let _ = fs::remove_file(&bin_path);
+        println!("🗑️  Removed {}", bin_path.display());
     }
     println!("🧹 Cleaned build directory");
 }
@@ -1059,7 +1251,9 @@ fn cmd_help() {
     println!("  outdated         Check for outdated dependencies");
     println!("  upgrade [pkg]    Upgrade dependencies");
     println!("  build [file.ajb] Compile current project or single file");
-    println!("  run [file.ajb]   Build and run project, or run single file");
+    println!("  run [file.ajb]   Run project or single file directly");
+    println!("                   Examples: parth run hello.ajb");
+    println!("                             parth run (runs src/main.ajb)");
     println!("  test             Run all tests in tests/ directory");
     println!("  fmt [files..]    Format Ajeeb source files");
     println!("  doc              Generate documentation from /// comments");
@@ -1106,9 +1300,7 @@ fn main() {
             }
         }
         "run" => {
-            if args.len() > 2 && args[2].ends_with(".ajb") {
-                cmd_run_file(&args[2..]);
-            } else if args.len() > 2 {
+            if args.len() > 2 {
                 cmd_run_file(&args[2..]);
             } else {
                 cmd_run();
