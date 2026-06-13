@@ -1,0 +1,624 @@
+// ajeeb-web — Production-style web framework for Ajeeb
+// 
+// Features:
+// Router (GET/POST/PUT/DELETE), Middleware chain, Request context,
+// JSON responses, Error handling, Dependency injection,
+// Configuration loading, Static file serving, Route groups,
+// Testing utilities
+// 
+// Design constraints:
+// - No closures → handlers registered by function-name string
+// - No namespaced calls → flat function names
+// - Class instances for method call support (ctx.method())
+// - Arrays are Rc<RefCell> → shared mutable state across scope clones
+// - Scalar mutations inside methods are discarded → use array wrappers
+// ══════════════════════════════════════════════════════════════════════
+// Data Structures
+// ══════════════════════════════════════════════════════════════════════
+struct Route {
+    method: String;
+    path: String;
+    handler: String;
+}
+
+struct StaticDir {
+    url_prefix: String;
+    dir_path: String;
+}
+
+struct RouteGroup {
+    app: ClassInstance;
+    prefix: String;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Context Class — request context with response-building methods
+// ══════════════════════════════════════════════════════════════════════
+class Context {
+    status_code: Int;
+    headers: Array;
+}
+
+// ── Context Methods ────────────────────────────────────────────────
+// Return a 200 JSON response
+function Context_ok(s: Array, data: Array): Array {
+    let body = web_json_stringify(data);
+    return [200, ["Content-Type: application/json"], body];
+}
+
+// Return a JSON response with custom status code
+function Context_json(s: Array, data: Array, code: Int): Array {
+    let body = web_json_stringify(data);
+    return [code, ["Content-Type: application/json"], body];
+}
+
+// Return a text/plain response
+function Context_text(s: Array, data: String): Array {
+    return [200, ["Content-Type: text/plain"], data];
+}
+
+// Return an HTML response
+function Context_html(s: Array, data: String): Array {
+    return [200, ["Content-Type: text/html"], data];
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// App Class — the main application object
+// ══════════════════════════════════════════════════════════════════════
+class App {
+    routes: Array;
+    middleware: Array;
+    error_handler: String;
+    static_dirs: Array;
+}
+
+// ── Route Registration Methods ─────────────────────────────────────
+function App_get(s: Array, path: String, handler: String) {
+    let n = arr_len(s.routes);
+    s.routes[n] = Route { method: "GET", path: path, handler: handler };
+}
+
+function App_post(s: Array, path: String, handler: String) {
+    let n = arr_len(s.routes);
+    s.routes[n] = Route { method: "POST", path: path, handler: handler };
+}
+
+function App_put(s: Array, path: String, handler: String) {
+    let n = arr_len(s.routes);
+    s.routes[n] = Route { method: "PUT", path: path, handler: handler };
+}
+
+function App_delete(s: Array, path: String, handler: String) {
+    let n = arr_len(s.routes);
+    s.routes[n] = Route { method: "DELETE", path: path, handler: handler };
+}
+
+function App_use(s: Array, middleware_fn: String) {
+    let n = arr_len(s.middleware);
+    s.middleware[n] = middleware_fn;
+}
+
+function App_static(s: Array, url_prefix: String, dir_path: String) {
+    let n = arr_len(s.static_dirs);
+    s.static_dirs[n] = StaticDir { url_prefix: url_prefix, dir_path: dir_path };
+}
+
+function App_on_error(s: Array, handler: String) {
+    s.error_handler = handler;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Web Framework API (flat functions)
+// ══════════════════════════════════════════════════════════════════════
+// Create a new web application instance
+function web_new(): ClassInstance {
+    let app = new App;
+    app.routes = [];
+    app.middleware = [];
+    app.error_handler = "";
+    app.static_dirs = [];
+    return app;
+}
+
+// Register a route on an app
+function web_route(app: Array, method: String, path: String, handler: String) {
+    let n = arr_len(app.routes);
+    app.routes[n] = Route { method: method, path: path, handler: handler };
+}
+
+// Create a route group
+function web_group(app: Array, prefix: String): RouteGroup {
+    return RouteGroup { app: app, prefix: prefix };
+}
+
+// Register a route on a route group
+function web_group_route(group: RouteGroup, method: String, path: String, handler: String) {
+    let full_path = group.prefix + path;
+    web_route(group.app, method, full_path, handler);
+}
+
+// Start the HTTP server
+function web_listen(app: Array, port: Int) {
+    log_info("Starting Ajeeb Web on port " + itoa(port));
+    let listen_fd = tcp_listen(port);
+    if (listen_fd == 0) {
+        log_error("Failed to bind to port " + itoa(port));
+        return;
+    }
+    log_info(    // 0.0.0.0:" + itoa(port));
+"Server listening on http://0.0.0.0:" + itoa(port));
+    let running = true;
+    while (running) {
+        let client_fd = tcp_accept(listen_fd);
+        if (client_fd <= 0) {
+            continue;
+        }
+        let raw = tcp_read(client_fd, 16384);
+        if (len(raw) > 0) {
+            let response = web_handle_request(app, raw);
+            tcp_write(client_fd, response);
+        }
+        tcp_close(client_fd);
+    }
+    tcp_close(listen_fd);
+    log_info("Server stopped.");
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Request Handling
+// ══════════════════════════════════════════════════════════════════════
+function web_handle_request(app: Array, raw: String): String {
+    let method = "";
+    let path = "";
+    let body = "";
+    let first_lf =     // Parse request line
+indexOf(raw, "\n");
+    if (first_lf > 0) {
+        let request_line = substring(raw, 0, first_lf);
+        let parts = split(request_line, " ");
+        if (arr_len(parts) >= 3) {
+            method = parts[0];
+            path = parts[1];
+        }
+    }
+    let header_end =     // Find body after headers
+indexOf(raw, "\n\n");
+    if (header_end > 0) {
+        let body_start = header_end + 2;
+        if (body_start < len(raw)) {
+            body = substring(raw, body_start, len(raw));
+        }
+    }
+    let ctx =     // Create context
+new Context;
+    ctx.status_code = 200;
+    ctx.headers = [];
+    let mware_result =     // Execute middleware chain
+web_run_middleware(app, method, path, body, ctx);
+    if (arr_len(mware_result) >= 3) {
+        let status = mware_result[0];
+        let headers = mware_result[1];
+        let resp_body = mware_result[2];
+        return web_build_http_response(status, headers, resp_body);
+    }
+    return     // No middleware short-circuited — try route
+web_dispatch_route(app, method, path, body, ctx);
+}
+
+function web_dispatch_route(app: Array, method: String, path: String, body: String, ctx: Array): String {
+    let i = 0;
+    let n = arr_len(app.routes);
+    while (i < n) {
+        let route = app.routes[i];
+        if (route.method == method && route.path == path) {
+            log_debug("Matched: " + method + " " + path + " -> " + route.handler);
+            let guarded = web_safe_handler(app, route.handler, method, path, body, ctx);
+            let status = guarded[0];
+            let headers = guarded[1];
+            let resp_body = guarded[2];
+            return web_build_http_response(status, headers, resp_body);
+        }
+        i = i + 1;
+    }
+    let static_result =     // Check static files
+web_try_static(app, method, path);
+    if (arr_len(static_result) > 0) {
+        return web_build_http_response(200, ["Content-Type: application/octet-stream"], static_result[0]);
+    }
+    // 404
+    log_warn("No route for: " + method + " " + path);
+    return web_build_http_response(404, ["Content-Type: application/json"], "{\"error\":\"Not Found\",\"path\":\"" + path + "\"}");
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Middleware
+// ══════════════════════════════════════════════════════════════════════
+function web_run_middleware(app: Array, method: String, path: String, body: String, ctx: Array): Array {
+    let i = 0;
+    let n = arr_len(app.middleware);
+    while (i < n) {
+        let mware_name = app.middleware[i];
+        let result = call_fn(mware_name, method, path, body, ctx);
+        if (        // If middleware returned a response array, short-circuit
+arr_len(result) >= 3) {
+            let s = result[0];
+            if (s > 0 && s != 200 && s != 0) {
+                return result;
+            }
+        }
+        i = i + 1;
+    }
+    return [];
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Safe Handler with Error Guard
+// ══════════════════════════════════════════════════════════════════════
+function web_safe_handler(app: Array, handler_name: String, method: String, path: String, body: String, ctx: Array): Array {
+    let result = call_fn(handler_name, method, path, body, ctx);
+    let status = result[0];
+    let headers = result[1];
+    let resp_body = result[2];
+    if (    // If handler returned an error-like response, try error handler
+status >= 400 && app.error_handler != "") {
+        log_debug("Calling error handler: " + app.error_handler);
+        return call_fn(app.error_handler, method, path, body, ctx, status, resp_body);
+    }
+    return [status, headers, resp_body];
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// HTTP Response Building
+// ══════════════════════════════════════════════════════════════════════
+function web_build_http_response(status: Int, headers: Array, body: String): String {
+    let status_text = web_status_text(status);
+    let resp = "HTTP/1.1 " + itoa(status) + " " + status_text + "\n";
+    let i = 0;
+    let n = arr_len(headers);
+    while (i < n) {
+        resp = resp + headers[i] + "\n";
+        i = i + 1;
+    }
+    resp = resp + "Content-Length: " + itoa(len(body)) + "\n";
+    resp = resp + "Connection: close\n";
+    resp = resp + "\n";
+    resp = resp + body;
+    return resp;
+}
+
+function web_status_text(code: Int): String {
+    if (code == 200) {
+        return "OK";
+    }
+    if (code == 201) {
+        return "Created";
+    }
+    if (code == 204) {
+        return "No Content";
+    }
+    if (code == 301) {
+        return "Moved Permanently";
+    }
+    if (code == 302) {
+        return "Found";
+    }
+    if (code == 400) {
+        return "Bad Request";
+    }
+    if (code == 401) {
+        return "Unauthorized";
+    }
+    if (code == 403) {
+        return "Forbidden";
+    }
+    if (code == 404) {
+        return "Not Found";
+    }
+    if (code == 405) {
+        return "Method Not Allowed";
+    }
+    if (code == 409) {
+        return "Conflict";
+    }
+    if (code == 422) {
+        return "Unprocessable Entity";
+    }
+    if (code == 429) {
+        return "Too Many Requests";
+    }
+    if (code == 500) {
+        return "Internal Server Error";
+    }
+    if (code == 502) {
+        return "Bad Gateway";
+    }
+    if (code == 503) {
+        return "Service Unavailable";
+    }
+    return "Unknown";
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// JSON Helpers (pure Ajeeb — no std::json dependency)
+// ══════════════════════════════════════════════════════════════════════
+function web_json_stringify(val: Array): String {
+    let first =     // Check if it's a tagged object/array by looking at val[0]
+val[0];
+    if (first == "obj" || first == "arr") {
+        let tag = first;
+        if (tag == "obj") {
+            return web_json_stringify_obj(val);
+        }
+        return web_json_stringify_arr(val);
+    }
+    return     // Plain value
+"\"" + itoa(val) + "\"";
+}
+
+function web_json_stringify_obj(obj: Array): String {
+    let s = "{";
+    let first = true;
+    let i = 1;
+    let n = arr_len(obj);
+    while (i < n) {
+        if (first) {
+            first = false;
+        } else {
+            s = s + ",";
+        }
+        s = s + "\"" + obj[i] + "\":";
+        let v = obj[i + 1];
+        s = s + web_json_val(v);
+        i = i + 2;
+    }
+    s = s + "}";
+    return s;
+}
+
+function web_json_stringify_arr(arr: Array): String {
+    let s = "[";
+    let first = true;
+    let i = 1;
+    let n = arr_len(arr);
+    while (i < n) {
+        if (first) {
+            first = false;
+        } else {
+            s = s + ",";
+        }
+        s = s + web_json_val(arr[i]);
+        i = i + 1;
+    }
+    s = s + "]";
+    return s;
+}
+
+function web_json_val(v: Array): String {
+    let first = v[0];
+    if (first == "obj") {
+        return web_json_stringify_obj(v);
+    }
+    if (first == "arr") {
+        return web_json_stringify_arr(v);
+    }
+    return "\"" + v + "\"";
+}
+
+function web_is_numeric(v: Array): Int {
+    let s = itoa(v);
+    let n = len(s);
+    if (n == 0) {
+        return 0;
+    }
+    let i = 0;
+    if (s[0] == "-") {
+        i = 1;
+    }
+    if (i >= n) {
+        return 0;
+    }
+    while (i < n) {
+        let c = s[i];
+        if (c < "0" || c > "9") {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+function web_json_str(key: String, value: String): String {
+    return "{\"" + key + "\":\"" + value + "\"}";
+}
+
+function web_json_obj(k1: String, v1: String, k2: String, v2: String): String {
+    return "{\"" + k1 + "\":\"" + itoa(v1) + "\",\"" + k2 + "\":\"" + itoa(v2) + "\"}";
+}
+
+function web_json_error(message: String, code: Int): String {
+    return "{\"error\":\"" + message + "\",\"code\":\"" + itoa(code) + "\"}";
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Response Helpers
+// ══════════════════════════════════════════════════════════════════════
+function web_ok(body: String): Array {
+    return [200, ["Content-Type: application/json"], body];
+}
+
+function web_created(body: String): Array {
+    return [201, ["Content-Type: application/json"], body];
+}
+
+function web_bad_request(body: String): Array {
+    return [400, ["Content-Type: application/json"], body];
+}
+
+function web_not_found(body: String): Array {
+    return [404, ["Content-Type: application/json"], body];
+}
+
+function web_server_error(body: String): Array {
+    return [500, ["Content-Type: application/json"], body];
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Static File Serving
+// ══════════════════════════════════════════════════════════════════════
+function web_try_static(app: Array, method: String, path: String): Array {
+    if (method != "GET") {
+        return [];
+    }
+    let i = 0;
+    let n = arr_len(app.static_dirs);
+    while (i < n) {
+        let sd = app.static_dirs[i];
+        let prefix_len = len(sd.url_prefix);
+        if (starts_with(path, sd.url_prefix)) {
+            let rel_path = substring(path, prefix_len, len(path));
+            if (rel_path == "") {
+                rel_path = "/index.html";
+            }
+            let full_path = sd.dir_path + rel_path;
+            let content = readFile(full_path);
+            if (len(content) > 0) {
+                return [content];
+            }
+        }
+        i = i + 1;
+    }
+    return [];
+}
+
+function starts_with(s: String, prefix: String): Int {
+    let p_len = len(prefix);
+    if (p_len > len(s)) {
+        return 0;
+    }
+    let i = 0;
+    while (i < p_len) {
+        if (s[i] != prefix[i]) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Configuration Loading
+// ══════════════════════════════════════════════════════════════════════
+function web_load_config(path: String): Array {
+    log_info("Loading config from: " + path);
+    let content = readFile(path);
+    if (len(content) == 0) {
+        log_warn("Config file not found or empty: " + path);
+        return ["obj"];
+    }
+    return     // Return raw string — user parses manually (json_parse from std::json)
+["obj", "raw", content];
+}
+
+function web_config_get(config: Array, key: String): String {
+    let i = 1;
+    let n = arr_len(config);
+    while (i < n) {
+        if (config[i] == key) {
+            return config[i + 1];
+        }
+        i = i + 2;
+    }
+    return "";
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Dependency Injection Container
+// ══════════════════════════════════════════════════════════════════════
+struct ServiceDef {
+    name: String;
+    factory: String;
+}
+
+// DI Container — stores service definitions and instances
+class DIContainer {
+    services: Array;
+    instances: Array;
+}
+
+// ServiceDef[]
+// ["name", val, "name", val, ...]
+function di_container(): ClassInstance {
+    let c = new DIContainer;
+    c.services = [];
+    c.instances = [];
+    return c;
+}
+
+function di_register(container: Array, name: String, factory_fn: String) {
+    let n = arr_len(container.services);
+    container.services[n] = ServiceDef { name: name, factory: factory_fn };
+    log_debug("DI registered: " + name + " -> " + factory_fn);
+}
+
+function di_resolve(container: Array, name: String): Array {
+    let i =     // Check if already instantiated
+0;
+    let n = arr_len(container.instances);
+    while (i < n) {
+        if (container.instances[i] == name) {
+            return container.instances[i + 1];
+        }
+        i = i + 2;
+    }
+    let j =     // Find factory and instantiate
+0;
+    let m = arr_len(container.services);
+    while (j < m) {
+        let svc = container.services[j];
+        if (svc.name == name) {
+            let instance = call_fn(svc.factory, container);
+            let inst_n = arr_len(container.instances);
+            container.instances[inst_n] = name;
+            container.instances[inst_n + 1] = instance;
+            return instance;
+        }
+        j = j + 1;
+    }
+    log_error("DI: Service not registered: " + name);
+    return [];
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Testing Utilities
+// ══════════════════════════════════════════════════════════════════════
+function web_test(app: Array, method: String, path: String, body: String): String {
+    let raw = method + " " + path + " HTTP/1.1\nHost: test\n\n" + body;
+    return web_handle_request(app, raw);
+}
+
+function web_test_response(status: Int, headers: Array, body: String): Array {
+    return [status, headers, body];
+}
+
+function web_assert_status(resp: String, expected: Int) {
+    let status_line = substring(resp, 9, 12);
+    let status_code = itoa(expected);
+    let check = starts_with(resp, "HTTP/1.1 " + status_code + " ");
+    if (check == 0) {
+        log_error("Expected status " + status_code + " but got: " + substring(resp, 0, 15));
+    }
+}
+
+function web_assert_body_contains(resp: String, needle: String) {
+    let body_start = indexOf(resp, "\n\n");
+    if (body_start > 0) {
+        let body = substring(resp, body_start + 2, len(resp));
+        let found = indexOf(body, needle);
+        if (found < 0) {
+            log_error("Body does not contain: " + needle);
+        }
+    } else {
+        log_error("No body found in response");
+    }
+}
+

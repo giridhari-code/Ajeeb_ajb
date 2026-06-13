@@ -1,0 +1,187 @@
+// Ajeeb Standard Library — Collections Module
+// Provides Vec (dynamic array), HashMap (key-value store), and HashSet.
+
+// ── Vec (Dynamic Array) ────────────────────────────────────────────
+
+/// Create a new empty Vec.
+pub function vec_new(): Array {
+    return [];
+}
+
+/// Push a value to the end of a Vec.
+pub function vec_push(vec: Int[], val: Int) {
+    let i = arr_len(vec);
+    vec[i] = val;
+}
+
+/// Get the length of a Vec.
+pub function vec_len(vec: Int[]): Int {
+    return arr_len(vec);
+}
+
+/// Get value at index from a Vec.
+pub function vec_get(vec: Int[], i: Int): Int {
+    return vec[i];
+}
+
+/// Set value at index in a Vec.
+pub function vec_set(vec: Int[], i: Int, val: Int) {
+    vec[i] = val;
+}
+
+/// Check if Vec is empty.
+pub function vec_is_empty(vec: Int[]): Bool {
+    return arr_len(vec) == 0;
+}
+
+// ── HashMap (Key-Value Store) ──────────────────────────────────────
+
+/// Create a new empty HashMap.
+pub function hashmap_new(): Array {
+    return [];
+}
+
+/// Set a key-value pair in the HashMap.
+pub function hashmap_set(map: Int[], key: String, value: Int) {
+    let i = 0;
+    let n = arr_len(map);
+    let found = 0;
+    while (i < n) {
+        let entry = map[i];
+        if (entry[0] == key) {
+            entry[1] = value;
+            found = 1;
+            break;
+        }
+        i = i + 1;
+    }
+    if (found == 0) {
+        let entry = [key, value];
+        map[n] = entry;
+    }
+}
+
+/// Get a value from the HashMap by key. Returns 0 if key not found.
+pub function hashmap_get(map: Int[], key: String): Int {
+    let i = 0;
+    let n = arr_len(map);
+    while (i < n) {
+        let entry = map[i];
+        if (entry[0] == key) {
+            return entry[1];
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+/// Check if a key exists in the HashMap.
+pub function hashmap_contains(map: Int[], key: String): Bool {
+    let i = 0;
+    let n = arr_len(map);
+    while (i < n) {
+        if (map[i][0] == key) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+/// Remove a key from the HashMap.
+pub function hashmap_remove(map: Int[], key: String) {
+    let i = 0;
+    let n = arr_len(map);
+    while (i < n) {
+        if (map[i][0] == key) {
+            let j = i;
+            while (j < n - 1) {
+                map[j] = map[j + 1];
+                j = j + 1;
+            }
+            map[n - 1] = [];
+            break;
+        }
+        i = i + 1;
+    }
+}
+
+/// Get number of entries in the HashMap.
+pub function hashmap_len(map: Int[]): Int {
+    return arr_len(map);
+}
+
+/// Get all keys from the HashMap as an array.
+pub function hashmap_keys(map: Int[]): Array {
+    let keys = [];
+    let i = 0;
+    let n = arr_len(map);
+    while (i < n) {
+        keys[i] = map[i][0];
+        i = i + 1;
+    }
+    return keys;
+}
+
+/// Get all values from the HashMap as an array.
+pub function hashmap_values(map: Int[]): Array {
+    let vals = [];
+    let i = 0;
+    let n = arr_len(map);
+    while (i < n) {
+        vals[i] = map[i][1];
+        i = i + 1;
+    }
+    return vals;
+}
+
+// ── HashSet ─────────────────────────────────────────────────────────
+
+/// Create a new empty HashSet.
+pub function hashset_new(): Array {
+    return [];
+}
+
+/// Add a value to the HashSet.
+pub function hashset_add(set: Int[], val: Int) {
+    if (!hashset_contains(set, val)) {
+        let n = arr_len(set);
+        set[n] = val;
+    }
+}
+
+/// Check if a value is in the HashSet.
+pub function hashset_contains(set: Int[], val: Int): Bool {
+    let i = 0;
+    let n = arr_len(set);
+    while (i < n) {
+        if (set[i] == val) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+/// Remove a value from the HashSet.
+pub function hashset_remove(set: Int[], val: Int) {
+    let i = 0;
+    let n = arr_len(set);
+    while (i < n) {
+        if (set[i] == val) {
+            let j = i;
+            while (j < n - 1) {
+                set[j] = set[j + 1];
+                j = j + 1;
+            }
+            set[n - 1] = 0;
+            break;
+        }
+        i = i + 1;
+    }
+}
+
+/// Get the number of elements in the HashSet.
+pub function hashset_len(set: Int[]): Int {
+    return arr_len(set);
+}

@@ -1,0 +1,11 @@
+[package]
+name = "ajeeb-fmt"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ajeeb_fmt"
+path = "src/main.rs"
+
+[dependencies]
+ajeeb-compiler = { path = "../ajeeb-compiler" }

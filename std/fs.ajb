@@ -1,0 +1,42 @@
+// Ajeeb Standard Library — File System Module
+// Provides file and directory operations.
+
+/// Read entire file as string. Returns empty string if file not found.
+pub function fs_read_text(path: String): String {
+    return readFile(path);
+}
+
+/// Write string to file (overwrites existing content).
+pub function fs_write_text(path: String, content: String) {
+    writeFile(path, content);
+}
+
+/// Append string to file (creates if not exists).
+pub function fs_append_text(path: String, content: String) {
+    writeAppend(path, content);
+}
+
+/// Check if a file exists by attempting to read it.
+/// Returns 1 if exists, 0 if not.
+pub function fs_exists(path: String): Bool {
+    let content = readFile(path);
+    if (content == "") {
+        return 0;
+    }
+    return 1;
+}
+
+/// Write a single byte to a file.
+pub function fs_write_byte(path: String, byte: Int) {
+    writeByte(path, byte);
+}
+
+/// Get current write position.
+pub function fs_write_pos(buf_name: String): Int {
+    return wrPos(buf_name);
+}
+
+/// Set write position.
+pub function fs_set_write_pos(buf_name: String, pos: Int) {
+    wrPos(buf_name, pos);
+}

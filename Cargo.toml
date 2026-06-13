@@ -3,4 +3,5 @@ resolver = "2"
 members = [
     "crates/ajeeb-compiler",
     "crates/parth",
+    "crates/ajeeb-fmt",
 ]

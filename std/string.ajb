@@ -1,0 +1,101 @@
+// Ajeeb Standard Library — String Module
+// Provides string manipulation functions.
+
+/// Split a string by delimiter. Returns array of substrings.
+pub function string_split(s: String, delim: String): Array {
+    return split(s, delim);
+}
+
+/// Join string array elements into a string separated by delimiter.
+/// Elements must be strings (convert ints via string_from_int first).
+pub function string_join_str(arr: String[], delim: String): String {
+    let result = "";
+    let first = true;
+    let i = 0;
+    let n = arr_len(arr);
+    while (i < n) {
+        if (first) {
+            first = false;
+        } else {
+            result = result + delim;
+        }
+        result = result + arr[i];
+        i = i + 1;
+    }
+    return result;
+}
+
+/// Check if string contains substring.
+pub function string_contains(s: String, search: String): Bool {
+    return contains(s, search);
+}
+
+/// Check if string starts with prefix.
+pub function string_starts_with(s: String, prefix: String): Bool {
+    return startsWith(s, prefix);
+}
+
+/// Check if string ends with suffix.
+pub function string_ends_with(s: String, suffix: String): Bool {
+    return endsWith(s, suffix);
+}
+
+/// Replace all occurrences of 'from' with 'to' in string.
+pub function string_replace(s: String, from: String, to: String): String {
+    return replace(s, from, to);
+}
+
+/// Remove leading and trailing whitespace.
+pub function string_trim(s: String): String {
+    return trim(s);
+}
+
+/// Convert integer to string.
+pub function string_from_int(n: Int): String {
+    return itoa(n);
+}
+
+/// Get character code at index.
+pub function string_char_code(s: String, i: Int): Int {
+    return charCode(s, i);
+}
+
+/// Get character code at index (alias for charCode).
+pub function string_ord(s: String, i: Int): Int {
+    return chr(s, i);
+}
+
+/// Get substring from start to end (exclusive).
+pub function string_substring(s: String, start: Int, end: Int): String {
+    return substring(s, start, end);
+}
+
+/// Find index of first occurrence of search string. Returns -1 if not found.
+pub function string_index_of(s: String, search: String): Int {
+    return indexOf(s, search);
+}
+
+/// Convert to uppercase.
+pub function string_to_upper(s: String): String {
+    return toUpperCase(s);
+}
+
+/// Convert to lowercase.
+pub function string_to_lower(s: String): String {
+    return toLowerCase(s);
+}
+
+/// Compare two strings. Returns -1, 0, or 1.
+pub function string_compare(a: String, b: String): Int {
+    return strcmp(a, b);
+}
+
+/// Get length of string.
+pub function string_length(s: String): Int {
+    return len(s);
+}
+
+/// Check if string is empty.
+pub function string_is_empty(s: String): Bool {
+    return len(s) == 0;
+}

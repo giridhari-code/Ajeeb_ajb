@@ -1,0 +1,25 @@
+// Echo server: listens on a port and echoes back any data received
+const PORT = 7777;
+
+const listen_fd = tcp_listen(PORT);
+if (listen_fd == 0) {
+    println("echo_server: FAILED to listen on port " + itoa(PORT));
+} else {
+    println("echo_server: listening on port " + itoa(PORT));
+}
+
+while (true) {
+    const client = tcp_accept(listen_fd);
+    if (client != 0) {
+        println("echo_server: accepted connection fd=" + itoa(client));
+        const data = tcp_read(client, 65536);
+        if (len(data) > 0) {
+            println("echo_server: received " + itoa(len(data)) + " bytes, echoing...");
+            tcp_write(client, data);
+        }
+        tcp_close(client);
+        println("echo_server: closed fd=" + itoa(client));
+    } else {
+        println("echo_server: accept failed, retrying...");
+    }
+}

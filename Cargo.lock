@@ -7,6 +7,13 @@ name = "ajeeb-compiler"
 version = "0.1.0"
 
 [[package]]
+name = "ajeeb-fmt"
+version = "0.1.0"
+dependencies = [
+ "ajeeb-compiler",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"

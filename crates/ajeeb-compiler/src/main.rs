@@ -1,22 +1,28 @@
 mod ast;
+mod cache;
+mod codegen;
 mod das_parser;
 mod error;
 mod eval;
 mod interop;
 mod lexer;
+mod module;
 mod parser;
 mod semantic;
 mod token;
 
+use ast::Stmt;
+use cache::ModuleCache;
 use das_parser::DasConfig;
 use eval::Evaluator;
 use lexer::Lexer;
+use module::ModuleLoader;
 use parser::Parser;
 use semantic::SemanticAnalyzer;
 use std::env;
 use std::fs::File;
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use token::Token;
 
@@ -45,47 +51,107 @@ fn main() -> io::Result<()> {
         }
     }
 
-    let mut file = File::open(file_path)?;
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
+    // 0. CACHE CHECK — skip lex/parse/module-loading if cached AST is still fresh
+    let entry_path = Path::new(file_path);
+    let mut module_cache = ModuleCache::new(PathBuf::from("build/cache"));
+    module_cache.add_source(entry_path);
 
-    // 1. LEX
-    let mut lexer = Lexer::new(&contents);
-    let mut tokens = Vec::new();
-    let mut token_lines = Vec::new();
-    let mut token_cols = Vec::new();
-    loop {
-        match lexer.next_token_spanned() {
-            Ok((Token::Eof, _, _)) => break,
-            Ok((tok, line, col)) => {
-                tokens.push(tok);
-                token_lines.push(line);
-                token_cols.push(col);
+    let all_stmts = if let Some(cached_stmts) = module_cache.load() {
+        println!("✓ Cache hit: {} statements loaded from cache", cached_stmts.len());
+        cached_stmts
+    } else {
+        // Cache miss — run full pipeline
+        let mut file = File::open(file_path)?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+
+        // 1. LEX
+        let mut lexer = Lexer::new(&contents);
+        let mut tokens = Vec::new();
+        let mut token_lines = Vec::new();
+        let mut token_cols = Vec::new();
+        loop {
+            match lexer.next_token_spanned() {
+                Ok((Token::Eof, _, _)) => break,
+                Ok((tok, line, col)) => {
+                    tokens.push(tok);
+                    token_lines.push(line);
+                    token_cols.push(col);
+                }
+                Err(e) => {
+                    println!("{}\n😡 Lexing error! Tokenize karte waqt problem aayi.", e);
+                    return Ok(());
+                }
             }
+        }
+
+        println!("✓ Lexer: {} tokens mil gaye", tokens.len());
+
+        // 2. PARSE
+        let mut parser = Parser::with_positions(tokens, token_lines, token_cols);
+        let ast = match parser.parse_program() {
+            Ok(stmts) => stmts,
             Err(e) => {
-                println!("{}\n😡 Lexing error! Tokenize karte waqt problem aayi.", e);
+                println!("{}\n😤 Parsing error! AST banane me problem aayi.", e);
                 return Ok(());
             }
+        };
+
+        println!("✓ Parser: {} statements parse ho gaye", ast.len());
+
+        // 2b. MODULE LOADING — resolve imports
+        let mut loader = ModuleLoader::new();
+        let entry_dir = entry_path.parent().unwrap_or(Path::new("."));
+        loader.add_import_path(entry_dir.to_path_buf());
+
+        if Path::new("std").exists() {
+            loader.add_import_path(Path::new("std").to_path_buf());
         }
-    }
+        if Path::new("../std").exists() {
+            loader.add_import_path(Path::new("../std").to_path_buf());
+        }
+        for dir in [Path::new("."), Path::new("..")] {
+            let das_path = dir.join("parth.das");
+            if das_path.exists() {
+                let std_path = dir.join("std");
+                if std_path.exists() {
+                    loader.add_import_path(std_path);
+                }
+                break;
+            }
+        }
 
-    println!("✓ Lexer: {} tokens mil gaye", tokens.len());
+        let module_name = entry_path.file_stem().and_then(|s| s.to_str()).unwrap_or("main");
+        let entry_module = module::Module {
+            name: module_name.to_string(),
+            file_path: entry_path.to_path_buf(),
+            imports: ast.iter().filter_map(|s| {
+                if let Stmt::Import(i) = s { Some(i.clone()) } else { None }
+            }).collect(),
+            stmts: ast,
+        };
+        loader.modules.insert(module_name.to_string(), entry_module);
 
-    // 2. PARSE
-    let mut parser = Parser::with_positions(tokens, token_lines, token_cols);
-    let ast = match parser.parse_program() {
-        Ok(stmts) => stmts,
-        Err(e) => {
-            println!("{}\n😤 Parsing error! AST banane me problem aayi.", e);
+        if let Err(e) = loader.resolve_imports() {
+            println!("❌ Module resolution error: {}", e);
             return Ok(());
         }
-    };
 
-    println!("✓ Parser: {} statements parse ho gaye", ast.len());
+        let resolved_stmts = loader.collect_all_stmts();
+        println!("✓ Module loader: {} modules, {} total statements", loader.modules.len(), resolved_stmts.len());
+
+        // After successful module loading, cache the result with all source mtimes
+        for module in loader.modules.values() {
+            module_cache.add_source(&module.file_path);
+        }
+        module_cache.save(&resolved_stmts);
+
+        resolved_stmts
+    };
 
     // 3. SEMANTIC ANALYSIS
     let mut analyzer = SemanticAnalyzer::new();
-    analyzer.analyze(&ast);
+    analyzer.analyze(&all_stmts);
     if !analyzer.errors.is_empty() {
         for err in &analyzer.errors {
             println!("{}", err);
@@ -96,32 +162,60 @@ fn main() -> io::Result<()> {
     // 4. DIRECT EXECUTION
     println!("\n🚀 --- Ajeeb Direct Run Started ---");
     let mut evaluator = Evaluator::new();
-    // Program args: [binary, user_args...] — skip args[1] which is the interpreted file
     let mut program_args = vec![args[0].clone()];
     if args.len() >= 3 {
         program_args.extend_from_slice(&args[2..]);
     }
     evaluator.set_program_args(program_args);
-    evaluator.evaluate_program(&ast);
+    evaluator.evaluate_program(&all_stmts);
     println!("--- Ajeeb Execution Ended ---\n🎉 Execution Completed Successfully!");
 
-    // 4. AUTO-COMPILE: if build/output.c was generated, compile it with runtime
+    // 5. LLVM IR CODEGEN (Phase 2 native compilation)
+    {
+        let mut codegen = codegen::Codegen::new();
+        match codegen.compile(&all_stmts) {
+            Ok(_) => {
+                std::fs::create_dir_all("build").ok();
+                codegen.write_ir_to_file("build/output.ll").ok();
+                println!("\n🔨 Compiling build/output.ll → build/ajeeb_native (via llc + gcc) ...");
+                let status = Command::new("llc")
+                    .args(["-O2", "build/output.ll", "-o", "build/output.s"])
+                    .status()
+                    .and_then(|s| if s.success() {
+                        Command::new("gcc")
+                            .args(["build/output.s", "runtime/ajeeb_runtime.c", "-o", "build/ajeeb_llvm", "-lm", "-ldl", "-Wl,--allow-multiple-definition"])
+                            .status()
+                    } else {
+                        Ok(s)
+                    });
+                match status {
+                    Ok(s) if s.success() => println!("✅ LLVM Compilation OK → ./build/ajeeb_llvm"),
+                    Ok(s) => println!("❌ LLVM Compilation failed (exit: {})", s),
+                    Err(e) => println!("❌ Could not run clang: {}", e),
+                }
+            }
+            Err(e) => println!("⚠️  LLVM codegen skipped: {}", e),
+        }
+    }
+
+    // 6. LEGACY C CODEGEN: if build/output.c was generated, compile it with runtime
     if Path::new("build/output.c").exists() {
-        println!("\n🔨 Compiling build/output.c → build/ajeeb_native ...");
+        println!("\n🔨 Compiling build/output.c → build/ajeeb_native (via gcc) ...");
         let status = Command::new("gcc")
             .args([
                 "build/output.c",
                 "runtime/ajeeb_runtime.c",
                 "-o",
-                "build/ajeeb_native",
+                "build/ajeeb_gcc",
                 "-Wall",
                 "-Wno-int-to-pointer-cast",
                 "-Wno-pointer-to-int-cast",
+                "-ldl",
             ])
             .status();
         match status {
-            Ok(s) if s.success() => println!("✅ Compilation OK → ./ajeeb_native"),
-            Ok(s) => println!("❌ Compilation failed (exit: {})", s),
+            Ok(s) if s.success() => println!("✅ GCC Compilation OK → ./ajeeb_native"),
+            Ok(s) => println!("❌ GCC Compilation failed (exit: {})", s),
             Err(e) => println!("❌ Could not run gcc: {}", e),
         }
     }

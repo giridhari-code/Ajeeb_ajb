@@ -6,3 +6,5 @@ edition = "2021"
 [[bin]]
 name = "ajeeb_compiler"
 path = "src/main.rs"
+
+

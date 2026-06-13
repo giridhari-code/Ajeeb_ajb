@@ -1,0 +1,128 @@
+// ajeeb-db test suite — self-contained
+// Tests database abstraction logic
+
+function db_open(path: String): Int {
+    return sqlite_open(path);
+}
+
+function db_close(handle: Int) {
+    sqlite_close(handle);
+}
+
+function db_query(handle: Int, sql: String): Array {
+    return sqlite_query(handle, sql);
+}
+
+function db_escape_string(s: String): String {
+    return replace(s, "'", "''");
+}
+
+function db_escape_table(name: String): String {
+    return "\"" + replace(name, "\"", "\"\"") + "\"";
+}
+
+function db_select(table: String, where_clause: String): String {
+    if (where_clause == "") {
+        return "SELECT * FROM " + db_escape_table(table);
+    }
+    return "SELECT * FROM " + db_escape_table(table) + " WHERE " + where_clause;
+}
+
+function db_insert(table: String, obj: Array): String {
+    let cols = "";
+    let vals = "";
+    let first = true;
+    let i = 1;
+    let n = arr_len(obj);
+    while (i < n) {
+        if (first) { first = false; }
+        else {
+            cols = cols + ", ";
+            vals = vals + ", ";
+        }
+        cols = cols + obj[i];
+        vals = vals + "'" + db_escape_string(obj[i + 1]) + "'";
+        i = i + 2;
+    }
+    return "INSERT INTO " + db_escape_table(table) + " (" + cols + ") VALUES (" + vals + ")";
+}
+
+function test_db_open_close() {
+    let handle = db_open("/tmp/test_ajeeb.db");
+    let r = 0;
+    if (handle != 0) { r = 1; }
+    assert_eq(r, 1);
+    db_close(handle);
+    println("  PASS open_close: handle=" + itoa(handle));
+}
+
+function test_db_query() {
+    let handle = db_open("/tmp/test_ajeeb3.db");
+    let rows = db_query(handle, "SELECT * FROM test");
+    assert_eq(arr_len(rows), 0);
+    db_close(handle);
+    println("  PASS query: rows=" + itoa(arr_len(rows)));
+}
+
+function test_escape_string() {
+    let r1 = db_escape_string("hello");
+    let r2 = db_escape_string("it's");
+    let r3 = db_escape_string("'");
+    let r4 = db_escape_string("a'b'c");
+    assert_eq(r1, "hello");
+    assert_eq(r2, "it''s");
+    assert_eq(r3, "''");
+    assert_eq(r4, "a''b''c");
+    println("  PASS escape_string");
+}
+
+function test_escape_table() {
+    let r1 = db_escape_table("users");
+    let r2 = db_escape_table("my\"table");
+    assert_eq(r1, "\"users\"");
+    assert_eq(r2, "\"my\"\"table\"");
+    println("  PASS escape_table");
+}
+
+function test_db_select() {
+    let sql = db_select("users", "id = 1");
+    let has_select = indexOf(sql, "SELECT * FROM");
+    let has_users = indexOf(sql, "users");
+    let has_where = indexOf(sql, "id = 1");
+    assert_neq(has_select, -1);
+    assert_neq(has_users, -1);
+    assert_neq(has_where, -1);
+    println("  PASS select: " + sql);
+}
+
+function test_db_select_no_where() {
+    let sql = db_select("items", "");
+    assert_eq(sql, "SELECT * FROM \"items\"");
+    println("  PASS select_no_where: " + sql);
+}
+
+function test_db_insert() {
+    let obj = ["obj", "name", "Alice", "age", "30"];
+    let sql = db_insert("users", obj);
+    let has_insert = indexOf(sql, "INSERT INTO");
+    let has_users = indexOf(sql, "users");
+    let has_alice = indexOf(sql, "'Alice'");
+    let has_30 = indexOf(sql, "'30'");
+    assert_neq(has_insert, -1);
+    assert_neq(has_users, -1);
+    assert_neq(has_alice, -1);
+    assert_neq(has_30, -1);
+    println("  PASS insert: " + sql);
+}
+
+function main() {
+    println("=== ajeeb-db tests ===");
+    test_db_open_close();
+    test_db_query();
+    test_escape_string();
+    test_escape_table();
+    test_db_select();
+    test_db_select_no_where();
+    test_db_insert();
+    println("=== All ajeeb-db tests PASS ===");
+}

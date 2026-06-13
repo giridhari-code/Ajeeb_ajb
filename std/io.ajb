@@ -1,0 +1,42 @@
+// Ajeeb Standard Library — I/O Module
+// Provides console and basic input/output operations.
+
+/// Print a value to stdout without newline.
+pub function io_print(val: Int) {
+    print(val);
+}
+
+/// Print a value to stdout followed by newline.
+pub function io_println(val: Int) {
+    println(val);
+}
+
+/// Print a string to stdout without newline.
+pub function io_print_str(s: String) {
+    print(s);
+}
+
+/// Print a string followed by newline.
+pub function io_println_str(s: String) {
+    println(s);
+}
+
+/// Print multiple values separated by space, followed by newline.
+pub function io_print_all(a: Int, b: Int, c: Int, d: Int, e: Int) {
+    print(a);
+    print(" ");
+    print(b);
+    print(" ");
+    print(c);
+    print(" ");
+    print(d);
+    print(" ");
+    print(e);
+    io_println_str("");
+}
+
+/// Read a program argument by index.
+/// Index 0 is the program binary path, 1+ are user-provided args.
+pub function io_read_arg(idx: Int): String {
+    return readArg(idx);
+}

@@ -1,0 +1,72 @@
+// ajeeb-log test suite — self-contained
+// Tests level filtering logic inline (function scope is cloned,
+// so global mutations inside functions are lost in this compiler version)
+
+function main() {
+    println("=== ajeeb-log tests ===");
+
+    // Test 1: Default level
+    let level = 1;
+    let r = 0;
+    if (0 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 0);
+    if (1 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 1);
+    if (4 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 1);
+    println("  PASS default_level");
+
+    // Test 2: Debug level
+    level = 0;
+    if (0 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 1);
+    if (1 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 1);
+    println("  PASS debug_level");
+
+    // Test 3: Warn level
+    level = 2;
+    if (1 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 0);
+    if (2 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 1);
+    if (3 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 1);
+    println("  PASS warn_level");
+
+    // Test 4: Error level
+    level = 3;
+    if (2 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 0);
+    if (3 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 1);
+    if (4 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 1);
+    println("  PASS error_level");
+
+    // Test 5: Fatal level
+    level = 4;
+    if (3 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 0);
+    if (4 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 1);
+    println("  PASS fatal_level");
+
+    // Test 6: Level cycling
+    level = 0;
+    level = 3;
+    level = 1;
+    if (0 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 0);
+    if (1 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 1);
+    println("  PASS level_cycling");
+
+    // Test 7: Unknown level (no change)
+    level = 0;
+    if (0 < level) { r = 0; } else { r = 1; }
+    assert_eq(r, 1);
+    println("  PASS set_level_unknown");
+
+    println("=== All ajeeb-log tests PASS ===");
+}

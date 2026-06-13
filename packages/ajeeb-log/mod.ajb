@@ -1,0 +1,61 @@
+// ajeeb-log — Structured logging for Ajeeb applications
+//
+// Supports six log levels: debug, info, warn, error, fatal
+// Default output is stdout. Can be redirected to a file.
+
+let log_current_level = 1;   // 0=debug, 1=info, 2=warn, 3=error, 4=fatal
+let log_file_path = "";      // Empty = stdout
+
+const LOG_LEVELS = ["DEBUG", "INFO ", "WARN ", "ERROR", "FATAL"];
+
+function log_write(level_idx: Int, message: String) {
+    if (level_idx < log_current_level) {
+        return;
+    }
+    let prefix = LOG_LEVELS[level_idx];
+    let formatted = "[" + prefix + "] " + message;
+    if (log_file_path == "") {
+        println(formatted);
+    } else {
+        writeAppend(log_file_path, formatted + "\n");
+    }
+}
+
+/// Set minimum log level. Pass "debug", "info", "warn", "error", or "fatal".
+pub function log_set_level(level: String) {
+    if (level == "debug") { log_current_level = 0; }
+    else if (level == "info") { log_current_level = 1; }
+    else if (level == "warn") { log_current_level = 2; }
+    else if (level == "error") { log_current_level = 3; }
+    else if (level == "fatal") { log_current_level = 4; }
+}
+
+/// Redirect log output to a file.
+pub function log_set_output(path: String) {
+    log_file_path = path;
+}
+
+/// Log a debug message.
+pub function log_debug(message: String) {
+    log_write(0, message);
+}
+
+/// Log an info message.
+pub function log_info(message: String) {
+    log_write(1, message);
+}
+
+/// Log a warning message.
+pub function log_warn(message: String) {
+    log_write(2, message);
+}
+
+/// Log an error message.
+pub function log_error(message: String) {
+    log_write(3, message);
+}
+
+/// Log a fatal error message.
+pub function log_fatal(message: String) {
+    log_write(4, message);
+}

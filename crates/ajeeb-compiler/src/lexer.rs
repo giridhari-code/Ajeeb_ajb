@@ -22,6 +22,10 @@ impl Lexer {
         self.chars.get(self.pos).copied()
     }
 
+    fn peek_next(&self) -> Option<char> {
+        self.chars.get(self.pos + 1).copied()
+    }
+
     fn advance(&mut self) -> Option<char> {
         let ch = self.chars.get(self.pos).copied();
         if let Some(c) = ch {
@@ -86,11 +90,12 @@ impl Lexer {
                     Some('t') => s.push('\t'),
                     Some('"') => s.push('"'),
                     Some('\\') => s.push('\\'),
+                    Some('0') => s.push('\0'),
                     _ => {
                         return Err(CompileError::new(
                             self.line,
                             self.col,
-                            "Galat escape sequence. Sirf \\n, \\t, \\\", \\\\ allowed hain."
+                            "Galat escape sequence. Sirf \\n, \\t, \\\", \\\\, \\0 allowed hain."
                                 .to_string(),
                         ))
                     }
@@ -104,22 +109,46 @@ impl Lexer {
     fn read_number(&mut self, first: char) -> Result<Token, CompileError> {
         let mut s = String::new();
         s.push(first);
+        let mut is_float = false;
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() {
                 s.push(c);
                 self.advance();
+            } else if c == '.' && !is_float {
+                if let Some(next) = self.peek_next() {
+                    if next.is_ascii_digit() {
+                        is_float = true;
+                        s.push(c);
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
             } else {
                 break;
             }
         }
-        let val: i64 = s.parse().map_err(|_| {
-            CompileError::new(
-                self.line,
-                self.col,
-                "Number bahut bada hai! i64 me fit nahi ho raha.".to_string(),
-            )
-        })?;
-        Ok(Token::Number(val))
+        if is_float {
+            let val: f64 = s.parse().map_err(|_| {
+                CompileError::new(
+                    self.line,
+                    self.col,
+                    "Float number parse nahi ho paaya.".to_string(),
+                )
+            })?;
+            Ok(Token::FloatLiteral(val))
+        } else {
+            let val: i64 = s.parse().map_err(|_| {
+                CompileError::new(
+                    self.line,
+                    self.col,
+                    "Number bahut bada hai! i64 me fit nahi ho raha.".to_string(),
+                )
+            })?;
+            Ok(Token::Number(val))
+        }
     }
 
     fn read_identifier(&mut self, first: char) -> Token {
@@ -144,6 +173,7 @@ impl Lexer {
             "true" => Token::True,
             "false" => Token::False,
             "int" => Token::Int,
+            "float" => Token::Float,
             "string" => Token::String,
             "bool" => Token::Bool,
             "void" => Token::Void,
@@ -153,6 +183,13 @@ impl Lexer {
             "for" => Token::For,
             "break" => Token::Break,
             "continue" => Token::Continue,
+            "import" => Token::Import,
+            "pub" => Token::Pub,
+            "struct" => Token::Struct,
+            "enum" => Token::Enum,
+            "match" => Token::Match,
+            "trait" => Token::Trait,
+            "impl" => Token::Impl,
             _ => Token::Identifier(s),
         }
     }
@@ -200,6 +237,9 @@ impl Lexer {
                     if self.peek() == Some('=') {
                         self.advance();
                         Ok((Token::Eq, start_line, start_col))
+                    } else if self.peek() == Some('>') {
+                        self.advance();
+                        Ok((Token::FatArrow, start_line, start_col))
                     } else {
                         Ok((Token::Assign, start_line, start_col))
                     }
@@ -253,7 +293,14 @@ impl Lexer {
                     }
                 }
                 ';' => Ok((Token::Semicolon, start_line, start_col)),
-                ':' => Ok((Token::Colon, start_line, start_col)),
+                ':' => {
+                    if self.peek() == Some(':') {
+                        self.advance();
+                        Ok((Token::DoubleColon, start_line, start_col))
+                    } else {
+                        Ok((Token::Colon, start_line, start_col))
+                    }
+                }
                 ',' => Ok((Token::Comma, start_line, start_col)),
                 '(' => Ok((Token::LParen, start_line, start_col)),
                 ')' => Ok((Token::RParen, start_line, start_col)),

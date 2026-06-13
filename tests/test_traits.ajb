@@ -1,0 +1,24 @@
+trait Greeter {
+    function greet(self: Person): String;
+}
+
+struct Person {
+    name: String;
+    age: Int;
+}
+
+impl Greeter for Person {
+    function greet(self: Person): String {
+        return self.name;
+    }
+
+}
+
+function main(): Int {
+    let p = Person { name: "Alice", age: 30 };
+    let msg = p.greet();
+    println(msg);
+    assert_eq(msg, "Alice");
+    return 0;
+}
+

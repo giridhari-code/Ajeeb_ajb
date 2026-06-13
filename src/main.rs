@@ -117,6 +117,7 @@ fn main() -> io::Result<()> {
                 "-Wall",
                 "-Wno-int-to-pointer-cast",
                 "-Wno-pointer-to-int-cast",
+                "-ldl",
             ])
             .status();
         match status {

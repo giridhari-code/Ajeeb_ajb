@@ -1,0 +1,193 @@
+// ajeeb-http — HTTP server with routing and response helpers
+//
+// Provides a struct-based HTTP server with method+path routing,
+// request parsing, and response building. Handler functions are
+// registered by name (since Ajeeb does not yet support closures).
+
+struct Route {
+    method: String;
+    path: String;
+    handler: String;
+}
+
+struct HttpServer {
+    port: Int;
+    routes: Route[];
+    running: Bool;
+}
+
+struct HttpRequest {
+    method: String;
+    path: String;
+    headers: Array;
+    body: String;
+}
+
+// ── Server Lifecycle ──────────────────────────────────────────────
+
+/// Create a new HTTP server instance.
+pub function http_new(): HttpServer {
+    return HttpServer {
+        port: 0,
+        routes: [],
+        running: false
+    };
+}
+
+/// Register a route with method, path pattern, and handler function name.
+/// Handler signature: fn_handle(method, path, body) -> [status, headers, body_str]
+pub function http_route(server: HttpServer, method: String, path: String, handler: String) {
+    let n = arr_len(server.routes);
+    let route = Route {
+        method: method,
+        path: path,
+        handler: handler
+    };
+    server.routes[n] = route;
+}
+
+/// Start the HTTP server on the given port.
+/// This enters an infinite accept-loop. Does not return.
+pub function http_listen(server: HttpServer, port: Int) {
+    server.port = port;
+    server.running = true;
+    let listen_fd = tcp_listen(port);
+    if (listen_fd == 0) {
+        log_error("Failed to listen on port " + itoa(port));
+        return;
+    }
+    log_info("Server listening on port " + itoa(port));
+    while (server.running) {
+        let client_fd = tcp_accept(listen_fd);
+        if (client_fd > 0) {
+            http_handle_client(server, client_fd);
+            tcp_close(client_fd);
+        }
+    }
+    tcp_close(listen_fd);
+}
+
+/// Stop the server (sets running flag to false).
+pub function http_stop(server: HttpServer) {
+    server.running = false;
+}
+
+// ── Request Handling ──────────────────────────────────────────────
+
+function http_handle_client(server: HttpServer, client_fd: Int) {
+    let raw = tcp_read(client_fd, 8192);
+    if (len(raw) == 0) {
+        return;
+    }
+    let req = http_parse_request(raw);
+    if (req.method == "") {
+        http_send(client_fd, [400, ["Content-Type: text/plain"], "Bad Request"]);
+        return;
+    }
+    let response = http_dispatch(server, req);
+    http_send(client_fd, response);
+}
+
+/// Parse raw HTTP request string into an HttpRequest struct.
+pub function http_parse_request(raw: String): HttpRequest {
+    let header_end = indexOf(raw, "\n\n");
+    let header_section = "";
+    let body = "";
+    if (header_end > 0) {
+        header_section = substring(raw, 0, header_end);
+        let body_start = header_end + 4;
+        if (body_start < len(raw)) {
+            body = substring(raw, body_start, len(raw));
+        }
+    } else {
+        header_section = raw;
+    }
+    let lines = split(header_section, "\n");
+    let method = "";
+    let path = "";
+    let headers = [];
+    let i = 0;
+    let n = arr_len(lines);
+    if (n > 0) {
+        let request_line = lines[0];
+        let parts = split(request_line, " ");
+        if (arr_len(parts) >= 2) {
+            method = parts[0];
+            path = parts[1];
+        }
+    }
+    let j = 1;
+    while (j < n) {
+        headers[j - 1] = lines[j];
+        j = j + 1;
+    }
+    return HttpRequest {
+        method: method,
+        path: path,
+        headers: headers,
+        body: body
+    };
+}
+
+// ── Routing ───────────────────────────────────────────────────────
+
+function http_dispatch(server: HttpServer, req: HttpRequest): Array {
+    let i = 0;
+    let n = arr_len(server.routes);
+    while (i < n) {
+        let route = server.routes[i];
+        if (route.method == req.method && route.path == req.path) {
+            log_debug("Matched route: " + route.method + " " + route.path + " -> " + route.handler);
+            return http_call_handler(route.handler, req);
+        }
+        i = i + 1;
+    }
+    log_warn("No route matched: " + req.method + " " + req.path);
+    return [404, ["Content-Type: application/json"], "{\"error\":\"Not Found\"}"];
+}
+
+function http_call_handler(name: String, req: HttpRequest): Array {
+    return call_fn(name, req.method, req.path, req.body);
+}
+
+// ── Response Building ─────────────────────────────────────────────
+
+/// Build and send an HTTP response over a client socket.
+pub function http_send(client_fd: Int, response: Array) {
+    let status = response[0];
+    let headers = response[1];
+    let body = response[2];
+    let status_text = http_status_text(status);
+    let resp = "HTTP/1.1 " + itoa(status) + " " + status_text + "\n";
+    let i = 0;
+    let n = arr_len(headers);
+    while (i < n) {
+        resp = resp + headers[i] + "\n";
+        i = i + 1;
+    }
+    resp = resp + "Content-Length: " + itoa(len(body)) + "\n";
+    resp = resp + "\n";
+    resp = resp + body;
+    tcp_write(client_fd, resp);
+}
+
+/// Get HTTP status text for standard status codes.
+pub function http_status_text(code: Int): String {
+    if (code == 200) { return "OK"; }
+    if (code == 201) { return "Created"; }
+    if (code == 204) { return "No Content"; }
+    if (code == 301) { return "Moved Permanently"; }
+    if (code == 302) { return "Found"; }
+    if (code == 400) { return "Bad Request"; }
+    if (code == 401) { return "Unauthorized"; }
+    if (code == 403) { return "Forbidden"; }
+    if (code == 404) { return "Not Found"; }
+    if (code == 405) { return "Method Not Allowed"; }
+    if (code == 409) { return "Conflict"; }
+    if (code == 422) { return "Unprocessable Entity"; }
+    if (code == 429) { return "Too Many Requests"; }
+    if (code == 500) { return "Internal Server Error"; }
+    if (code == 502) { return "Bad Gateway"; }
+    if (code == 503) { return "Service Unavailable"; }
+    return "Unknown";
+}

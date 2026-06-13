@@ -1,0 +1,50 @@
+// ── Generic function ──
+function identity[T](x: T): T {
+    return x;
+}
+
+// ── Generic struct ──
+struct Box[T] {
+    value: T;
+}
+
+// ── Generic enum ──
+enum Option[T] {
+    Some(T),
+    None,
+}
+
+function test_generic_fn() {
+    let a = identity[Int](42);
+    assert_eq(a, 42);
+    let b = identity[String]("hello");
+    assert_eq(b, "hello");
+    let c = identity[Bool](true);
+    assert_eq(c, true);
+    println("  PASS generic function");
+}
+
+function test_generic_struct() {
+    let b: Box[Int] = Box { value: 99 };
+    assert_eq(b.value, 99);
+    println("  PASS generic struct");
+}
+
+function test_generic_enum() {
+    let v = Option::Some(42);
+    assert_eq(v, Option::Some(42));
+    let result = match v {
+        Option::Some(n) => n,
+        Option::None => 0,
+    };
+    assert_eq(result, 42);
+    println("  PASS generic enum");
+}
+
+function main() {
+    println("=== Generics Tests ===");
+    test_generic_fn();
+    test_generic_struct();
+    test_generic_enum();
+    println("=== All generics tests PASS ===");
+}

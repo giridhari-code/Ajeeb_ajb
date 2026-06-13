@@ -1,0 +1,47 @@
+// ajeeb-db usage example
+// Database operations
+
+function main() {
+    log_set_level("info");
+    log_info("Starting database example...");
+
+    // Open a database
+    let db_handle = db_open("/tmp/ajeeb_example.db");
+    log_info("Database opened: handle=" + itoa(db_handle));
+
+    // Create a table
+    let create_sql = "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)";
+    let result = db_exec(db_handle, create_sql);
+    if (result.success) {
+        log_info("Table created/exists");
+    } else {
+        log_error("Create failed: " + result.error);
+    }
+
+    // Build INSERT statement
+    let user = ["obj", "name", "Alice", "email", "alice@example.com"];
+    let insert_sql = db_insert("users", user);
+    log_info("Insert SQL: " + insert_sql);
+    let ins_result = db_exec(db_handle, insert_sql);
+    if (ins_result.success) {
+        log_info("User inserted");
+    }
+
+    // Query
+    let query_sql = db_select("users", "");
+    log_info("Query SQL: " + query_sql);
+    let rows = db_query(db_handle, query_sql);
+    log_info("Query returned " + itoa(arr_len(rows)) + " rows");
+    // In evaluator mode, rows will be empty (SQLite stub)
+    // In native mode with SQLite, this will return actual data
+
+    // Escape strings for safety
+    let unsafe_input = "Robert'); DROP TABLE users;--";
+    let safe = db_escape_string(unsafe_input);
+    log_info("Escaped input: " + safe);
+    assert_eq(safe, "Robert''); DROP TABLE users;--");
+
+    // Close
+    db_close(db_handle);
+    log_info("Database closed");
+}

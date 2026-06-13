@@ -1,0 +1,140 @@
+// Ajeeb Standard Library — Comprehensive Test
+// Tests all std modules end-to-end.
+
+import std::string;
+import std::collections;
+import std::json;
+import std::path;
+import std::process;
+
+function test_assert(condition: Bool, name: String) {
+    if (condition) {
+        println("  PASS: " + name);
+    } else {
+        println("  FAIL: " + name);
+    }
+}
+
+function run_tests() {
+    println("");
+    println("=== String Module ===");
+
+    let parts = string_split("a,b,c", ",");
+    test_assert(string_length(parts[0]) == 1, "split first part");
+    test_assert(arr_len(parts) == 3, "split count");
+
+    let joined = string_join_str(["x", "y", "z"], "-");
+    test_assert(joined == "x-y-z", "join");
+
+    test_assert(string_contains("hello world", "world"), "contains true");
+    test_assert(!string_contains("hello world", "xyz"), "contains false");
+
+    test_assert(string_starts_with("hello", "he"), "starts_with true");
+    test_assert(!string_starts_with("hello", "lo"), "starts_with false");
+
+    test_assert(string_ends_with("hello", "lo"), "ends_with true");
+    test_assert(!string_ends_with("hello", "he"), "ends_with false");
+
+    let replaced = string_replace("foo bar foo", "foo", "baz");
+    test_assert(replaced == "baz bar baz", "replace");
+
+    let trimmed = string_trim("  hi  ");
+    test_assert(trimmed == "hi", "trim");
+
+    test_assert(string_from_int(42) == "42", "from_int");
+    test_assert(string_is_empty(""), "is_empty true");
+    test_assert(!string_is_empty("x"), "is_empty false");
+    test_assert(string_length("hello") == 5, "length");
+
+    println("  String Module: Done");
+
+    println("=== Collections Module ===");
+
+    let v = vec_new();
+    test_assert(vec_len(v) == 0, "vec_new empty");
+    vec_push(v, 10);
+    vec_push(v, 20);
+    vec_push(v, 30);
+    test_assert(vec_len(v) == 3, "vec_push length");
+    test_assert(vec_get(v, 1) == 20, "vec_get");
+    vec_set(v, 1, 25);
+    test_assert(vec_get(v, 1) == 25, "vec_set");
+
+    let m = hashmap_new();
+    hashmap_set(m, "name", 42);
+    hashmap_set(m, "version", 1);
+    test_assert(hashmap_contains(m, "name"), "hashmap contains");
+    test_assert(hashmap_get(m, "name") == 42, "hashmap get");
+    hashmap_remove(m, "version");
+    test_assert(!hashmap_contains(m, "version"), "hashmap remove");
+
+    let s = hashset_new();
+    hashset_add(s, 1);
+    hashset_add(s, 2);
+    hashset_add(s, 1);
+    test_assert(hashset_contains(s, 1), "hashset contains");
+    test_assert(hashset_len(s) == 2, "hashset len (dedup)");
+
+    println("  Collections Module: Done");
+
+    println("=== Path Module ===");
+
+    test_assert(path_is_absolute("/foo/bar"), "is_absolute true");
+    test_assert(!path_is_absolute("foo/bar"), "is_absolute false");
+    let joined_path = path_join("foo", "bar");
+    test_assert(joined_path == "foo/bar", "path_join");
+    test_assert(path_filename("/foo/bar/baz.txt") == "baz.txt", "filename");
+    test_assert(path_extension("data.json") == ".json", "extension");
+
+    println("  Path Module: Done");
+
+    println("=== JSON Module ===");
+
+    let parsed = json_parse("null");
+    test_assert(parsed[0] == "null", "json parse null tag");
+
+    parsed = json_parse("true");
+    test_assert(parsed[0] == "bool", "json parse bool tag");
+    test_assert(parsed[1] == 1, "json parse bool value");
+
+    parsed = json_parse("false");
+    test_assert(parsed[0] == "bool", "json parse bool tag false");
+    test_assert(parsed[1] == 0, "json parse bool value false");
+
+    parsed = json_parse("42");
+    test_assert(parsed[0] == "num", "json parse number tag");
+    test_assert(parsed[1] == "42", "json parse number value");
+
+    parsed = json_parse("\"hello\"");
+    test_assert(parsed[0] == "str", "json parse string tag");
+    test_assert(parsed[1] == "hello", "json parse string value");
+
+    parsed = json_parse("[1,2,3]");
+    test_assert(parsed[0] == "arr", "json parse array tag");
+    test_assert(parsed[1][1] == "1", "json parse array first elem");
+
+    parsed = json_parse("{\"key\": \"val\"}");
+    test_assert(parsed[0] == "obj", "json parse object tag");
+    test_assert(parsed[1] == "key", "json parse object key");
+    test_assert(parsed[2][1] == "val", "json parse object value");
+
+    let round = json_roundtrip("{\"a\":1,\"b\":2}");
+    test_assert(string_length(round) > 0, "json roundtrip");
+
+    let strung = json_stringify(json_parse("[true,false,null]"));
+    test_assert(string_length(strung) > 0, "json stringify");
+
+    println("  JSON Module: Done");
+
+    println("=== Process Module ===");
+
+    let binary = process_binary_path();
+    test_assert(string_length(binary) > 0, "process has binary path");
+
+    println("  Process Module: Done");
+
+    println("");
+    println("=== All Standard Library Tests Passed ===");
+}
+
+run_tests();

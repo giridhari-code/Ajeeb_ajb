@@ -1,0 +1,31 @@
+// Ajeeb Standard Library — Option[T]
+// Represents an optional value: either Some(value) or None.
+
+pub enum Option[T] {
+    Some(T),
+    None,
+}
+
+/// Returns true if the option is Some.
+pub function option_is_some[T](opt: Option[T]): Bool {
+    match opt {
+        Option::Some(_) => true,
+        Option::None => false,
+    }
+}
+
+/// Returns true if the option is None.
+pub function option_is_none[T](opt: Option[T]): Bool {
+    match opt {
+        Option::Some(_) => false,
+        Option::None => true,
+    }
+}
+
+/// Unwraps the option, returning the inner value or default if None.
+pub function option_unwrap_or[T](opt: Option[T], default: T): T {
+    match opt {
+        Option::Some(val) => val,
+        Option::None => default,
+    }
+}

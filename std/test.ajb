@@ -1,0 +1,35 @@
+// Ajeeb Standard Library — Test Module
+// Provides unit testing utilities.
+
+/// Assert that a condition is true. Prints "PASS" or "FAIL".
+pub function test_assert(condition: Bool, name: String) {
+    if (condition) {
+        println("  PASS: " + name);
+    } else {
+        println("  FAIL: " + name);
+    }
+}
+
+/// Assert that two int values are equal.
+pub function test_assert_eq_int(a: Int, b: Int, name: String) {
+    if (a == b) {
+        println("  PASS: " + name);
+    } else {
+        println("  FAIL: " + name + " (expected " + itoa(b) + ", got " + itoa(a) + ")");
+    }
+}
+
+/// Print test section header.
+pub function test_begin(name: String) {
+    println("");
+    println("=== " + name + " ===");
+}
+
+/// Assert that a string value equals expected.
+pub function test_assert_eq_str(a: String, b: String, name: String) {
+    if (a == b) {
+        println("  PASS: " + name);
+    } else {
+        println("  FAIL: " + name + " (expected \"" + b + "\", got \"" + a + "\")");
+    }
+}

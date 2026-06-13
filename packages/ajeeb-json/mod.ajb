@@ -1,0 +1,48 @@
+// ajeeb-json — JSON response helpers for web services
+//
+// Builds on std::json to provide convenient response formatting
+// for HTTP APIs. All functions use the std::json tagged-value
+// representation internally.
+
+/// Create a JSON success response body from an object.
+/// obj: ["obj", key1, val1, key2, val2, ...]
+pub function json_response_ok(obj: Array): Array {
+    return [200, ["Content-Type: application/json"], json_stringify(obj)];
+}
+
+/// Create a JSON success response from a raw string body.
+pub function json_response_ok_str(body: String): Array {
+    return [200, ["Content-Type: application/json"], body];
+}
+
+/// Create a JSON error response with message and status code.
+pub function json_response_error(message: String, code: Int): Array {
+    let body = json_stringify(["obj", "error", message, "code", itoa(code)]);
+    return [code, ["Content-Type: application/json"], body];
+}
+
+/// Create a JSON response with custom status, headers, and body.
+pub function json_response(status: Int, headers: Array, body: String): Array {
+    return [status, headers, body];
+}
+
+/// Parse a JSON string from an HTTP request body.
+pub function json_parse_body(body: String): Array {
+    return json_parse(body);
+}
+
+/// Quick helper: build a simple object from alternating key-value pairs.
+/// json_obj("name", "Ajeeb", "version", 1) → ["obj", "name", "Ajeeb", "version", "1"]
+pub function json_obj(k1: String, v1, k2: String, v2, k3: String, v3, k4: String, v4): Array {
+    return ["obj", k1, v1, k2, v2, k3, v3, k4, v4];
+}
+
+/// Create a simple {"key": "value"} object.
+pub function json_pair(key: String, value: String): Array {
+    return ["obj", key, value];
+}
+
+/// Wrap an array of results with a count.
+pub function json_results(results: Array, total: Int): Array {
+    return ["obj", "results", results, "total", itoa(total)];
+}

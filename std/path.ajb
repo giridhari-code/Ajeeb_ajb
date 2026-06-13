@@ -1,0 +1,91 @@
+// Ajeeb Standard Library — Path Module
+// Provides file path manipulation functions.
+
+/// Normalize a path by removing trailing slashes.
+pub function path_normalize(p: String): String {
+    let n = len(p);
+    while (n > 1) {
+        let c = charCode(p, n - 1);
+        if (c == 47) {
+            n = n - 1;
+        } else {
+            break;
+        }
+    }
+    return substring(p, 0, n);
+}
+
+/// Join two path components with a separator.
+pub function path_join(a: String, b: String): String {
+    let an = len(a);
+    let bn = len(b);
+    if (an == 0) { return path_normalize(b); }
+    if (bn == 0) { return path_normalize(a); }
+    let a_end = charCode(a, an - 1);
+    let b_start = charCode(b, 0);
+    if (a_end == 47 && b_start == 47) {
+        return path_normalize(a) + "/" + path_normalize(b);
+    }
+    if (a_end == 47 || b_start == 47) {
+        return path_normalize(a) + path_normalize(b);
+    }
+    return path_normalize(a) + "/" + path_normalize(b);
+}
+
+/// Get the parent directory of a path.
+pub function path_parent(p: String): String {
+    let pn = path_normalize(p);
+    let n = len(pn);
+    let i = n - 1;
+    while (i >= 0) {
+        let c = charCode(pn, i);
+        if (c == 47) {
+            if (i == 0) { return "/"; }
+            return substring(pn, 0, i);
+        }
+        i = i - 1;
+        if (i < 0) { break; }
+    }
+    return "";
+}
+
+/// Get the filename (last component) of a path.
+pub function path_filename(p: String): String {
+    let pn = path_normalize(p);
+    let n = len(pn);
+    let i = n - 1;
+    while (i >= 0) {
+        let c = charCode(pn, i);
+        if (c == 47) {
+            return substring(pn, i + 1, n);
+        }
+        i = i - 1;
+        if (i < 0) { break; }
+    }
+    return pn;
+}
+
+/// Get the file extension (including dot) from a path.
+pub function path_extension(p: String): String {
+    let name = path_filename(p);
+    let n = len(name);
+    let i = n - 1;
+    while (i >= 0) {
+        let c = charCode(name, i);
+        if (c == 46) {
+            return substring(name, i, n);
+        }
+        if (c == 47) { break; }
+        i = i - 1;
+        if (i < 0) { break; }
+    }
+    return "";
+}
+
+/// Check if a path is absolute (starts with '/').
+pub function path_is_absolute(p: String): Bool {
+    if (len(p) > 0 && charCode(p, 0) == 47) {
+        return true;
+    }
+    return false;
+}

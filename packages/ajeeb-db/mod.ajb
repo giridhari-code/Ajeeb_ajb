@@ -1,0 +1,117 @@
+// ajeeb-db — Database abstraction layer
+//
+// Provides a unified database interface. Currently supports
+// SQLite via the built-in sqlite_* functions. Future versions
+// will add PostgreSQL support.
+//
+// Usage:
+//   let db = db_open("myapp.db");
+//   db_exec(db, "CREATE TABLE IF NOT EXISTS users (id INTEGER, name TEXT)");
+//   let rows = db_query(db, "SELECT * FROM users");
+//   db_close(db);
+
+struct DbConfig {
+    driver: String;
+    path: String;
+}
+
+struct DbResult {
+    success: Bool;
+    error: String;
+    rows: Array;
+    affected: Int;
+}
+
+// ── Connection Management ────────────────────────────────────────
+
+/// Open a database connection. Returns an Int handle.
+/// In native mode, this opens a real SQLite database.
+/// In interpreter mode, returns a stub handle for API compatibility.
+pub function db_open(path: String): Int {
+    log_info("Opening database: " + path);
+    let handle = sqlite_open(path);
+    if (handle == 0) {
+        log_error("Failed to open database: " + path);
+    }
+    return handle;
+}
+
+/// Close a database connection.
+pub function db_close(handle: Int) {
+    sqlite_close(handle);
+    log_debug("Database connection closed");
+}
+
+// ── Query Execution ──────────────────────────────────────────────
+
+/// Execute a non-query SQL statement (INSERT, UPDATE, CREATE, etc.).
+/// Returns a DbResult struct.
+pub function db_exec(handle: Int, sql: String): DbResult {
+    log_debug("Executing SQL: " + sql);
+    let rc = sqlite_exec(handle, sql);
+    if (rc == 0) {
+        return DbResult {
+            success: true,
+            error: "",
+            rows: [],
+            affected: 0
+        };
+    }
+    let err = sqlite_last_error(handle);
+    log_error("SQL error: " + err);
+    return DbResult {
+        success: false,
+        error: err,
+        rows: [],
+        affected: 0
+    };
+}
+
+/// Execute a query and return results as an array of rows.
+/// Each row is represented as a JSON-like tagged array.
+/// In interpreter mode, returns an empty array.
+pub function db_query(handle: Int, sql: String): Array {
+    log_debug("Querying: " + sql);
+    return sqlite_query(handle, sql);
+}
+
+// ── Helpers ──────────────────────────────────────────────────────
+
+/// Escape a string for safe use in SQL queries (basic single-quote doubling).
+pub function db_escape_string(s: String): String {
+    return replace(s, "'", "''");
+}
+
+/// Build a basic SELECT query with WHERE clause.
+pub function db_select(table: String, where_clause: String): String {
+    if (where_clause == "") {
+        return "SELECT * FROM " + db_escape_table(table);
+    }
+    return "SELECT * FROM " + db_escape_table(table) + " WHERE " + where_clause;
+}
+
+/// Build an INSERT query from a table name and JSON-like object.
+pub function db_insert(table: String, obj: Array): String {
+    // obj is ["obj", key1, val1, key2, val2, ...]
+    let cols = "";
+    let vals = "";
+    let first = true;
+    let i = 1;
+    let n = arr_len(obj);
+    while (i < n) {
+        if (first) { first = false; }
+        else {
+            cols = cols + ", ";
+            vals = vals + ", ";
+        }
+        cols = cols + obj[i];
+        vals = vals + "'" + db_escape_string(itoa(obj[i + 1])) + "'";
+        i = i + 2;
+    }
+    return "INSERT INTO " + db_escape_table(table) + " (" + cols + ") VALUES (" + vals + ")";
+}
+
+/// Escape a table or column name (basic double-quote doubling).
+pub function db_escape_table(name: String): String {
+    return "\"" + replace(name, "\"", "\"\"") + "\"";
+}

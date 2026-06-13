@@ -1,0 +1,31 @@
+// Ajeeb Standard Library — Result[T, E]
+// Represents the result of an operation: either Ok(value) or Err(error).
+
+pub enum Result[T, E] {
+    Ok(T),
+    Err(E),
+}
+
+/// Returns true if the result is Ok.
+pub function result_is_ok[T, E](res: Result[T, E]): Bool {
+    match res {
+        Result::Ok(_) => true,
+        Result::Err(_) => false,
+    }
+}
+
+/// Returns true if the result is Err.
+pub function result_is_err[T, E](res: Result[T, E]): Bool {
+    match res {
+        Result::Ok(_) => false,
+        Result::Err(_) => true,
+    }
+}
+
+/// Unwraps the result, returning the inner value or default if Err.
+pub function result_unwrap_or[T, E](res: Result[T, E], default: T): T {
+    match res {
+        Result::Ok(val) => val,
+        Result::Err(_) => default,
+    }
+}

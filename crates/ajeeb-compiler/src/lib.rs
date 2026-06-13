@@ -1,9 +1,11 @@
 pub mod ast;
+pub mod codegen;
 pub mod das_parser;
 pub mod error;
 pub mod eval;
 pub mod interop;
 pub mod lexer;
+pub mod module;
 pub mod parser;
 pub mod semantic;
 pub mod token;

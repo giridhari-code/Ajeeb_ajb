@@ -1,0 +1,18 @@
+function inner(): Int {
+    let x = 5 / 0;  // division by zero
+    return x;
+}
+
+function middle(): Int {
+    return inner();
+}
+
+function outer(): Int {
+    return middle();
+}
+
+function main(): Int {
+    let result = outer();
+    println("Result: " + itoa(result));
+    return 0;
+}

@@ -1,0 +1,116 @@
+// ajeeb-web example — demonstrates all framework features
+import mod;
+
+// ══════════════════════════════════════════════════════════════════
+// Handler Functions
+// ══════════════════════════════════════════════════════════════════
+
+function handle_index(method: String, path: String, body: String): Array {
+    return web_ok("{\"message\":\"Welcome to Ajeeb Web!\"}");
+}
+
+function handle_hello(method: String, path: String, body: String): Array {
+    return web_json_str("greeting", "Hello, World!");
+}
+
+function handle_users(method: String, path: String, body: String): Array {
+    return web_ok("{\"users\":[{\"id\":1,\"name\":\"Alice\"},{\"id\":2,\"name\":\"Bob\"}]}");
+}
+
+function handle_create_user(method: String, path: String, body: String): Array {
+    // Echo back the created user
+    return web_created("{\"status\":\"created\",\"data\":\"" + body + "\"}");
+}
+
+function handle_about(method: String, path: String, body: String, ctx: Array): Array {
+    return ctx.html("<h1>About Ajeeb Web</h1><p>A micro-framework for Ajeeb</p>");
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Middleware
+// ══════════════════════════════════════════════════════════════════
+
+function auth_middleware(method: String, path: String, body: String, ctx: Array): Array {
+    // Block all POST requests to /api (simple auth check)
+    if (starts_with(path, "/api")) {
+        return web_bad_request("{\"error\":\"Unauthorized\"}");
+    }
+    return [];  // Continue chain
+}
+
+// ══════════════════════════════════════════════════════════════════
+// DI Factory
+// ══════════════════════════════════════════════════════════════════
+
+function factory_db(container: Array): Array {
+    return ["obj", "type", "sqlite", "file", "app.db"];
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Main
+// ══════════════════════════════════════════════════════════════════
+
+function main() {
+    println("Ajeeb Web Framework Example");
+
+    // Create app
+    let app = web_new();
+
+    // Register routes
+    app.get("/", "handle_index");
+    app.get("/hello", "handle_hello");
+    app.get("/users", "handle_users");
+    app.post("/users", "handle_create_user");
+    app.get("/about", "handle_about");
+
+    // Route groups
+    let api = web_group(app, "/api/v1");
+    web_group_route(api, "GET", "/status", "handle_index");
+
+    // Middleware
+    app.use("auth_middleware");
+
+    // Direct field assign for error handler
+    app.error_handler = "";
+
+    // Static dirs
+    app.static("/static", "./public");
+
+    // Dependency injection
+    let container = di_container();
+    di_register(container, "db", "factory_db");
+    let db_svc = di_resolve(container, "db");
+    println("  DI resolved: db type = " + db_svc[2]);
+
+    // Test requests (without running a server)
+    println("");
+    println("  Testing GET /");
+    let r1 = web_test(app, "GET", "/", "");
+    web_assert_status(r1, 200);
+    web_assert_body_contains(r1, "Welcome");
+
+    println("  Testing GET /users");
+    let r2 = web_test(app, "GET", "/users", "");
+    web_assert_status(r2, 200);
+    web_assert_body_contains(r2, "Alice");
+
+    println("  Testing POST /users");
+    let r3 = web_test(app, "POST", "/users", "{\"name\":\"Charlie\"}");
+    web_assert_status(r3, 201);
+    web_assert_body_contains(r3, "Charlie");
+
+    println("  Testing GET /api/v1/status");
+    let r4 = web_test(app, "GET", "/api/v1/status", "");
+    web_assert_status(r4, 200);
+
+    println("  Testing 404");
+    let r5 = web_test(app, "GET", "/notfound", "");
+    web_assert_status(r5, 404);
+
+    println("");
+    println("All example tests passed!");
+
+    // Uncomment to start server:
+    // println("Starting server on :8080...");
+    // web_listen(app, 8080);
+}

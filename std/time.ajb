@@ -1,0 +1,28 @@
+// Ajeeb Standard Library — Time Module
+// Provides basic time measurement functions.
+//
+// Note: No built-in clock function yet. This module provides
+// a counting-based approach for rough timing.
+
+/// A simple tick counter for measuring elapsed time.
+/// Increments each call. Can be used with a loop for rough timing.
+/// Returns the current tick value.
+pub function time_ticks(): Int {
+    // Placeholder: returns 0 since there's no wall-clock built-in.
+    // A built-in clock() function would be needed for real timing.
+    return 0;
+}
+
+/// Format a number of seconds as HH:MM:SS string.
+pub function time_format(seconds: Int): String {
+    let h = seconds / 3600;
+    let m = (seconds - h * 3600) / 60;
+    let s = seconds - h * 3600 - m * 60;
+    let h_str = itoa(h);
+    let m_str = itoa(m);
+    let s_str = itoa(s);
+    if (len(h_str) == 1) { h_str = "0" + h_str; }
+    if (len(m_str) == 1) { m_str = "0" + m_str; }
+    if (len(s_str) == 1) { s_str = "0" + s_str; }
+    return h_str + ":" + m_str + ":" + s_str;
+}

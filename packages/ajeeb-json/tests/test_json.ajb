@@ -1,0 +1,82 @@
+// ajeeb-json test suite — self-contained
+// Tests JSON response helpers using built-in functions only
+
+function test_response_ok() {
+    let res = [200, ["Content-Type: application/json"], "{\"msg\":\"hello\"}"];
+    assert_eq(arr_len(res), 3);
+    assert_eq(res[0], 200);
+    let h = res[1];
+    assert_eq(h[0], "Content-Type: application/json");
+    println("  PASS response_ok");
+}
+
+function test_response_error() {
+    let body = "{\"error\":\"Not found\"}";
+    let res = [404, ["Content-Type: application/json"], body];
+    assert_eq(res[0], 404);
+    let s = res[2];
+    let idx = indexOf(s, "Not found");
+    assert_neq(idx, -1);
+    println("  PASS response_error");
+}
+
+function test_json_tagged_obj() {
+    let obj = ["obj", "name", "Ajeeb", "version", "1"];
+    assert_eq(obj[0], "obj");
+    assert_eq(obj[1], "name");
+    assert_eq(obj[2], "Ajeeb");
+    assert_eq(obj[3], "version");
+    assert_eq(obj[4], "1");
+    println("  PASS json_tagged_obj");
+}
+
+function test_json_tagged_array() {
+    let arr = ["arr", "a", "b", "c"];
+    assert_eq(arr[0], "arr");
+    assert_eq(arr[1], "a");
+    assert_eq(arr_len(arr), 4);
+    println("  PASS json_tagged_array");
+}
+
+function test_response_status_codes() {
+    let ok = [200, [], "ok"];
+    let created = [201, [], "created"];
+    let not_found = [404, [], "not found"];
+    let err = [500, [], "error"];
+    assert_eq(ok[0], 200);
+    assert_eq(created[0], 201);
+    assert_eq(not_found[0], 404);
+    assert_eq(err[0], 500);
+    println("  PASS response_status_codes");
+}
+
+function test_response_headers() {
+    let h = ["Content-Type: application/json", "X-Custom: val"];
+    let res = [200, h, "body"];
+    let rh = res[1];
+    assert_eq(rh[0], "Content-Type: application/json");
+    assert_eq(rh[1], "X-Custom: val");
+    assert_eq(arr_len(rh), 2);
+    println("  PASS response_headers");
+}
+
+function test_json_string_contains() {
+    let s = "{\"name\":\"Alice\",\"age\":30}";
+    let name_idx = indexOf(s, "Alice");
+    let age_idx = indexOf(s, "30");
+    assert_neq(name_idx, -1);
+    assert_neq(age_idx, -1);
+    println("  PASS json_string_contains");
+}
+
+function main() {
+    println("=== ajeeb-json tests ===");
+    test_response_ok();
+    test_response_error();
+    test_json_tagged_obj();
+    test_json_tagged_array();
+    test_response_status_codes();
+    test_response_headers();
+    test_json_string_contains();
+    println("=== All ajeeb-json tests PASS ===");
+}

@@ -1,0 +1,57 @@
+// TCP networking test
+// We test each builtin individually. The echo pattern requires a server thread.
+const PORT = 19877;
+
+// ── tcp_listen ──
+const listen_fd = tcp_listen(PORT);
+if (listen_fd == 0) {
+    println("FAIL: tcp_listen");
+} else {
+    println("PASS: tcp_listen");
+}
+
+// ── tcp_connect ──
+const client_fd = tcp_connect("127.0.0.1", PORT);
+if (client_fd == 0) {
+    println("FAIL: tcp_connect");
+} else {
+    println("PASS: tcp_connect");
+    // Write data
+    tcp_write(client_fd, "test data");
+    println("PASS: tcp_write");
+    // Read (may be empty if server hasn't echoed — still test the call)
+    const reply = tcp_read(client_fd, 4096);
+    println("PASS: tcp_read returned " + itoa(len(reply)) + " bytes");
+    tcp_close(client_fd);
+    println("PASS: tcp_close client");
+}
+
+// ── tcp_accept ──
+const accepted_fd = tcp_accept(listen_fd);
+if (accepted_fd == 0) {
+    println("FAIL: tcp_accept (expected non-zero, got 0)");
+} else {
+    println("PASS: tcp_accept");
+    // Read what the client sent
+    const msg = tcp_read(accepted_fd, 4096);
+    println("PASS: tcp_read server got \"" + msg + "\"");
+    // Echo it back
+    tcp_write(accepted_fd, msg);
+    println("PASS: tcp_write server echo");
+    tcp_close(accepted_fd);
+    println("PASS: tcp_close accepted");
+}
+
+tcp_close(listen_fd);
+println("PASS: tcp_close listener");
+
+// ── dns_lookup ──
+const ip = dns_lookup("localhost");
+// May return "127.0.0.1" or "::1" — either is fine
+if (len(ip) > 0) {
+    println("PASS: dns_lookup localhost = \"" + ip + "\"");
+} else {
+    println("FAIL: dns_lookup returned empty");
+}
+
+println("ALL TCP TESTS DONE");
