@@ -1,25 +1,23 @@
-// Echo server: listens on a port and echoes back any data received
+// Echo server: listens on a configurable port, echoes received data
+// Run with LLVM native binary, then connect with echo_client.ajb
 const PORT = 7777;
 
 const listen_fd = tcp_listen(PORT);
 if (listen_fd == 0) {
-    println("echo_server: FAILED to listen on port " + itoa(PORT));
+    println("echo_server: FAILED on port " + itoa(PORT));
 } else {
     println("echo_server: listening on port " + itoa(PORT));
 }
 
-while (true) {
+while (1) {
     const client = tcp_accept(listen_fd);
     if (client != 0) {
-        println("echo_server: accepted connection fd=" + itoa(client));
+        println("echo_server: accepted " + itoa(client));
         const data = tcp_read(client, 65536);
         if (len(data) > 0) {
-            println("echo_server: received " + itoa(len(data)) + " bytes, echoing...");
+            println("echo_server: echo " + itoa(len(data)) + " bytes");
             tcp_write(client, data);
         }
         tcp_close(client);
-        println("echo_server: closed fd=" + itoa(client));
-    } else {
-        println("echo_server: accept failed, retrying...");
     }
 }

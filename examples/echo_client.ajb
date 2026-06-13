@@ -1,0 +1,24 @@
+// Echo client: connects to echo_server, sends a message, prints the reply
+// Run AFTER starting echo_server in another terminal
+
+const HOST = "127.0.0.1";
+const PORT = 7777;
+
+println("echo_client: connecting to " + HOST + ":" + itoa(PORT) + "...");
+const fd = tcp_connect(HOST, PORT);
+if (fd == 0) {
+    println("echo_client: FAILED to connect");
+} else {
+    println("echo_client: connected fd=" + itoa(fd));
+    const msg = "Hello from Ajeeb TCP!";
+    tcp_write(fd, msg);
+    println("echo_client: sent \"" + msg + "\"");
+    const reply = tcp_read(fd, 65536);
+    if (reply == msg) {
+        println("echo_client: PASS - received \"" + reply + "\"");
+    } else {
+        println("echo_client: FAIL - expected \"" + msg + "\", got \"" + reply + "\"");
+    }
+    tcp_close(fd);
+    println("echo_client: done");
+}

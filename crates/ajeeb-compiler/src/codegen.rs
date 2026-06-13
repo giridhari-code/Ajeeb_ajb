@@ -228,7 +228,7 @@ impl Codegen {
     fn emit_allocas_for_stmts(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
             match stmt {
-                Stmt::Let { name, .. } => {
+                Stmt::Let { name, .. } | Stmt::Const { name, .. } => {
                     if !self.variables.contains_key(name) {
                         let reg = self.fresh();
                         writeln!(self.body, "  {} = alloca i64, align 8", reg).unwrap();

@@ -159,16 +159,21 @@ fn main() -> io::Result<()> {
         println!("\n😤 Semantic analysis failed! Code mein type ya scope ki problem hai.");
     }
 
-    // 4. DIRECT EXECUTION
-    println!("\n🚀 --- Ajeeb Direct Run Started ---");
-    let mut evaluator = Evaluator::new();
-    let mut program_args = vec![args[0].clone()];
-    if args.len() >= 3 {
-        program_args.extend_from_slice(&args[2..]);
+    // 4. DIRECT EXECUTION (skip with --skip-run)
+    let skip_run = args.iter().any(|a| a == "--skip-run");
+    if !skip_run {
+        println!("\n🚀 --- Ajeeb Direct Run Started ---");
+        let mut evaluator = Evaluator::new();
+        let mut program_args = vec![args[0].clone()];
+        if args.len() >= 3 {
+            program_args.extend_from_slice(&args[2..]);
+        }
+        evaluator.set_program_args(program_args);
+        evaluator.evaluate_program(&all_stmts);
+        println!("--- Ajeeb Execution Ended ---\n🎉 Execution Completed Successfully!");
+    } else {
+        println!("\n⏭️  Skipping direct execution (--skip-run)");
     }
-    evaluator.set_program_args(program_args);
-    evaluator.evaluate_program(&all_stmts);
-    println!("--- Ajeeb Execution Ended ---\n🎉 Execution Completed Successfully!");
 
     // 5. LLVM IR CODEGEN (Phase 2 native compilation)
     {
