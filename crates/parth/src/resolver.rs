@@ -463,6 +463,93 @@ pub fn compilation_order(lock: &LockFile) -> Result<Vec<String>, String> {
     Ok(order)
 }
 
+// ── Extended commands ──────────────────────────────────────────────
+
+/// Print dependency tree from a lock file
+pub fn print_tree(lock: &LockFile) {
+    let order = match compilation_order(lock) {
+        Ok(o) => o,
+        Err(e) => { eprintln!("❌ {}", e); return; }
+    };
+    println!("📦 Dependency tree:");
+    let mut seen = std::collections::HashSet::new();
+    for pkg in &order {
+        print_dep_tree(lock, pkg, 0, &mut seen);
+    }
+}
+
+fn print_dep_tree(lock: &LockFile, name: &str, depth: usize, seen: &mut std::collections::HashSet<String>) {
+    let indent = "  ".repeat(depth);
+    let marker = if seen.contains(name) { " (already shown)" } else { "" };
+    println!("{}{} {}{}", indent, if depth == 0 { "├──" } else { "├──" }, name, marker);
+    if seen.contains(name) { return; }
+    seen.insert(name.to_string());
+    if let Some(entry) = lock.get(name) {
+        for dep in &entry.dependencies {
+            print_dep_tree(lock, &dep.name, depth + 1, seen);
+        }
+    }
+}
+
+/// Explain why a package is included in the dependency tree
+pub fn why(lock: &LockFile, package_name: &str) -> Vec<String> {
+    let mut explanations = Vec::new();
+    for (name, entry) in lock {
+        for dep in &entry.dependencies {
+            if dep.name == package_name {
+                explanations.push(format!("'{}' requires '{}' (constraint: {})", name, dep.name, dep.version_req));
+            }
+        }
+    }
+    if explanations.is_empty() {
+        if lock.contains_key(package_name) {
+            explanations.push(format!("'{}' is a direct dependency", package_name));
+        } else {
+            explanations.push(format!("'{}' not found in lock file", package_name));
+        }
+    }
+    explanations
+}
+
+/// Check for outdated dependencies by comparing lock file versions against registry
+pub fn check_outdated(lock: &LockFile, registry_url: &str) -> Vec<(String, String, String)> {
+    use super::registry::remote_fetch_index;
+    let mut outdated = Vec::new();
+    for (name, entry) in lock {
+        let index = remote_fetch_index(registry_url, name);
+        if let Some(versions) = index.get(name) {
+            let current = Version::parse(&entry.version);
+            let mut latest: Option<Version> = None;
+            for ver_str in versions.keys() {
+                if let Some(v) = Version::parse(ver_str) {
+                    match &latest {
+                        Some(l) if v > *l => latest = Some(v),
+                        None => latest = Some(v),
+                        _ => {}
+                    }
+                }
+            }
+            if let (Some(cur), Some(latest_v)) = (current, latest) {
+                if latest_v > cur {
+                    outdated.push((name.clone(), cur.to_string(), latest_v.to_string()));
+                }
+            }
+        }
+    }
+    outdated
+}
+
+/// Upgrade a specific dependency to latest matching constraint
+pub fn upgrade_dep(deps: &mut Vec<PkgDep>, name: &str, new_constraint: &str) -> bool {
+    for dep in deps.iter_mut() {
+        if dep.name == name {
+            dep.version_req = new_constraint.to_string();
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

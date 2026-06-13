@@ -342,12 +342,6 @@ pub fn make_lock_entry(name: &str, version: &str) -> Result<LockEntry, String> {
 
 // ── Remote registry (HTTP) ─────────────────────────────────────────
 
-#[cfg(feature = "remote-registry")]
-pub fn remote_fetch_index(_registry_url: &str, _package_name: &str) -> RegistryIndex {
-    read_index()
-}
-
-#[cfg(not(feature = "remote-registry"))]
 pub fn remote_fetch_index(_registry_url: &str, _package_name: &str) -> RegistryIndex {
     read_index()
 }
@@ -366,57 +360,67 @@ pub fn download_package(name: &str, version: &str, registry_url: &str) -> Result
         ));
     }
 
-    #[cfg(feature = "remote-registry")] {
-        download_from_remote(name, version, registry_url, &cached)?;
-        Ok(cached)
-    }
-
-    #[cfg(not(feature = "remote-registry"))] {
-        let _ = registry_url;
-        Err("Remote registry not available. Recompile with --features remote-registry".to_string())
-    }
+    download_from_remote(name, version, registry_url, &cached)?;
+    Ok(cached)
 }
 
-#[cfg(feature = "remote-registry")]
 fn download_from_remote(name: &str, version: &str, url: &str, dest: &Path) -> Result<(), String> {
     let pkg_url = format!("{}/api/v1/packages/{}/{}.tar.gz", url.trim_end_matches('/'), name, version);
     fs::create_dir_all(dest).map_err(|e| format!("Cannot create cache dir: {}", e))?;
 
     let tar_path = dest.join("package.tar.gz");
 
-    // Download using curl
-    let status = std::process::Command::new("curl")
-        .args(["-sSfL", "-o", &tar_path.to_string_lossy(), &pkg_url])
-        .status()
-        .map_err(|e| format!("Cannot run curl: {}", e))?;
-    if !status.success() {
-        return Err(format!("Failed to download from {}", pkg_url));
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("Cannot create HTTP client: {}", e))?;
+
+    let response = client.get(&pkg_url)
+        .send()
+        .map_err(|e| format!("Cannot download from {}: {}", pkg_url, e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Failed to download from {} (HTTP {})", pkg_url, response.status()));
     }
 
-    // Extract
-    let status = std::process::Command::new("tar")
-        .args(["-xzf", &tar_path.to_string_lossy(), "-C", &dest.to_string_lossy()])
-        .status()
-        .map_err(|e| format!("Cannot run tar: {}", e))?;
-    if !status.success() {
-        return Err("Failed to extract package archive".to_string());
-    }
+    let bytes = response.bytes().map_err(|e| format!("Cannot read response: {}", e))?;
+
+    // SHA-256 verification
+    use sha2::Digest;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(&bytes);
+    let hash = format!("{:x}", hasher.finalize());
+
+    fs::write(&tar_path, &bytes).map_err(|e| format!("Cannot write archive: {}", e))?;
+
+    // Extract using flate2 + tar
+    let file = fs::File::open(&tar_path).map_err(|e| format!("Cannot open archive: {}", e))?;
+    let decoder = flate2::read::GzDecoder::new(file);
+    let mut archive = tar::Archive::new(decoder);
+    archive.unpack(dest).map_err(|e| format!("Cannot extract archive: {}", e))?;
+
     let _ = fs::remove_file(&tar_path);
+    println!("📦 Downloaded '{}@{}' (SHA-256: {}...)", name, version, &hash[..16]);
 
     Ok(())
 }
 
 /// Fetch a URL and return the body as string
 fn http_get(url: &str) -> Result<String, String> {
-    let output = std::process::Command::new("curl")
-        .args(["-sSf", "-L", url])
-        .output()
-        .map_err(|e| format!("Cannot run curl: {}", e))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("HTTP request failed: {}", stderr));
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Cannot create HTTP client: {}", e))?;
+
+    let response = client.get(url)
+        .send()
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP request failed: HTTP {}", response.status()));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+
+    response.text().map_err(|e| format!("Cannot read response: {}", e))
 }
 
 /// Search the registry for packages matching a query
@@ -634,7 +638,6 @@ pub fn audit_deps(lock: &super::types::LockFile) -> Vec<Advisory> {
 }
 
 /// Fetch latest advisories from remote
-#[cfg(feature = "remote-registry")]
 pub fn fetch_advisories(registry_url: &str) -> Result<Vec<Advisory>, String> {
     let url = format!("{}/api/v1/advisories.json", registry_url.trim_end_matches('/'));
     match http_get(&url) {
@@ -651,9 +654,233 @@ pub fn fetch_advisories(registry_url: &str) -> Result<Vec<Advisory>, String> {
     }
 }
 
-#[cfg(not(feature = "remote-registry"))]
-pub fn fetch_advisories(_registry_url: &str) -> Result<Vec<Advisory>, String> {
-    Err("Remote registry not available".to_string())
+
+// ── Authentication ──────────────────────────────────────────────────
+
+use std::io::{self, Write as IoWrite};
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AuthInfo {
+    pub token: String,
+    pub username: String,
+    pub registry_url: String,
+}
+
+pub fn auth_path() -> PathBuf { parth_home().join("auth.json") }
+
+/// Authenticate with a registry. Prompts for token and username, validates,
+/// and stores credentials in ~/.parth/auth.json (permissions 600 on Unix).
+pub fn login(registry_url: &str) -> Result<AuthInfo, String> {
+    print!("Token: ");
+    io::stdout().flush().map_err(|e| format!("IO error: {}", e))?;
+    let mut token = String::new();
+    io::stdin().read_line(&mut token).map_err(|e| format!("Cannot read token: {}", e))?;
+    let token = token.trim().to_string();
+    if token.is_empty() {
+        return Err("Token cannot be empty".to_string());
+    }
+
+    print!("Username: ");
+    io::stdout().flush().map_err(|e| format!("IO error: {}", e))?;
+    let mut username = String::new();
+    io::stdin().read_line(&mut username).map_err(|e| format!("Cannot read username: {}", e))?;
+    let username = username.trim().to_string();
+    if username.is_empty() {
+        return Err("Username cannot be empty".to_string());
+    }
+
+    let info = AuthInfo {
+        token: token.clone(),
+        username: username.clone(),
+        registry_url: registry_url.to_string(),
+    };
+
+    // Validate token by making a test request (best-effort)
+    if let Ok(client) = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        let resp = client
+            .get(&format!("{}/api/v1/me", registry_url.trim_end_matches('/')))
+            .header("Authorization", format!("Bearer {}", token))
+            .send();
+        match resp {
+            Ok(r) if r.status().is_success() => {
+                let _ = r.text();
+            }
+            Ok(r) => {
+                eprintln!("⚠️  Token validation failed (HTTP {}), but saving anyway", r.status());
+            }
+            Err(_) => {
+                eprintln!("⚠️  Could not reach registry for validation, but saving token");
+            }
+        }
+    }
+
+    // Write auth file
+    let auth_file = auth_path();
+    let auth_dir = auth_file.parent().unwrap();
+    fs::create_dir_all(auth_dir).map_err(|e| format!("Cannot create auth dir: {}", e))?;
+    let json = serde_json::to_string(&info).map_err(|e| format!("Cannot serialize auth: {}", e))?;
+    fs::write(auth_path(), &json).map_err(|e| format!("Cannot write auth: {}", e))?;
+
+    #[cfg(unix)]
+    { let _ = std::process::Command::new("chmod").args(["600", &auth_path().to_string_lossy()]).status(); }
+
+    println!("✓ Authenticated as '{}' on {}", username, registry_url);
+    Ok(info)
+}
+
+/// Remove stored authentication credentials
+pub fn logout() -> Result<(), String> {
+    let path = auth_path();
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| format!("Cannot remove auth file: {}", e))?;
+        println!("✓ Logged out");
+    } else {
+        println!("ℹ️  Not logged in");
+    }
+    Ok(())
+}
+
+/// Read stored authentication info
+pub fn read_auth() -> Option<AuthInfo> {
+    let path = auth_path();
+    if !path.exists() {
+        return None;
+    }
+    let content = fs::read_to_string(&path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+/// Get the auth token for a given registry URL
+pub fn get_auth_token(registry_url: &str) -> Option<String> {
+    let auth = read_auth()?;
+    if auth.registry_url == registry_url || registry_url.is_empty() {
+        Some(auth.token)
+    } else {
+        None
+    }
+}
+
+// ── Documentation generation ────────────────────────────────────────
+
+/// Extract `///` doc comments from an Ajeeb source file
+pub fn extract_doc_comments(source: &str) -> Vec<(usize, String)> {
+    let mut docs = Vec::new();
+    for (i, line) in source.lines().enumerate() {
+        let trimmed = line.trim();
+        if let Some(content) = trimmed.strip_prefix("///") {
+            docs.push((i + 1, content.trim().to_string()));
+        }
+    }
+    docs
+}
+
+/// Generate a simple HTML doc page for a set of doc comments
+pub fn generate_doc_html(name: &str, docs: &[(usize, String)]) -> String {
+    let mut body = String::new();
+    body.push_str(&format!("<h1>{}</h1>\n", html_escape(name)));
+    body.push_str("<dl>\n");
+    for (line, text) in docs {
+        body.push_str(&format!("  <dt>Line {}</dt>\n  <dd>{}</dd>\n", line, html_escape(text)));
+    }
+    body.push_str("</dl>\n");
+
+    format!(
+        "<!DOCTYPE html>\n\
+         <html lang=\"en\">\n\
+         <head><meta charset=\"UTF-8\"><title>{}</title></head>\n\
+         <body>\n\
+         {}\n\
+         </body>\n\
+         </html>\n",
+        html_escape(name),
+        body
+    )
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Generate documentation for all .ajb files in `src/` and write to `docs/`
+pub fn generate_project_docs(project_name: &str) -> Result<(), String> {
+    let src_dir = Path::new("src");
+    if !src_dir.exists() {
+        return Err("src/ directory not found".to_string());
+    }
+
+    let docs_dir = Path::new("docs");
+    fs::create_dir_all(docs_dir).map_err(|e| format!("Cannot create docs dir: {}", e))?;
+
+    let mut entries: Vec<_> = fs::read_dir(src_dir)
+        .map_err(|e| format!("Cannot read src/: {}", e))?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|ex| ex == "ajb").unwrap_or(false))
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in &entries {
+        let path = entry.path();
+        let source = fs::read_to_string(&path).map_err(|e| format!("Cannot read {:?}: {}", path, e))?;
+        let docs = extract_doc_comments(&source);
+
+        let stem = path.file_stem().unwrap().to_string_lossy().to_string();
+        let html = if docs.is_empty() {
+            format!(
+                "<!DOCTYPE html>\n\
+                 <html lang=\"en\">\n\
+                 <head><meta charset=\"UTF-8\"><title>{} — {}</title></head>\n\
+                 <body>\n\
+                 <h1>{}</h1>\n\
+                 <p>No documentation comments found.</p>\n\
+                 </body>\n\
+                 </html>\n",
+                html_escape(project_name),
+                html_escape(&stem),
+                html_escape(&stem),
+            )
+        } else {
+            generate_doc_html(&stem, &docs)
+        };
+
+        let out_path = docs_dir.join(format!("{}.html", stem));
+        fs::write(&out_path, &html).map_err(|e| format!("Cannot write {:?}: {}", out_path, e))?;
+        println!("📝 Generated {}", out_path.display());
+    }
+
+    // Generate index.html
+    let index_html = {
+        let mut items = String::new();
+        for entry in &entries {
+            let stem = entry.path().file_stem().unwrap().to_string_lossy().to_string();
+            items.push_str(&format!("  <li><a href=\"{}.html\">{}</a></li>\n", stem, stem));
+        }
+        format!(
+            "<!DOCTYPE html>\n\
+             <html lang=\"en\">\n\
+             <head><meta charset=\"UTF-8\"><title>{} — Documentation</title></head>\n\
+             <body>\n\
+             <h1>{}</h1>\n\
+             <ul>\n\
+             {}\
+             </ul>\n\
+             </body>\n\
+             </html>\n",
+            html_escape(project_name),
+            html_escape(project_name),
+            items,
+        )
+    };
+    fs::write(docs_dir.join("index.html"), &index_html).map_err(|e| format!("Cannot write index: {}", e))?;
+    println!("📝 Generated {}", docs_dir.join("index.html").display());
+    println!("✓ Documentation generated in docs/");
+
+    Ok(())
 }
 
 use super::types::{Version, VersionConstraint};
@@ -766,6 +993,135 @@ pub fn clear_cache() -> Result<(), String> {
     }
     fs::create_dir_all(&cache).map_err(|e| format!("Cannot recreate cache: {}", e))?;
     Ok(())
+}
+
+// ── Remote publish ─────────────────────────────────────────────────
+
+/// Create a .tar.gz archive from a source directory
+fn create_tarball(source_dir: &Path, dest_path: &Path) -> Result<(), String> {
+    let file = fs::File::create(dest_path).map_err(|e| format!("Cannot create tarball: {}", e))?;
+    let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+    let mut archive = tar::Builder::new(encoder);
+
+    // Walk the source dir and add all files
+    fn add_dir(archive: &mut tar::Builder<flate2::write::GzEncoder<fs::File>>,
+               dir: &Path, prefix: &Path) -> Result<(), String> {
+        let entries = fs::read_dir(dir).map_err(|e| format!("Cannot read dir: {}", e))?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let rel = path.strip_prefix(prefix).unwrap_or(&path);
+            if path.is_dir() {
+                add_dir(archive, &path, prefix)?;
+            } else if path.extension().map(|e| e == "ajb" || e == "das" || e == "c" || e == "h").unwrap_or(false) {
+                let data = fs::read(&path).map_err(|e| format!("Cannot read {:?}: {}", path, e))?;
+                let mut header = tar::Header::new_gnu();
+                header.set_size(data.len() as u64);
+                header.set_mode(0o644);
+                header.set_cksum();
+                archive.append_data(&mut header, rel, data.as_slice())
+                    .map_err(|e| format!("Cannot add to archive: {}", e))?;
+            }
+        }
+        Ok(())
+    }
+
+    add_dir(&mut archive, source_dir, source_dir)?;
+    archive.finish().map_err(|e| format!("Cannot finalize archive: {}", e))?;
+    Ok(())
+}
+
+/// Publish a package to a remote registry server
+pub fn publish_to_remote(
+    name: &str, version: &str, author: &str, description: &str,
+    source_dir: &Path, registry_url: &str, checksum: &str,
+) -> Result<(), String> {
+    let url = registry_url.trim_end_matches('/');
+
+    // Get auth token
+    let token = read_auth().and_then(|a| {
+        if a.registry_url == registry_url || a.registry_url == url {
+            Some(a.token)
+        } else {
+            None
+        }
+    });
+
+    // Get signature
+    let sig = read_signature(name, version);
+    let signature = sig.as_ref().map(|s| {
+        serde_json::to_string(s).unwrap_or_default()
+    });
+
+    // Create tarball
+    let tarball_path = source_dir.join(format!("{}-{}.tar.gz", name, version));
+    create_tarball(source_dir, &tarball_path)?;
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("Cannot create HTTP client: {}", e))?;
+
+    // Upload metadata
+    let meta_body = serde_json::json!({
+        "name": name,
+        "version": version,
+        "author": author,
+        "description": description,
+        "checksum": checksum,
+        "signature": signature,
+    });
+
+    let mut req = client.post(&format!("{}/api/v1/packages", url))
+        .json(&meta_body);
+
+    if let Some(ref t) = token {
+        req = req.header("Authorization", format!("Bearer {}", t));
+    }
+
+    let resp = req.send().map_err(|e| format!("Cannot publish to registry: {}", e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().unwrap_or_default();
+        return Err(format!("Registry rejected publish (HTTP {}): {}", status, text));
+    }
+    println!("✓ Metadata published to registry");
+
+    // Upload tarball
+    let tarball_data = fs::read(&tarball_path)
+        .map_err(|e| format!("Cannot read tarball: {}", e))?;
+
+    let mut req = client.post(&format!("{}/api/v1/packages/{}/{}/upload", url, name, version))
+        .header("content-type", "application/gzip")
+        .body(tarball_data);
+
+    if let Some(ref t) = token {
+        req = req.header("Authorization", format!("Bearer {}", t));
+    }
+
+    let resp = req.send().map_err(|e| format!("Cannot upload tarball: {}", e))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().unwrap_or_default();
+        return Err(format!("Registry rejected upload (HTTP {}): {}", status, text));
+    }
+    println!("✓ Tarball uploaded to registry");
+
+    // Cleanup
+    let _ = fs::remove_file(&tarball_path);
+
+    Ok(())
+}
+
+fn read_signature(name: &str, version: &str) -> Option<PackageSignature> {
+    let sig_path = signatures_dir()
+        .join(sanitize_pkg_segment(name))
+        .join(format!("{}.sig", sanitize_pkg_segment(version)));
+    if !sig_path.exists() {
+        return None;
+    }
+    let content = fs::read_to_string(&sig_path).ok()?;
+    let sig = deserialize_signature(&content).ok()?;
+    Some(sig)
 }
 
 #[cfg(test)]

@@ -80,7 +80,7 @@ impl Profile {
 }
 
 /// Ed25519-based package signature
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PackageSignature {
     pub signer: String,
     pub hash: String,
@@ -92,8 +92,7 @@ pub struct PackageSignature {
 }
 
 /// Security advisory
-#[cfg_attr(feature = "remote-registry", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Advisory {
     pub id: String,
     pub package: String,
@@ -103,8 +102,7 @@ pub struct Advisory {
 }
 
 /// Search result
-#[cfg_attr(feature = "remote-registry", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SearchResult {
     pub name: String,
     pub latest_version: String,

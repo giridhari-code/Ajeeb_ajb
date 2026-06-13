@@ -41,6 +41,45 @@ fn get_registry_url(cfg: &ProjectConfig) -> String {
     env::var("PARTH_REGISTRY").unwrap_or_else(|_| "local".to_string())
 }
 
+fn cmd_init() {
+    if Path::new("parth.das").exists() {
+        eprintln!("Error: parth.das already exists in current directory");
+        std::process::exit(1);
+    }
+    fs::create_dir_all("src").expect("Cannot create src dir");
+    fs::create_dir_all("build").expect("Cannot create build dir");
+
+    let name = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "project".to_string());
+    let das = format!(
+        "[package]\n\
+         name = \"{name}\"\n\
+         version = \"0.1.0\"\n\
+         author = \"\"\n\
+         description = \"\"\n\
+         registry = \"\"\n\
+         \n\
+         [dependencies]\n\
+         \n\
+         [profile.dev]\n\
+         opt-level = \"0\"\n\
+         debug = \"true\"\n\
+         \n\
+         [profile.release]\n\
+         opt-level = \"3\"\n\
+         debug = \"false\"\n\
+         lto = \"true\"\n",
+        name = name
+    );
+    fs::write("parth.das", das).expect("Cannot write parth.das");
+    let main_ajb = "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n";
+    fs::write("src/main.ajb", main_ajb).expect("Cannot write main.ajb");
+    println!("✓ Initialized Ajeeb project in current directory");
+    println!("📦 Name: {}", name);
+}
+
 fn cmd_new(args: &[String]) {
     if args.is_empty() {
         eprintln!("Usage: parth new <project-name>");
@@ -211,6 +250,67 @@ fn collect_library_sources(deps: &[types::PkgDep]) -> (String, Vec<String>) {
     }
 
     (combined, runtime_c_files)
+}
+
+fn cmd_build_file(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Usage: parth build <file.ajb>");
+        std::process::exit(1);
+    }
+    let file_path = &args[0];
+    if !file_path.ends_with(".ajb") {
+        eprintln!("Error: expected a .ajb file");
+        std::process::exit(1);
+    }
+    if !Path::new(file_path).exists() {
+        eprintln!("Error: file '{}' not found", file_path);
+        std::process::exit(1);
+    }
+
+    let root = find_ajeeb_root();
+    let status = Command::new("cargo")
+        .args(["run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
+               "--", file_path, "build/output.c"])
+        .current_dir(&root)
+        .status().expect("Failed to run compiler");
+    if !status.success() {
+        eprintln!("❌ Compilation failed");
+        std::process::exit(1);
+    }
+
+    // Build with gcc
+    let bin_name = format!("build/{}", Path::new(file_path).file_stem().unwrap().to_string_lossy());
+    let runtime_src = root.join("runtime/ajeeb_runtime.c");
+    let gcc_status = Command::new("gcc")
+        .args(["build/output.c", &runtime_src.to_string_lossy(), "-o", &bin_name, "-Wall"])
+        .current_dir(&root)
+        .status().expect("Failed to run gcc");
+    if !gcc_status.success() {
+        eprintln!("❌ GCC compilation failed");
+        std::process::exit(1);
+    }
+    println!("✓ Built: {}", bin_name);
+}
+
+fn cmd_run_file(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Usage: parth run <file.ajb>");
+        std::process::exit(1);
+    }
+    let file_path = &args[0];
+    if !file_path.ends_with(".ajb") {
+        // Try as project mode (parth run) with a flag that isn't a file
+        cmd_run();
+        return;
+    }
+
+    let root = find_ajeeb_root();
+    let status = Command::new("cargo")
+        .args(["run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
+               "--", file_path])
+        .current_dir(&root)
+        .status().expect("Failed to run compiler");
+    std::process::exit(status.code().unwrap_or(1));
 }
 
 fn cmd_build() {
@@ -445,6 +545,125 @@ fn cmd_keygen() {
     }
 }
 
+fn cmd_login(args: &[String]) {
+    let registry_url = args.first().map(|s| s.as_str()).unwrap_or("https://registry.ajeeb.dev");
+    match registry::login(registry_url) {
+        Ok(info) => println!("✓ Logged in as '{}'", info.username),
+        Err(e) => { eprintln!("❌ Login failed: {}", e); std::process::exit(1); }
+    }
+}
+
+fn cmd_logout() {
+    match registry::logout() {
+        Ok(()) => {}
+        Err(e) => { eprintln!("❌ {}", e); std::process::exit(1); }
+    }
+}
+
+fn cmd_whoami() {
+    match registry::read_auth() {
+        Some(info) => {
+            println!("👤 {}", info.username);
+            println!("🔗 {}", info.registry_url);
+        }
+        None => {
+            println!("Not logged in. Use `parth login` to authenticate.");
+        }
+    }
+}
+
+fn cmd_doc() {
+    let name = if Path::new("parth.das").exists() {
+        let cfg = config::read_config(Path::new("parth.das")).unwrap_or_default();
+        cfg.pkg_name
+    } else {
+        "project".to_string()
+    };
+
+    match registry::generate_project_docs(&name) {
+        Ok(()) => {}
+        Err(e) => { eprintln!("❌ Documentation generation failed: {}", e); std::process::exit(1); }
+    }
+}
+
+fn cmd_tree() {
+    let lock = if Path::new("parth.lock").exists() {
+        resolver::read_lock(Path::new("."))
+    } else {
+        eprintln!("No parth.lock found. Run `parth build` first.");
+        std::process::exit(1);
+    };
+    resolver::print_tree(&lock);
+}
+
+fn cmd_why(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Usage: parth why <package>");
+        std::process::exit(1);
+    }
+    let lock = resolver::read_lock(Path::new("."));
+    let explanations = resolver::why(&lock, &args[0]);
+    for line in &explanations {
+        println!("{}", line);
+    }
+}
+
+fn cmd_outdated() {
+    let cfg = if Path::new("parth.das").exists() {
+        config::read_config(Path::new("parth.das")).unwrap_or_default()
+    } else {
+        eprintln!("No parth.das found");
+        std::process::exit(1);
+    };
+    let lock = resolver::read_lock(Path::new("."));
+    if lock.is_empty() {
+        eprintln!("No parth.lock found. Run `parth build` first.");
+        std::process::exit(1);
+    }
+    let registry_url = get_registry_url(&cfg);
+    let outdated = resolver::check_outdated(&lock, &registry_url);
+    if outdated.is_empty() {
+        println!("✓ All dependencies are up to date");
+    } else {
+        println!("📦 Outdated dependencies:");
+        for (name, current, latest) in &outdated {
+            println!("  {}: {} -> {}", name, current, latest);
+        }
+    }
+}
+
+fn cmd_upgrade(args: &[String]) {
+    if !Path::new("parth.das").exists() {
+        eprintln!("Error: no parth.das found");
+        std::process::exit(1);
+    }
+    let mut cfg = config::read_config(Path::new("parth.das")).unwrap_or_else(|e| {
+        eprintln!("Error: {}", e); std::process::exit(1);
+    });
+
+    if args.is_empty() {
+        // Upgrade all: delete lock and re-resolve
+        let lock_path = Path::new("parth.lock");
+        if lock_path.exists() {
+            let _ = fs::remove_file(lock_path);
+        }
+        println!("✓ Lock file removed. Run `parth build` to re-resolve all dependencies");
+        return;
+    }
+
+    let pkg_name = &args[0];
+    let new_constraint = args.get(1).cloned().unwrap_or_else(|| "*".to_string());
+    if resolver::upgrade_dep(&mut cfg.deps, pkg_name, &new_constraint) {
+        config::update_deps(Path::new("parth.das"), &cfg.deps).unwrap_or_else(|e| {
+            eprintln!("Error: {}", e); std::process::exit(1);
+        });
+        println!("✓ Upgraded '{}' to constraint '{}'", pkg_name, new_constraint);
+    } else {
+        eprintln!("❌ Package '{}' not found in dependencies", pkg_name);
+        std::process::exit(1);
+    }
+}
+
 fn cmd_update() {
     if !Path::new("parth.das").exists() {
         eprintln!("Error: no parth.das found"); std::process::exit(1);
@@ -550,7 +769,17 @@ fn cmd_publish(args: &[String]) {
     println!("✓ Published '{}@{}' (checksum: {}...)", cfg.pkg_name, cfg.pkg_version, &checksum[..16]);
 
     if !registry_arg.is_empty() && registry_arg != "local" {
-        println!("ℹ️  Published locally. To push: rsync -avz ~/.parth/ user@host:~/.parth/");
+        match registry::publish_to_remote(
+            &cfg.pkg_name, &cfg.pkg_version,
+            &cfg.pkg_author, &cfg.pkg_description,
+            &cache_dir, registry_arg, &checksum,
+        ) {
+            Ok(()) => println!("✓ Published '{}@{}' to {}", cfg.pkg_name, cfg.pkg_version, registry_arg),
+            Err(e) => {
+                eprintln!("⚠️  Local publish succeeded, but remote publish failed: {}", e);
+                eprintln!("ℹ️  To push manually: rsync -avz ~/.parth/ user@host:~/.parth/");
+            }
+        }
     }
 }
 
@@ -669,8 +898,51 @@ fn cmd_cache(args: &[String]) {
                 println!("✓ Pruned {} unused packages", removed);
             }
         }
+        "put" => {
+            if args.len() < 3 {
+                eprintln!("Usage: parth cache put <key> <value>");
+                std::process::exit(1);
+            }
+            let key = &args[1];
+            let value = &args[2];
+            match registry::cache_put(key, value.as_bytes()) {
+                Ok(hash) => println!("🔑 {} -> {}", key, hash),
+                Err(e) => { eprintln!("❌ {}", e); std::process::exit(1); }
+            }
+        }
+        "get" => {
+            if args.len() < 2 {
+                eprintln!("Usage: parth cache get <key>");
+                std::process::exit(1);
+            }
+            let key = &args[1];
+            let hash = match registry::cache_lookup(key) {
+                Some(h) => h,
+                None => { eprintln!("❌ Key not found in cache: {}", key); std::process::exit(1); }
+            };
+            match registry::cache_get(&hash) {
+                Some(data) => {
+                    match String::from_utf8(data) {
+                        Ok(s) => println!("{}", s),
+                        Err(_) => eprintln!("(binary data, use 'parth cache lookup' for hash)"),
+                    }
+                }
+                None => { eprintln!("❌ Hash not found in cache: {}", hash); std::process::exit(1); }
+            }
+        }
+        "lookup" => {
+            if args.len() < 2 {
+                eprintln!("Usage: parth cache lookup <key>");
+                std::process::exit(1);
+            }
+            let key = &args[1];
+            match registry::cache_lookup(key) {
+                Some(hash) => println!("🔑 {} -> {}", key, hash),
+                None => { eprintln!("❌ Key not found in cache: {}", key); std::process::exit(1); }
+            }
+        }
         _ => {
-            eprintln!("Usage: parth cache <info|clear|prune>");
+            eprintln!("Usage: parth cache <info|clear|prune|put|get|lookup>");
             std::process::exit(1);
         }
     }
@@ -778,13 +1050,19 @@ fn cmd_help() {
     println!();
     println!("COMMANDS:");
     println!("  new <name>       Create a new Ajeeb project");
+    println!("  init             Initialize project in current directory");
     println!("  add <pkg>[@v]    Add a dependency");
     println!("  remove <pkg>     Remove a dependency");
     println!("  update           Update all dependencies");
-    println!("  build            Compile current project");
-    println!("  run              Build and run current project");
+    println!("  tree             Show dependency tree");
+    println!("  why <pkg>        Explain why a package is included");
+    println!("  outdated         Check for outdated dependencies");
+    println!("  upgrade [pkg]    Upgrade dependencies");
+    println!("  build [file.ajb] Compile current project or single file");
+    println!("  run [file.ajb]   Build and run project, or run single file");
     println!("  test             Run all tests in tests/ directory");
     println!("  fmt [files..]    Format Ajeeb source files");
+    println!("  doc              Generate documentation from /// comments");
     println!("  clean            Remove build artifacts");
     println!("  info             Show project info from parth.das");
     println!("  version          Show parth and project version");
@@ -792,6 +1070,9 @@ fn cmd_help() {
     println!("  search <query>   Search packages");
     println!("  install <pkg>    Install a package");
     println!("  publish [url]    Publish the package");
+    println!("  login [url]      Authenticate with a registry");
+    println!("  logout           Remove stored credentials");
+    println!("  whoami           Show current user");
     println!("  sign <pkg> <v>   Sign a package");
     println!("  verify <p> <v>   Verify package signature");
     println!("  keygen           Generate Ed25519 signing keypair");
@@ -811,17 +1092,43 @@ fn main() {
 
     match args[1].as_str() {
         "new" => cmd_new(&args[2..]),
+        "init" => cmd_init(),
         "add" => cmd_add(&args[2..]),
         "remove" => cmd_remove(&args[2..]),
-        "build" => cmd_build(),
-        "run" => cmd_run(),
+        "build" => {
+            if args.len() > 2 && args[2].ends_with(".ajb") {
+                cmd_build_file(&args[2..]);
+            } else if args.len() > 2 {
+                eprintln!("Usage: parth build [file.ajb]");
+                std::process::exit(1);
+            } else {
+                cmd_build();
+            }
+        }
+        "run" => {
+            if args.len() > 2 && args[2].ends_with(".ajb") {
+                cmd_run_file(&args[2..]);
+            } else if args.len() > 2 {
+                cmd_run_file(&args[2..]);
+            } else {
+                cmd_run();
+            }
+        }
         "test" => cmd_test(),
         "fmt" => cmd_fmt(&args[2..]),
+        "doc" => cmd_doc(),
         "publish" => cmd_publish(&args[2..]),
         "update" => cmd_update(),
+        "tree" => cmd_tree(),
+        "why" => cmd_why(&args[2..]),
+        "outdated" => cmd_outdated(),
+        "upgrade" => cmd_upgrade(&args[2..]),
         "info" => cmd_info(),
         "search" => cmd_search(&args[2..]),
         "install" => cmd_install(&args[2..]),
+        "login" => cmd_login(&args[2..]),
+        "logout" => cmd_logout(),
+        "whoami" => cmd_whoami(),
         "sign" => cmd_sign(&args[2..]),
         "verify" => cmd_verify(&args[2..]),
         "keygen" => cmd_keygen(),
