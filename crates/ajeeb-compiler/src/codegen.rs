@@ -22,6 +22,9 @@ pub struct Codegen {
     var_types: HashMap<String, (String, String)>,               // var → (kind: "struct"|"enum", type_name)
     // For each type+method, the mangled function name registered via ImplBlock
     method_map: HashMap<(String, String), String>,              // (type_name, method) → mangled_fn
+    // String type tracking — prevents integer-add when operand is a string
+    string_vars: HashSet<String>,   // variable names known to hold strings
+    string_regs: HashSet<String>,   // LLVM register names holding string pointers
 }
 
 impl Codegen {
@@ -56,6 +59,8 @@ impl Codegen {
             enum_variant_ids: HashMap::new(),
             var_types: HashMap::new(),
             method_map: HashMap::new(),
+            string_vars: HashSet::new(),
+            string_regs: HashSet::new(),
         }
     }
 
@@ -262,8 +267,11 @@ impl Codegen {
     }
 
     fn emit_fn_def(&mut self, name: &str, params: &[(String, TypeAnnot)], body: &[Stmt]) -> Result<(), String> {
-        // Save global unnamed count; restore after function
+        // Save global state; restore after function
         let saved_unnamed = self.unnamed_count;
+        let saved_string_vars = self.string_vars.clone();
+        let saved_string_regs = self.string_regs.clone();
+        self.string_regs.clear();
         // In LLVM IR 21+, %0 is reserved internally (function ref?).
         // With N params, first numbered instruction is %(N+1).
         self.unnamed_count = params.len() as u64 + 1;
@@ -279,12 +287,16 @@ impl Codegen {
         let header = format!("define i64 @{}({}) {{\n", name, params_ir.join(", "));
 
         // Allocas for parameters — param i is %i
-        for (i, (pname, _ptype)) in params.iter().enumerate() {
+        for (i, (pname, ptype)) in params.iter().enumerate() {
             let param_reg = format!("%{}", i);
             let reg = self.fresh();
             writeln!(fn_body, "  {} = alloca i64, align 8", reg).unwrap();
             writeln!(fn_body, "  store i64 {}, ptr {}", param_reg, reg).unwrap();
             fn_vars.insert(pname.clone(), reg);
+            // Track string parameters
+            if matches!(ptype, TypeAnnot::String) {
+                self.string_vars.insert(pname.clone());
+            }
         }
         // Allocas for local variables
         for s in body {
@@ -295,17 +307,23 @@ impl Codegen {
         self.label_count += 1;
         writeln!(fn_body, "  br label %{}", entry).unwrap();
         writeln!(fn_body, "{}:", entry).unwrap();
+        self.block_terminated = false;
 
         // Emit body statements
         let saved_body = std::mem::replace(&mut self.body, fn_body);
         let saved_vars = std::mem::replace(&mut self.variables, fn_vars);
         self.emit_stmts(body)?;
-        writeln!(self.body, "  ret i64 0").unwrap();
+        if !self.block_terminated {
+            writeln!(self.body, "  ret i64 0").unwrap();
+        }
+        self.block_terminated = false;
         let full_fn = format!("{}{}}}\n", header, self.body);
         self.functions.push_str(&full_fn);
         self.body = saved_body;
         self.variables = saved_vars;
         self.unnamed_count = saved_unnamed;
+        self.string_vars = saved_string_vars;
+        self.string_regs = saved_string_regs;
         Ok(())
     }
 
@@ -371,6 +389,10 @@ impl Codegen {
                 writeln!(self.body, "  store i64 {}, ptr {}", val, var_reg).unwrap();
                 // Track type info for method dispatch
                 self.track_var_type(name, value);
+                // Track string type for correct binary ops
+                if self.string_regs.contains(&val) {
+                    self.string_vars.insert(name.clone());
+                }
                 Ok(())
             }
             Stmt::Const { name, value, .. } => {
@@ -379,6 +401,10 @@ impl Codegen {
                 let val = self.emit_expr(value)?;
                 writeln!(self.body, "  store i64 {}, ptr {}", val, var_reg).unwrap();
                 self.track_var_type(name, value);
+                // Track string type for correct binary ops
+                if self.string_regs.contains(&val) {
+                    self.string_vars.insert(name.clone());
+                }
                 Ok(())
             }
             Stmt::If { condition, then_block, else_block, .. } => {
@@ -504,17 +530,24 @@ impl Codegen {
                 writeln!(self.body, "  {} = getelementptr inbounds i8, ptr @{}, i64 0", ptr, gname).unwrap();
                 let reg = self.fresh();
                 writeln!(self.body, "  {} = ptrtoint ptr {} to i64", reg, ptr).unwrap();
+                self.string_regs.insert(reg.clone());
                 Ok(reg)
             }
             Expr::Ident(name, ..) => {
                 if let Some(var_reg) = self.variables.get(name).cloned() {
                     let reg = self.fresh();
                     writeln!(self.body, "  {} = load i64, ptr {}", reg, var_reg).unwrap();
+                    if self.string_vars.contains(name) {
+                        self.string_regs.insert(reg.clone());
+                    }
                     Ok(reg)
                 } else if let Some(gname) = self.globals_map.get(name).cloned() {
                     // Top-level global variable
                     let reg = self.fresh();
                     writeln!(self.body, "  {} = load i64, ptr @{}", reg, gname).unwrap();
+                    if self.string_vars.contains(name) {
+                        self.string_regs.insert(reg.clone());
+                    }
                     Ok(reg)
                 } else if name == "__str_ptr" {
                     let reg = self.fresh();
@@ -530,13 +563,18 @@ impl Codegen {
                 let reg = self.fresh();
                 match op {
                     BinOp::Add => {
-                        // Detect string concatenation: if either operand is a string literal,
-                        // call str_concat from the C runtime. Otherwise, integer addition.
-                        let is_str = matches!(left.as_ref(), Expr::StringLit(..)) || matches!(right.as_ref(), Expr::StringLit(..));
+                        // Detect string concatenation: if either operand is a string literal
+                        // or is a known string register, call str_concat from the C runtime.
+                        // Otherwise, integer addition.
+                        let is_str = matches!(left.as_ref(), Expr::StringLit(..))
+                            || matches!(right.as_ref(), Expr::StringLit(..))
+                            || self.string_regs.contains(&lhs)
+                            || self.string_regs.contains(&rhs);
                         if is_str {
                             self.declare_extern("str_concat");
                             let reg2 = self.fresh();
                             writeln!(self.body, "  {} = call i64 @str_concat(i64 {}, i64 {})", reg2, lhs, rhs).unwrap();
+                            self.string_regs.insert(reg2.clone());
                             return Ok(reg2);
                         }
                         writeln!(self.body, "  {} = add i64 {}, {}", reg, lhs, rhs).unwrap();
@@ -644,6 +682,7 @@ impl Codegen {
                         // Return pointer as i64
                         let ptr_as_int = self.fresh();
                         writeln!(self.body, "  {} = ptrtoint ptr {} to i64", ptr_as_int, buf).unwrap();
+                        self.string_regs.insert(ptr_as_int.clone());
                         Ok(ptr_as_int)
                     }
                     _ => {
@@ -660,6 +699,13 @@ impl Codegen {
                         } else {
                             let reg = self.fresh();
                             writeln!(self.body, "  {} = call i64 @{}({})", reg, name, args_str).unwrap();
+                            // Track string-returning builtins
+                            if matches!(name.as_str(),
+                                "str_concat" | "itoa" | "substring" | "toUpperCase" | "toLowerCase"
+                                | "trim" | "readFile" | "readArg" | "replace" | "chr"
+                            ) {
+                                self.string_regs.insert(reg.clone());
+                            }
                             Ok(reg)
                         }
                     }

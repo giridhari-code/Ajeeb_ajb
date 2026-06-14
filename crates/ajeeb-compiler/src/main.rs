@@ -34,6 +34,8 @@ fn main() -> io::Result<()> {
     }
 
     let file_path = &args[1];
+    let output_path = if args.len() >= 3 { &args[2] } else { "build/output.ll" };
+    let use_llvm = args.iter().any(|a| a == "--llvm");
 
     // Auto-discover parth.das (check cwd, then parent)
     for dir in [Path::new("."), Path::new("..")] {
@@ -179,20 +181,27 @@ fn main() -> io::Result<()> {
     let mut llvm_ok = false;
     let mut gcc_ok = false;
 
-    if Command::new("llc").arg("--version").status().is_ok() {
+    if use_llvm && Command::new("llc").arg("--version").status().is_ok() {
         let mut codegen = codegen::Codegen::new();
         match codegen.compile(&all_stmts) {
             Ok(_) => {
                 std::fs::create_dir_all("build").ok();
-                codegen.write_ir_to_file("build/output.ll").ok();
-                println!("\n🔨 Compiling build/output.ll → build/ajeeb_llvm (via llc + gcc) ...");
+                codegen.write_ir_to_file(output_path).ok();
+                println!("\n🔨 Compiling {} → build/ajeeb_llvm (via llc + as + ld) ...", output_path);
                 let status = Command::new("llc")
-                    .args(["-O2", "build/output.ll", "-o", "build/output.s"])
+                    .args(["-O2", output_path, "-o", "build/output.s"])
                     .status()
                     .and_then(|s| if s.success() {
-                        Command::new("gcc")
-                            .args(["build/output.s", "runtime/ajeeb_runtime.c", "-o", "build/ajeeb_llvm", "-lm", "-ldl", "-Wl,--allow-multiple-definition"])
+                        Command::new("as")
+                            .args(["build/output.s", "-o", "build/output.o"])
                             .status()
+                            .and_then(|s2| if s2.success() {
+                                Command::new("gcc")
+                                    .args(["build/output.o", "runtime/ajeeb_runtime.c", "-o", "build/ajeeb_llvm", "-lm", "-ldl", "-Wl,--allow-multiple-definition"])
+                                    .status()
+                            } else {
+                                Ok(s2)
+                            })
                     } else {
                         Ok(s)
                     });
@@ -204,7 +213,7 @@ fn main() -> io::Result<()> {
             }
             Err(e) => println!("⚠️  LLVM codegen skipped: {}", e),
         }
-    } else {
+    } else if use_llvm {
         println!("ℹ️  llc not found — skipping LLVM codegen");
         println!("   Install LLVM to enable native compilation");
     }

@@ -1,0 +1,6 @@
+function main(): int {
+    let a: string = "Hello ";
+    let b: string = "World";
+    println(a + b);
+    return 0;
+}
