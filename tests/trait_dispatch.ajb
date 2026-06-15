@@ -1,0 +1,21 @@
+trait Display {
+    fn show(self) -> string;
+}
+
+struct Counter {
+    value: int
+}
+
+impl Display for Counter {
+    fn show(self) -> string {
+        return "Counter";
+    }
+}
+
+function main() {
+    let c = Counter { value: 42 };
+    // Trait method dispatch
+    let s = c.show();
+    println(s);
+    assert_eq(s, "Counter");
+}

@@ -129,6 +129,7 @@ pub enum Stmt {
     FnDef {
         name: String,
         type_params: Vec<String>,              // Generic type parameter names
+        type_param_bounds: Vec<(String, Vec<String>)>,  // (param_name, trait_bounds)
         params: Vec<(String, TypeAnnot)>,
         return_type: TypeAnnot,
         body: Vec<Stmt>,
@@ -147,7 +148,8 @@ pub enum Stmt {
     Import(ImportDecl),
     StructDef {
         name: String,
-        type_params: Vec<String>,              // Generic type parameter names
+        type_params: Vec<String>,
+        type_param_bounds: Vec<(String, Vec<String>)>,
         fields: Vec<StructField>,
         pub_: bool,
         line: usize,
@@ -155,7 +157,8 @@ pub enum Stmt {
     },
     EnumDef {
         name: String,
-        type_params: Vec<String>,              // Generic type parameter names
+        type_params: Vec<String>,
+        type_param_bounds: Vec<(String, Vec<String>)>,
         variants: Vec<EnumVariantDef>,
         pub_: bool,
         line: usize,
@@ -163,13 +166,18 @@ pub enum Stmt {
     },
     TraitDef {
         name: String,
+        type_params: Vec<String>,
+        type_param_bounds: Vec<(String, Vec<String>)>,
         methods: Vec<TraitMethod>,
         pub_: bool,
         line: usize,
         col: usize,
     },
     ImplBlock {
-        trait_name: String,
+        trait_name: Option<String>,              // None = inherent impl, Some = trait impl
+        trait_type_args: Vec<String>,            // Type args for generic trait: impl Display[Int] for T
+        type_params: Vec<String>,                // Generic type params: impl[T] or impl[T: Bound]
+        type_param_bounds: Vec<(String, Vec<String>)>,  // (param_name, trait_bounds)
         type_name: String,
         methods: Vec<Stmt>,
         line: usize,
@@ -267,6 +275,13 @@ pub enum Expr {
     EnumCtor {
         enum_name: String,
         variant: String,
+        args: Vec<Expr>,
+        line: usize,
+        col: usize,
+    },
+    AssociatedFnCall {
+        type_name: String,
+        method: String,
         args: Vec<Expr>,
         line: usize,
         col: usize,

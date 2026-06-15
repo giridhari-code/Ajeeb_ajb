@@ -25,14 +25,14 @@ function test_generic_fn() {
 }
 
 function test_generic_struct() {
-    let b: Box[Int] = Box { value: 99 };
+    let b: Box[Int] = Box[Int] { value: 99 };
     assert_eq(b.value, 99);
     println("  PASS generic struct");
 }
 
 function test_generic_enum() {
-    let v = Option::Some(42);
-    assert_eq(v, Option::Some(42));
+    let v = Option[Int].Some(42);
+    assert_eq(v, Option[Int].Some(42));
     let result = match v {
         Option::Some(n) => n,
         Option::None => 0,

@@ -1,0 +1,7 @@
+impl[T] UnknownType[T] {
+    fn new(value: T) -> UnknownType[T] {
+        return UnknownType[T] { value: value };
+    }
+}
+
+function main() {}

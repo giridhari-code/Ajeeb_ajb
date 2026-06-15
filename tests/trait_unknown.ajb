@@ -1,0 +1,9 @@
+struct User {
+    name: string
+}
+
+impl UnknownTrait for User {
+    fn method(self) -> string {
+        return "hello";
+    }
+}

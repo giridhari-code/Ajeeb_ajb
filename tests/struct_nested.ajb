@@ -1,0 +1,16 @@
+struct Address {
+    city: string
+}
+
+struct User {
+    name: string,
+    address: Address
+}
+
+function main(): int {
+    let addr = Address { city: "Mumbai" };
+    let user = User { name: "Ajeeb", address: addr };
+    print(user.name);
+    print(user.address.city);
+    return 0;
+}

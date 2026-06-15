@@ -1,0 +1,20 @@
+// LLVM Feature Test: Associated Functions + Method Calls (single arg println)
+struct Point {
+    x: int,
+    y: int
+}
+
+impl Point {
+    fn new(x: int, y: int) -> Point {
+        return Point { x: x, y: y };
+    }
+    fn distance(self) -> int {
+        return self.x * self.x + self.y * self.y;
+    }
+}
+
+function main(): int {
+    let p = Point::new(3, 4);
+    println(itoa(p.distance()));
+    return 0;
+}

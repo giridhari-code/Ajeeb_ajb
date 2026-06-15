@@ -1,0 +1,26 @@
+struct Counter {
+    value: int,
+}
+
+impl Counter {
+    fn new(start: int) -> Counter {
+        return Counter { value: start };
+    }
+
+    fn increment(self) {
+        self.value = self.value + 1;
+    }
+
+    fn get(self) -> int {
+        return self.value;
+    }
+}
+
+function main() {
+    let c = Counter::new(10);
+    c.increment();
+    c.increment();
+    let v = c.get();
+    assert_eq(v, 12);
+    println("PASS: inherent_method_call");
+}

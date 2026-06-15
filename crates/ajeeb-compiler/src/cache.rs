@@ -4,6 +4,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+const CACHE_FORMAT_VERSION: u64 = 5;  // Bump when serialization format changes
+
 #[derive(Clone, Debug)]
 pub struct CacheEntry {
     pub source_path: PathBuf,
@@ -104,6 +106,12 @@ impl ModuleCache {
         let data = fs::read(&cache_path).ok()?;
         let mut cursor = std::io::Cursor::new(data.as_slice());
 
+        // Read and check format version
+        let version = read_u64_le(&mut cursor)?;
+        if version != CACHE_FORMAT_VERSION {
+            return None;  // Cache format mismatch, reparse
+        }
+
         // Skip mtime block (we already validated)
         let count = read_u64_le(&mut cursor)? as usize;
         for _ in 0..count {
@@ -126,6 +134,9 @@ impl ModuleCache {
         let hash = self.compute_hash();
 
         let mut data = Vec::new();
+
+        // Write format version (must be first)
+        write_u64_le(&mut data, CACHE_FORMAT_VERSION);
 
         // Write mtime block for validation
         write_u64_le(&mut data, self.source_times.len() as u64);
@@ -393,6 +404,15 @@ fn write_expr(data: &mut Vec<u8>, expr: &Expr) {
                 }
             }
         }
+        Expr::AssociatedFnCall { type_name, method, args, .. } => {
+            write_u64_le(data, 23);
+            write_string(data, type_name);
+            write_string(data, method);
+            write_u64_le(data, args.len() as u64);
+            for a in args {
+                write_expr(data, a);
+            }
+        }
     }
 }
 
@@ -531,6 +551,16 @@ fn read_expr(cursor: &mut std::io::Cursor<&[u8]>) -> Option<Expr> {
             }
             Expr::Match { value: Box::new(value), arms, line: 0, col: 0 }
         }
+        23 => {
+            let type_name = read_string(cursor)?;
+            let method = read_string(cursor)?;
+            let arg_count = read_u64_le(cursor)? as usize;
+            let mut args = Vec::with_capacity(arg_count);
+            for _ in 0..arg_count {
+                args.push(read_expr(cursor)?);
+            }
+            Expr::AssociatedFnCall { type_name, method, args, line: 0, col: 0 }
+        }
         _ => return None,
     })
 }
@@ -653,12 +683,20 @@ pub fn write_stmt(data: &mut Vec<u8>, stmt: &Stmt) {
             write_u64_le(data, 8);
             write_expr(data, expr);
         }
-        Stmt::FnDef { name, type_params, params, return_type, body, pub_, .. } => {
+        Stmt::FnDef { name, type_params, type_param_bounds, params, return_type, body, pub_, .. } => {
             write_u64_le(data, 9);
             write_string(data, name);
             write_u64_le(data, type_params.len() as u64);
             for tp in type_params {
                 write_string(data, tp);
+            }
+            write_u64_le(data, type_param_bounds.len() as u64);
+            for (param, bounds) in type_param_bounds {
+                write_string(data, param);
+                write_u64_le(data, bounds.len() as u64);
+                for b in bounds {
+                    write_string(data, b);
+                }
             }
             write_u64_le(data, params.len() as u64);
             for (pname, ptype) in params {
@@ -700,12 +738,16 @@ pub fn write_stmt(data: &mut Vec<u8>, stmt: &Stmt) {
                 write_u64_le(data, 0);
             }
         }
-        Stmt::StructDef { name, type_params, fields, pub_, .. } => {
+        Stmt::StructDef { name, type_params, type_param_bounds, fields, pub_, .. } => {
             write_u64_le(data, 12);
             write_string(data, name);
             write_u64_le(data, type_params.len() as u64);
-            for tp in type_params {
-                write_string(data, tp);
+            for tp in type_params { write_string(data, tp); }
+            write_u64_le(data, type_param_bounds.len() as u64);
+            for (param, bounds) in type_param_bounds {
+                write_string(data, param);
+                write_u64_le(data, bounds.len() as u64);
+                for b in bounds { write_string(data, b); }
             }
             write_u64_le(data, fields.len() as u64);
             for f in fields {
@@ -714,12 +756,16 @@ pub fn write_stmt(data: &mut Vec<u8>, stmt: &Stmt) {
             }
             write_u64_le(data, if *pub_ { 1 } else { 0 });
         }
-        Stmt::EnumDef { name, type_params, variants, pub_, .. } => {
+        Stmt::EnumDef { name, type_params, type_param_bounds, variants, pub_, .. } => {
             write_u64_le(data, 13);
             write_string(data, name);
             write_u64_le(data, type_params.len() as u64);
-            for tp in type_params {
-                write_string(data, tp);
+            for tp in type_params { write_string(data, tp); }
+            write_u64_le(data, type_param_bounds.len() as u64);
+            for (param, bounds) in type_param_bounds {
+                write_string(data, param);
+                write_u64_le(data, bounds.len() as u64);
+                for b in bounds { write_string(data, b); }
             }
             write_u64_le(data, variants.len() as u64);
             for v in variants {
@@ -731,9 +777,17 @@ pub fn write_stmt(data: &mut Vec<u8>, stmt: &Stmt) {
             }
             write_u64_le(data, if *pub_ { 1 } else { 0 });
         }
-        Stmt::TraitDef { name, methods, pub_, .. } => {
+        Stmt::TraitDef { name, type_params, type_param_bounds, methods, pub_, .. } => {
             write_u64_le(data, 14);
             write_string(data, name);
+            write_u64_le(data, type_params.len() as u64);
+            for tp in type_params { write_string(data, tp); }
+            write_u64_le(data, type_param_bounds.len() as u64);
+            for (param, bounds) in type_param_bounds {
+                write_string(data, param);
+                write_u64_le(data, bounds.len() as u64);
+                for b in bounds { write_string(data, b); }
+            }
             write_u64_le(data, methods.len() as u64);
             for m in methods {
                 write_string(data, &m.name);
@@ -746,9 +800,26 @@ pub fn write_stmt(data: &mut Vec<u8>, stmt: &Stmt) {
             }
             write_u64_le(data, if *pub_ { 1 } else { 0 });
         }
-        Stmt::ImplBlock { trait_name, type_name, methods, .. } => {
+        Stmt::ImplBlock { trait_name, trait_type_args, type_params, type_param_bounds, type_name, methods, .. } => {
             write_u64_le(data, 15);
-            write_string(data, trait_name);
+            match trait_name {
+                Some(name) => { write_u64_le(data, 1); write_string(data, name); }
+                None => { write_u64_le(data, 0); }
+            }
+            write_u64_le(data, trait_type_args.len() as u64);
+            for arg in trait_type_args { write_string(data, arg); }
+            write_u64_le(data, type_params.len() as u64);
+            for tp in type_params {
+                write_string(data, tp);
+            }
+            write_u64_le(data, type_param_bounds.len() as u64);
+            for (tp, bounds) in type_param_bounds {
+                write_string(data, tp);
+                write_u64_le(data, bounds.len() as u64);
+                for b in bounds {
+                    write_string(data, b);
+                }
+            }
             write_string(data, type_name);
             write_u64_le(data, methods.len() as u64);
             for m in methods {
@@ -822,6 +893,15 @@ fn read_stmt(cursor: &mut std::io::Cursor<&[u8]>) -> Option<Stmt> {
             let tp_count = read_u64_le(cursor)? as usize;
             let mut type_params = Vec::with_capacity(tp_count);
             for _ in 0..tp_count { type_params.push(read_string(cursor)?); }
+            let bound_count = read_u64_le(cursor)? as usize;
+            let mut type_param_bounds = Vec::with_capacity(bound_count);
+            for _ in 0..bound_count {
+                let param = read_string(cursor)?;
+                let num_bounds = read_u64_le(cursor)? as usize;
+                let mut bounds = Vec::with_capacity(num_bounds);
+                for _ in 0..num_bounds { bounds.push(read_string(cursor)?); }
+                type_param_bounds.push((param, bounds));
+            }
             let param_count = read_u64_le(cursor)? as usize;
             let mut params = Vec::with_capacity(param_count);
             for _ in 0..param_count {
@@ -834,7 +914,7 @@ fn read_stmt(cursor: &mut std::io::Cursor<&[u8]>) -> Option<Stmt> {
             let body_len = read_u64_le(cursor)? as usize;
             let mut body = Vec::with_capacity(body_len);
             for _ in 0..body_len { body.push(read_stmt(cursor)?); }
-            Stmt::FnDef { name, type_params, params, return_type, body, pub_, line: 0, col: 0 }
+            Stmt::FnDef { name, type_params, type_param_bounds, params, return_type, body, pub_, line: 0, col: 0 }
         }
         10 => {
             let name = read_string(cursor)?;
@@ -865,6 +945,15 @@ fn read_stmt(cursor: &mut std::io::Cursor<&[u8]>) -> Option<Stmt> {
             let tp_count = read_u64_le(cursor)? as usize;
             let mut type_params = Vec::with_capacity(tp_count);
             for _ in 0..tp_count { type_params.push(read_string(cursor)?); }
+            let bound_count = read_u64_le(cursor)? as usize;
+            let mut type_param_bounds = Vec::with_capacity(bound_count);
+            for _ in 0..bound_count {
+                let param = read_string(cursor)?;
+                let num_bounds = read_u64_le(cursor)? as usize;
+                let mut bounds = Vec::with_capacity(num_bounds);
+                for _ in 0..num_bounds { bounds.push(read_string(cursor)?); }
+                type_param_bounds.push((param, bounds));
+            }
             let field_count = read_u64_le(cursor)? as usize;
             let mut fields = Vec::with_capacity(field_count);
             for _ in 0..field_count {
@@ -873,13 +962,22 @@ fn read_stmt(cursor: &mut std::io::Cursor<&[u8]>) -> Option<Stmt> {
                 fields.push(crate::ast::StructField { name: fname, type_ann: ftype });
             }
             let pub_ = read_u64_le(cursor)? != 0;
-            Stmt::StructDef { name, type_params, fields, pub_, line: 0, col: 0 }
+            Stmt::StructDef { name, type_params, type_param_bounds, fields, pub_, line: 0, col: 0 }
         }
         13 => {
             let name = read_string(cursor)?;
             let tp_count = read_u64_le(cursor)? as usize;
             let mut type_params = Vec::with_capacity(tp_count);
             for _ in 0..tp_count { type_params.push(read_string(cursor)?); }
+            let bound_count = read_u64_le(cursor)? as usize;
+            let mut type_param_bounds = Vec::with_capacity(bound_count);
+            for _ in 0..bound_count {
+                let param = read_string(cursor)?;
+                let num_bounds = read_u64_le(cursor)? as usize;
+                let mut bounds = Vec::with_capacity(num_bounds);
+                for _ in 0..num_bounds { bounds.push(read_string(cursor)?); }
+                type_param_bounds.push((param, bounds));
+            }
             let variant_count = read_u64_le(cursor)? as usize;
             let mut variants = Vec::with_capacity(variant_count);
             for _ in 0..variant_count {
@@ -890,10 +988,22 @@ fn read_stmt(cursor: &mut std::io::Cursor<&[u8]>) -> Option<Stmt> {
                 variants.push(crate::ast::EnumVariantDef { name: vname, fields });
             }
             let pub_ = read_u64_le(cursor)? != 0;
-            Stmt::EnumDef { name, type_params, variants, pub_, line: 0, col: 0 }
+            Stmt::EnumDef { name, type_params, type_param_bounds, variants, pub_, line: 0, col: 0 }
         }
         14 => {
             let name = read_string(cursor)?;
+            let tp_count = read_u64_le(cursor)? as usize;
+            let mut type_params = Vec::with_capacity(tp_count);
+            for _ in 0..tp_count { type_params.push(read_string(cursor)?); }
+            let bound_count = read_u64_le(cursor)? as usize;
+            let mut type_param_bounds = Vec::with_capacity(bound_count);
+            for _ in 0..bound_count {
+                let param = read_string(cursor)?;
+                let num_bounds = read_u64_le(cursor)? as usize;
+                let mut bounds = Vec::with_capacity(num_bounds);
+                for _ in 0..num_bounds { bounds.push(read_string(cursor)?); }
+                type_param_bounds.push((param, bounds));
+            }
             let method_count = read_u64_le(cursor)? as usize;
             let mut methods = Vec::with_capacity(method_count);
             for _ in 0..method_count {
@@ -909,15 +1019,31 @@ fn read_stmt(cursor: &mut std::io::Cursor<&[u8]>) -> Option<Stmt> {
                 methods.push(crate::ast::TraitMethod { name: mname, params, return_type });
             }
             let pub_ = read_u64_le(cursor)? != 0;
-            Stmt::TraitDef { name, methods, pub_, line: 0, col: 0 }
+            Stmt::TraitDef { name, type_params, type_param_bounds, methods, pub_, line: 0, col: 0 }
         }
         15 => {
-            let trait_name = read_string(cursor)?;
+            let has_trait = read_u64_le(cursor)?;
+            let trait_name = if has_trait != 0 { Some(read_string(cursor)?) } else { None };
+            let tta_count = read_u64_le(cursor)? as usize;
+            let mut trait_type_args = Vec::with_capacity(tta_count);
+            for _ in 0..tta_count { trait_type_args.push(read_string(cursor)?); }
+            let tp_count = read_u64_le(cursor)? as usize;
+            let mut type_params = Vec::with_capacity(tp_count);
+            for _ in 0..tp_count { type_params.push(read_string(cursor)?); }
+            let tpb_count = read_u64_le(cursor)? as usize;
+            let mut type_param_bounds = Vec::with_capacity(tpb_count);
+            for _ in 0..tpb_count {
+                let tp = read_string(cursor)?;
+                let b_count = read_u64_le(cursor)? as usize;
+                let mut bounds = Vec::with_capacity(b_count);
+                for _ in 0..b_count { bounds.push(read_string(cursor)?); }
+                type_param_bounds.push((tp, bounds));
+            }
             let type_name = read_string(cursor)?;
             let method_count = read_u64_le(cursor)? as usize;
             let mut methods = Vec::with_capacity(method_count);
             for _ in 0..method_count { methods.push(read_stmt(cursor)?); }
-            Stmt::ImplBlock { trait_name, type_name, methods, line: 0, col: 0 }
+            Stmt::ImplBlock { trait_name, trait_type_args, type_params, type_param_bounds, type_name, methods, line: 0, col: 0 }
         }
         _ => return None,
     })

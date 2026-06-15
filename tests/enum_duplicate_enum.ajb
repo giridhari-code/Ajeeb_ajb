@@ -1,0 +1,13 @@
+enum Color {
+    Red,
+    Green
+}
+
+enum Color {
+    Blue,
+    Yellow
+}
+
+function main(): int {
+    return 0;
+}

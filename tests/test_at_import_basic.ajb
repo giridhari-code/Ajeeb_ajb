@@ -1,0 +1,6 @@
+@import math
+
+function main(): int {
+    let r: int = add(10, 32);
+    return r;
+}

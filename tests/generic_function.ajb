@@ -1,0 +1,9 @@
+function identity[T](x: T): T {
+    return x;
+}
+
+function main(): int {
+    let a = identity[Int](10);
+    let b = identity[String]("hello");
+    return 0;
+}

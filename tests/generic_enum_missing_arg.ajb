@@ -1,0 +1,9 @@
+// FAIL: Generic enum ctor with 0 type args (expects 1)
+enum Option[T] {
+    Some(T),
+    None,
+}
+
+function main() {
+    let v = Option.Some(42);
+}

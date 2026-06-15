@@ -1,0 +1,8 @@
+// FAIL: Generic struct with 0 type args (expects 1)
+struct Box[T] {
+    value: T;
+}
+
+function main() {
+    let b = Box { value: 42 };
+}

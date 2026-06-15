@@ -175,11 +175,11 @@ impl Formatter {
             Stmt::Class { name, fields, methods, pub_, .. } => {
                 self.format_class(name, fields, methods, *pub_)
             }
-            Stmt::StructDef { name, type_params, fields, pub_, .. } => {
-                self.format_struct_def(name, type_params, fields, *pub_)
+            Stmt::StructDef { name, type_params, type_param_bounds, fields, pub_, .. } => {
+                self.format_struct_def(name, type_params, type_param_bounds, fields, *pub_)
             }
-            Stmt::EnumDef { name, type_params, variants, pub_, .. } => {
-                self.format_enum_def(name, type_params, variants, *pub_)
+            Stmt::EnumDef { name, type_params, type_param_bounds, variants, pub_, .. } => {
+                self.format_enum_def(name, type_params, type_param_bounds, variants, *pub_)
             }
             Stmt::Let { name, type_ann, value, .. } => {
                 self.format_let("let", name, type_ann, value)
@@ -212,11 +212,11 @@ impl Formatter {
                 self.emit(";");
                 self.nl();
             }
-            Stmt::TraitDef { name, methods, pub_, .. } => {
-                self.format_trait_def(name, methods, *pub_)
+            Stmt::TraitDef { name, type_params, type_param_bounds, methods, pub_, .. } => {
+                self.format_trait_def(name, type_params, type_param_bounds, methods, *pub_)
             }
-            Stmt::ImplBlock { trait_name, type_name, methods, .. } => {
-                self.format_impl_block(trait_name, type_name, methods)
+            Stmt::ImplBlock { trait_name, trait_type_args, type_params, type_param_bounds, type_name, methods, .. } => {
+                self.format_impl_block(trait_name.as_deref(), trait_type_args, type_params, type_param_bounds, type_name, methods)
             }
         }
     }
@@ -312,7 +312,7 @@ impl Formatter {
 
     // ── Structs ────────────────────────────────────────────────────
 
-    fn format_struct_def(&mut self, name: &str, type_params: &[String], fields: &[StructField], pub_: bool) {
+    fn format_struct_def(&mut self, name: &str, type_params: &[String], type_param_bounds: &[(String, Vec<String>)], fields: &[StructField], pub_: bool) {
         if pub_ {
             self.emit_indent();
             self.emit("pub ");
@@ -325,6 +325,15 @@ impl Formatter {
             for (i, tp) in type_params.iter().enumerate() {
                 if i > 0 { self.emit_comma_space(); }
                 self.emit(tp);
+                if let Some((_, bounds)) = type_param_bounds.iter().find(|(n, _)| n == tp) {
+                    if !bounds.is_empty() {
+                        self.emit(": ");
+                        for (j, b) in bounds.iter().enumerate() {
+                            if j > 0 { self.emit(" + "); }
+                            self.emit(b);
+                        }
+                    }
+                }
             }
             self.emit("]");
         }
@@ -349,7 +358,7 @@ impl Formatter {
 
     // ── Enums ──────────────────────────────────────────────────────
 
-    fn format_enum_def(&mut self, name: &str, type_params: &[String], variants: &[EnumVariantDef], pub_: bool) {
+    fn format_enum_def(&mut self, name: &str, type_params: &[String], type_param_bounds: &[(String, Vec<String>)], variants: &[EnumVariantDef], pub_: bool) {
         if pub_ {
             self.emit_indent();
             self.emit("pub ");
@@ -362,6 +371,15 @@ impl Formatter {
             for (i, tp) in type_params.iter().enumerate() {
                 if i > 0 { self.emit_comma_space(); }
                 self.emit(tp);
+                if let Some((_, bounds)) = type_param_bounds.iter().find(|(n, _)| n == tp) {
+                    if !bounds.is_empty() {
+                        self.emit(": ");
+                        for (j, b) in bounds.iter().enumerate() {
+                            if j > 0 { self.emit(" + "); }
+                            self.emit(b);
+                        }
+                    }
+                }
             }
             self.emit("]");
         }
@@ -392,7 +410,7 @@ impl Formatter {
 
     // ── Traits ────────────────────────────────────────────────────
 
-    fn format_trait_def(&mut self, name: &str, methods: &[TraitMethod], pub_: bool) {
+    fn format_trait_def(&mut self, name: &str, type_params: &[String], type_param_bounds: &[(String, Vec<String>)], methods: &[TraitMethod], pub_: bool) {
         if pub_ {
             self.emit_indent();
             self.emit("pub ");
@@ -400,6 +418,23 @@ impl Formatter {
         self.emit_indent();
         self.emit("trait ");
         self.emit(name);
+        if !type_params.is_empty() {
+            self.emit("[");
+            for (i, tp) in type_params.iter().enumerate() {
+                if i > 0 { self.emit(", "); }
+                self.emit(tp);
+                if let Some((_, bounds)) = type_param_bounds.iter().find(|(n, _)| n == tp) {
+                    if !bounds.is_empty() {
+                        self.emit(": ");
+                        for (j, b) in bounds.iter().enumerate() {
+                            if j > 0 { self.emit(" + "); }
+                            self.emit(b);
+                        }
+                    }
+                }
+            }
+            self.emit("]");
+        }
         self.space();
         self.emit("{");
         self.nl();
@@ -430,11 +465,40 @@ impl Formatter {
         self.nl();
     }
 
-    fn format_impl_block(&mut self, trait_name: &str, type_name: &str, methods: &[Stmt]) {
+    fn format_impl_block(&mut self, trait_name: Option<&str>, trait_type_args: &[String], type_params: &[String], type_param_bounds: &[(String, Vec<String>)], type_name: &str, methods: &[Stmt]) {
         self.emit_indent();
-        self.emit("impl ");
-        self.emit(trait_name);
-        self.emit(" for ");
+        self.emit("impl");
+        if !type_params.is_empty() {
+            self.emit("[");
+            for (i, tp) in type_params.iter().enumerate() {
+                if i > 0 { self.emit(", "); }
+                self.emit(tp);
+                // Check if this param has bounds
+                if let Some((_, bounds)) = type_param_bounds.iter().find(|(n, _)| n == tp) {
+                    if !bounds.is_empty() {
+                        self.emit(": ");
+                        for (j, b) in bounds.iter().enumerate() {
+                            if j > 0 { self.emit(" + "); }
+                            self.emit(b);
+                        }
+                    }
+                }
+            }
+            self.emit("]");
+        }
+        self.space();
+        if let Some(trait_name) = trait_name {
+            self.emit(trait_name);
+            if !trait_type_args.is_empty() {
+                self.emit("[");
+                for (i, arg) in trait_type_args.iter().enumerate() {
+                    if i > 0 { self.emit(", "); }
+                    self.emit(arg);
+                }
+                self.emit("]");
+            }
+            self.emit(" for ");
+        }
         self.emit(type_name);
         self.space();
         self.emit("{");
@@ -725,6 +789,17 @@ impl Formatter {
                 }
                 self.emit(")");
             }
+            Expr::AssociatedFnCall { type_name, method, args, .. } => {
+                self.emit(type_name);
+                self.emit("::");
+                self.emit(method);
+                self.emit("(");
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 { self.emit_comma_space(); }
+                    self.format_expr(arg);
+                }
+                self.emit(")");
+            }
         }
     }
 
@@ -860,6 +935,7 @@ fn expr_pos(expr: &Expr) -> (usize, usize) {
         Expr::StructLit { line, col, .. } => (*line, *col),
         Expr::EnumRef { line, col, .. } => (*line, *col),
         Expr::EnumCtor { line, col, .. } => (*line, *col),
+        Expr::AssociatedFnCall { line, col, .. } => (*line, *col),
         Expr::Match { line, col, .. } => (*line, *col),
         Expr::GenericCall { line, col, .. } => (*line, *col),
     }

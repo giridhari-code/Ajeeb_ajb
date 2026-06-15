@@ -1,0 +1,11 @@
+struct Box[T] {
+    value: T,
+}
+
+impl Box[Int, String] {
+    fn new(value: Int) -> Box[Int, String] {
+        return Box[Int, String] { value: value };
+    }
+}
+
+function main() {}

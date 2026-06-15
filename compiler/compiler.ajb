@@ -177,6 +177,8 @@ function nextTok(src: int, buf: string): void {
         restorePos(buf); savePos(buf); wrPos(buf, start);
         if (matchKwd(src, buf, "function") == 1) { setTok(buf, 9, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "fn") == 1) { setTok(buf, 9, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
         if (matchKwd(src, buf, "return") == 1) { setTok(buf, 10, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
         if (matchKwd(src, buf, "true") == 1) { setTok(buf, 11, 1, 0, 0); restorePos(buf); return; }
@@ -423,15 +425,39 @@ function parsePrimary(src: int, buf: string, out: string): void {
             if (t == 35) { // ( -> call
                 if (emitted == 0) { emitStr(out, id); emitted = 1; }
                 nextTok(src, buf);
-                emitStr(out, "(");
-                let first: int = 1;
-                while (tokType(buf) != 36 && tokType(buf) != 0) {
-                    if (first == 0) { emitStr(out, ", "); }
-                    first = 0;
-                    parseExpr(src, buf, out);
-                    if (tokType(buf) == 32) { nextTok(src, buf); }
+                // Multi-arg println: concatenate all args with str_concat
+                let isPrint: int = 0;
+                if (strcmp_ajeeb(id, "println") == 0 || strcmp_ajeeb(id, "print") == 0) { isPrint = 1; }
+                if (isPrint == 1) {
+                    let ctr: int = rdB(buf, 88);
+                    wrB(buf, 88, ctr + 1);
+                    let ptmp: string = "build/_pp" + itoa(ctr) + ".txt";
+                    writeFile(ptmp, "");
+                    parseExpr(src, buf, ptmp);
+                    while (tokType(buf) == 32) {
+                        nextTok(src, buf);
+                        let left: string = readFile(ptmp);
+                        writeFile(ptmp, "");
+                        parseExpr(src, buf, ptmp);
+                        let right: string = readFile(ptmp);
+                        writeFile(ptmp, "");
+                        let cres: string = "str_concat(" + left + ", " + right + ")";
+                        writeAppend(ptmp, cres);
+                    }
+                    emitStr(out, "(");
+                    writeAppend(out, readFile(ptmp));
+                    emitStr(out, ")");
+                } else {
+                    emitStr(out, "(");
+                    let first: int = 1;
+                    while (tokType(buf) != 36 && tokType(buf) != 0) {
+                        if (first == 0) { emitStr(out, ", "); }
+                        first = 0;
+                        parseExpr(src, buf, out);
+                        if (tokType(buf) == 32) { nextTok(src, buf); }
+                    }
+                    emitStr(out, ")");
                 }
-                emitStr(out, ")");
                 if (tokType(buf) == 36) { nextTok(src, buf); }
             }
             else if (t == 34) { // .
@@ -500,38 +526,48 @@ function parseMul(src: int, buf: string, out: string): void {
 }
 
 function parseAdd(src: int, buf: string, out: string): void {
-    let firstTok: int = tokType(buf);
-    if (firstTok == 3) {
-        let ctr: int = rdB(buf, 88);
-        wrB(buf, 88, ctr + 1);
-        let tmp: string = "build/ap" + itoa(ctr) + ".txt";
+    let ctr: int = rdB(buf, 88);
+    wrB(buf, 88, ctr + 1);
+    let tmp: string = "build/ap" + itoa(ctr) + ".txt";
+    writeFile(tmp, "");
+    parseMul(src, buf, tmp);
+    while (tokType(buf) == 17 || tokType(buf) == 18) {
+        let op: int = tokType(buf);
+        nextTok(src, buf);
+        let left: string = readFile(tmp);
         writeFile(tmp, "");
         parseMul(src, buf, tmp);
-        if (tokType(buf) == 17) {
-            while (tokType(buf) == 17) {
-                nextTok(src, buf);
-                let left: string = readFile(tmp);
-                writeFile(tmp, "");
-                parseMul(src, buf, tmp);
-                let right: string = readFile(tmp);
-                writeFile(tmp, "");
-                let result: string = "str_concat(" + left + ", " + right + ")";
-                writeAppend(tmp, result);
-            }
-            writeAppend(out, readFile(tmp));
-            if (tokType(buf) == 18) { nextTok(src, buf); parseMul(src, buf, out); }
+        let right: string = readFile(tmp);
+        writeFile(tmp, "");
+        if (op == 18) {
+            writeAppend(tmp, left + " - " + right);
         } else {
-            writeAppend(out, readFile(tmp));
-        }
-    } else {
-        parseMul(src, buf, out);
-        while (tokType(buf) == 17 || tokType(buf) == 18) {
-            let op: int = tokType(buf);
-            nextTok(src, buf);
-            if (op == 17) { emitStr(out, " + "); } else { emitStr(out, " - "); }
-            parseMul(src, buf, out);
+            // Detect string concatenation: check for (intptr_t)" pattern
+            let hasStrLit: int = 0;
+            let j: int = 0;
+            while (j < len(left)) {
+                if (charCode(left, j) == 40) {
+                    if (j + 10 < len(left) && charCode(left, j+1) == 105 && charCode(left, j+2) == 110 && charCode(left, j+3) == 116 && charCode(left, j+4) == 112 && charCode(left, j+5) == 116 && charCode(left, j+6) == 114 && charCode(left, j+7) == 95 && charCode(left, j+8) == 116 && charCode(left, j+9) == 41 && charCode(left, j+10) == 34) { hasStrLit = 1; }
+                }
+                j = j + 1;
+            }
+            if (hasStrLit == 0) {
+                j = 0;
+                while (j < len(right)) {
+                    if (charCode(right, j) == 40) {
+                        if (j + 10 < len(right) && charCode(right, j+1) == 105 && charCode(right, j+2) == 110 && charCode(right, j+3) == 116 && charCode(right, j+4) == 112 && charCode(right, j+5) == 116 && charCode(right, j+6) == 114 && charCode(right, j+7) == 95 && charCode(right, j+8) == 116 && charCode(right, j+9) == 41 && charCode(right, j+10) == 34) { hasStrLit = 1; }
+                    }
+                    j = j + 1;
+                }
+            }
+            if (hasStrLit == 1) {
+                writeAppend(tmp, "str_concat(" + left + ", " + right + ")");
+            } else {
+                writeAppend(tmp, left + " + " + right);
+            }
         }
     }
+    emitStr(out, readFile(tmp));
 }
 
 function parseCmp(src: int, buf: string, out: string): void {
@@ -724,15 +760,21 @@ function parseStmt(src: int, buf: string, out: string): void {
                 parseExpr(src, buf, out);
             }
             if (tokType(buf) == 30) { nextTok(src, buf); }
-        } else {
+        } else if (tokType(buf) != 30) { // skip empty init
             parseExpr(src, buf, out);
             if (tokType(buf) == 30) { nextTok(src, buf); }
         }
         emitStr(out, "; ");
-        parseExpr(src, buf, out);  // condition
+        if (tokType(buf) != 30 && tokType(buf) != 36 && tokType(buf) != 0) {
+            parseExpr(src, buf, out);  // condition
+        } else {
+            emitStr(out, "1"); // always-true condition
+        }
         if (tokType(buf) == 30) { nextTok(src, buf); }  // consume ; after condition
         emitStr(out, "; ");
-        parseExpr(src, buf, out);  // update
+        if (tokType(buf) != 36 && tokType(buf) != 0 && tokType(buf) != 38) {
+            parseExpr(src, buf, out);  // update
+        }
         if (tokType(buf) == 36) { nextTok(src, buf); }
         emitStr(out, ") {\n");
         if (tokType(buf) == 37) { nextTok(src, buf); }
@@ -773,6 +815,11 @@ function parseStmt(src: int, buf: string, out: string): void {
                 if (depth > 0) { nextTok(src, buf); }
             }
             if (tokType(buf) == 36) { nextTok(src, buf); }
+            if (tokType(buf) == 31) { // skip return type annotation
+                nextTok(src, buf);
+                if (tokType(buf) == 1) { nextTok(src, buf); }
+                else { nextTok(src, buf); }
+            }
         } else {
             emitStr(out, fnId); emitStr(out, "(");
             let first: int = 1;
@@ -799,13 +846,16 @@ function parseStmt(src: int, buf: string, out: string): void {
         }
         emitStr(out, " {\n");
         if (tokType(buf) == 37) { nextTok(src, buf); }
+        wrB(buf, 80, 0); // reset saw_return flag
         while (tokType(buf) != 38 && tokType(buf) != 0) {
             parseStmt(src, buf, out);
         }
         if (tokType(buf) == 38) { nextTok(src, buf); }
-        emitStr(out, "    return 0;\n}\n\n");
+        if (rdB(buf, 80) == 0) { emitStr(out, "    return 0;\n"); }
+        emitStr(out, "}\n\n");
     }
     else if (t == 10) { // return
+        wrB(buf, 80, 1); // mark that a return was seen
         nextTok(src, buf);
         emitStr(out, "    return");
         if (tokType(buf) != 30 && tokType(buf) != 0) {
@@ -835,10 +885,12 @@ function parseStmt(src: int, buf: string, out: string): void {
         nextTok(src, buf);
         if (tokType(buf) == 37) { nextTok(src, buf); }
         emitStr(out, "typedef struct {\n");
-        writeFile("build/__methods.txt", "");
+        let ctrM: int = rdB(buf, 88);
+        wrB(buf, 88, ctrM + 1);
+        let mo: string = "build/_methods" + itoa(ctrM) + ".txt";
+        writeFile(mo, "");
         while (tokType(buf) != 38 && tokType(buf) != 0) {
             if (tokType(buf) == 9) { // method — emit to temp file
-                let mo: string = "build/__methods.txt";
                 nextTok(src, buf);
                 let fnId: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
                 nextTok(src, buf);
@@ -866,11 +918,13 @@ function parseStmt(src: int, buf: string, out: string): void {
                 }
                 emitStr(mo, ") {\n");
                 if (tokType(buf) == 37) { nextTok(src, buf); }
+                wrB(buf, 80, 0); // reset saw_return flag
                 while (tokType(buf) != 38 && tokType(buf) != 0) {
                     parseStmt(src, buf, mo);
                 }
                 if (tokType(buf) == 38) { nextTok(src, buf); }
-                emitStr(mo, "    return 0;\n}\n\n");
+                if (rdB(buf, 80) == 0) { emitStr(mo, "    return 0;\n"); }
+                emitStr(mo, "}\n\n");
             } else {
                 let fd: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
                 nextTok(src, buf);
@@ -887,8 +941,8 @@ function parseStmt(src: int, buf: string, out: string): void {
         if (tokType(buf) == 38) { nextTok(src, buf); }
         emitStr(out, "} "); emitStr(out, cn); emitStr(out, ";\n\n");
         // Append methods from temp file
-        let mb: string = readFile("build/__methods.txt");
-        emitStr(out, mb);
+        let mb2: string = readFile(mo);
+        emitStr(out, mb2);
     }
     else if (t == 38) { // } - empty block end
         // do nothing
@@ -988,6 +1042,14 @@ function collectFns(src: int, buf: string): void {
                         if (pos > fnS) {
                             savePos(buf); wrPos(buf, fnS); addFn(src, buf, fnS); restorePos(buf);
                         }
+                    } else if (c == 102 && chr(src, pos+1) == 110 && isAlphaNum(chr(src, pos+2)) == 0) {
+                        pos = pos + 2;
+                        while (isSpace(chr(src, pos)) == 1) { pos = pos + 1; }
+                        let fnS2: int = pos;
+                        while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+                        if (pos > fnS2) {
+                            savePos(buf); wrPos(buf, fnS2); addFn(src, buf, fnS2); restorePos(buf);
+                        }
                     } else { pos = pos + 1; }
                 }
                 wrPos(buf, pos);
@@ -998,6 +1060,29 @@ function collectFns(src: int, buf: string): void {
             let fnStart: int = rdPos(buf);
             readIdent(src, buf);
             addFn(src, buf, fnStart);
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 40) {
+                pos = skipDepth(src, pos, 40, 41);
+                wrPos(buf, pos);
+            }
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 58) {
+                pos = pos + 1;
+                while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+                if (chr(src, pos) == 91) { pos = pos + 2; }
+                wrPos(buf, pos);
+            }
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 123) {
+                pos = skipDepth(src, pos, 123, 125);
+                wrPos(buf, pos);
+            }
+        }
+        else if (matchKwd(src, buf, "fn") == 1) {
+            pos = pos + 2; wrPos(buf, pos); skipWS(src, buf);
+            let fnStart2: int = rdPos(buf);
+            readIdent(src, buf);
+            addFn(src, buf, fnStart2);
             skipWS(src, buf); pos = rdPos(buf);
             if (chr(src, pos) == 40) {
                 pos = skipDepth(src, pos, 40, 41);

@@ -1,0 +1,62 @@
+trait Display {
+    fn show(self) -> string;
+}
+
+trait Printable {
+    fn format(self) -> string;
+}
+
+struct User {
+    name: string
+}
+
+struct Post {
+    title: string
+}
+
+impl Display for User {
+    fn show(self) -> string {
+        return self.name;
+    }
+}
+
+impl Display for Post {
+    fn show(self) -> string {
+        return self.title;
+    }
+}
+
+impl Printable for User {
+    fn format(self) -> string {
+        return self.name;
+    }
+}
+
+// Single bound: T must implement Display
+fn show_item[T: Display](item: T) -> string {
+    return item.show();
+}
+
+// Multiple bounds: T must implement Display + Printable
+fn full_info[T: Display + Printable](item: T) -> string {
+    return item.show() + " | " + item.format();
+}
+
+function main() {
+    let u = User { name: "Ajmal" };
+    let p = Post { title: "Hello" };
+
+    // Single bound — User and Post both implement Display
+    let r1 = show_item[User](u);
+    let r2 = show_item[Post](p);
+    println(r1);
+    println(r2);
+    assert_eq(r1, "Ajmal");
+    assert_eq(r2, "Hello");
+
+    // Multiple bounds — only User implements both Display + Printable
+    let u2 = User { name: "Ajmal" };
+    let r3 = full_info[User](u2);
+    println(r3);
+    assert_eq(r3, "Ajmal | Ajmal");
+}

@@ -1,0 +1,9 @@
+enum Result {
+    Ok(int),
+    Err(string)
+}
+
+function main(): int {
+    let e = Result.Err("failed");
+    return 0;
+}

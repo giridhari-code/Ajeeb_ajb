@@ -1,0 +1,15 @@
+struct Box[T] {
+    value: T,
+}
+
+impl[T] Box[T] {
+    fn get(self) -> T {
+        return self.value;
+    }
+
+    fn get(self) -> T {
+        return self.value;
+    }
+}
+
+function main() {}

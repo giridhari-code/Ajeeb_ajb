@@ -169,6 +169,7 @@ impl Lexer {
             "else" => Token::Else,
             "while" => Token::While,
             "function" => Token::Function,
+            "fn" => Token::Function,
             "return" => Token::Return,
             "true" => Token::True,
             "false" => Token::False,
@@ -191,6 +192,28 @@ impl Lexer {
             "trait" => Token::Trait,
             "impl" => Token::Impl,
             _ => Token::Identifier(s),
+        }
+    }
+
+    fn read_at_keyword(&mut self) -> Result<Token, CompileError> {
+        let start_line = self.line;
+        let start_col = self.col;
+        let mut s = String::new();
+        while let Some(c) = self.peek() {
+            if c.is_alphanumeric() || c == '_' {
+                s.push(c);
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        match s.as_str() {
+            "import" => Ok(Token::AtImport),
+            _ => Err(CompileError::new(
+                start_line,
+                start_col,
+                format!("Unknown @-keyword: @{}. Sirf '@import' valid hai.", s),
+            )),
         }
     }
 
@@ -314,6 +337,7 @@ impl Lexer {
                 c if c.is_alphabetic() || c == '_' => {
                     Ok((self.read_identifier(c), start_line, start_col))
                 }
+                '@' => self.read_at_keyword().map(|t| (t, start_line, start_col)),
                 _ => Err(CompileError::new(
                     start_line,
                     start_col,

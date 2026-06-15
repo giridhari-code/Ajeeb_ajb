@@ -1,0 +1,10 @@
+struct Box[T] {
+    value: T
+}
+
+function main(): int {
+    let a = Box[Int] {
+        value: 42
+    };
+    return 0;
+}

@@ -182,10 +182,27 @@ impl Evaluator {
                     );
                 }
                 Stmt::ImplBlock { trait_name, type_name, methods, .. } => {
-                    for m in methods {
-                        if let Stmt::FnDef { name: mname, params, body, return_type, .. } = m.clone() {
-                            let mangled = format!("{}_{}_{}", type_name, trait_name, mname);
-                            self.functions.insert(mangled, (params, body, return_type));
+                    // Strip generic type args: "Box[T]" -> "Box"
+                    let base_type_name = if let Some(bracket_pos) = type_name.find('[') {
+                        &type_name[..bracket_pos]
+                    } else {
+                        type_name.as_str()
+                    };
+                    if let Some(ref trait_name) = trait_name {
+                        // Trait impl: mangled as Type_Trait_method
+                        for m in methods {
+                            if let Stmt::FnDef { name: mname, params, body, return_type, .. } = m.clone() {
+                                let mangled = format!("{}_{}_{}", base_type_name, trait_name, mname);
+                                self.functions.insert(mangled, (params, body, return_type));
+                            }
+                        }
+                    } else {
+                        // Inherent impl: mangled as Type_method
+                        for m in methods {
+                            if let Stmt::FnDef { name: mname, params, body, return_type, .. } = m.clone() {
+                                let mangled = format!("{}_{}", base_type_name, mname);
+                                self.functions.insert(mangled, (params, body, return_type));
+                            }
                         }
                     }
                 }
@@ -433,6 +450,26 @@ impl Evaluator {
                 val
             }
             Expr::FnCall { name, args, line, col } => self.exec_fn_call_at(name, args, *line, *col),
+            Expr::AssociatedFnCall { type_name, method, args, line, col } => {
+                let base_name = if let Some(bracket_pos) = type_name.find('[') {
+                    &type_name[..bracket_pos]
+                } else {
+                    type_name.as_str()
+                };
+                let mangled = format!("{}_{}", base_name, method);
+                let mut call_args = Vec::new();
+                for a in args {
+                    call_args.push(self.eval_expr(a));
+                }
+                self.call_stack.push(FrameInfo {
+                    function_name: mangled.clone(),
+                    line: *line,
+                    col: *col,
+                });
+                let result = self.exec_fn_call_raw(&mangled, &call_args);
+                self.call_stack.pop();
+                result
+            }
             Expr::MethodCall { obj, method, args, line, col } => {
                 let obj_val = self.eval_expr(obj);
                 let type_name = match &obj_val {
@@ -442,7 +479,13 @@ impl Evaluator {
                     _ => None,
                 };
                 if let Some(tn) = &type_name {
-                    let mangled = format!("{}_{}", tn, method);
+                    // Strip generic type args: "Box[Int]" -> "Box"
+                    let base_tn = if let Some(bracket_pos) = tn.find('[') {
+                        &tn[..bracket_pos]
+                    } else {
+                        tn.as_str()
+                    };
+                    let mangled = format!("{}_{}", base_tn, method);
                     if self.functions.contains_key(&mangled) {
                         let mut call_args = vec![obj_val];
                         for a in args {
@@ -457,7 +500,7 @@ impl Evaluator {
                         self.call_stack.pop();
                         return result;
                     }
-                    let prefix = format!("{}_", tn);
+                    let prefix = format!("{}_", base_tn);
                     for (key, _) in self.functions.clone() {
                         if key.starts_with(&prefix) && key.ends_with(&format!("_{}", method)) {
                             let mut call_args = vec![obj_val];
@@ -618,7 +661,13 @@ impl Evaluator {
                 val_val
             }
             Expr::StructLit { struct_name, fields, .. } => {
-                let def_fields = self.struct_defs.get(struct_name).cloned().unwrap_or_default();
+                // Strip generic type args from name: "Box[Int]" -> "Box"
+                let base_name = if let Some(bracket_pos) = struct_name.find('[') {
+                    &struct_name[..bracket_pos]
+                } else {
+                    struct_name.as_str()
+                };
+                let def_fields = self.struct_defs.get(base_name).cloned().unwrap_or_default();
                 let mut field_map = HashMap::new();
                 for (fname, fexpr) in fields {
                     let val = self.eval_expr(fexpr);
@@ -629,7 +678,7 @@ impl Evaluator {
                     field_map.entry(fname.clone()).or_insert(RuntimeValue::Int(0));
                 }
                 RuntimeValue::StructInstance {
-                    name: struct_name.clone(),
+                    name: base_name.to_string(),
                     fields: field_map,
                 }
             }
@@ -680,7 +729,13 @@ impl Evaluator {
             Pattern::Wildcard => true,
             Pattern::EnumVariant { enum_name, variant, bindings: _ } => {
                 if let RuntimeValue::EnumVariant { enum_name: en, variant: v, data: _ } = value {
-                    enum_name == en && variant == v
+                    // Strip generic type args for comparison: "Option[Int]" -> "Option"
+                    let base_en = if let Some(bracket_pos) = en.find('[') {
+                        &en[..bracket_pos]
+                    } else {
+                        en.as_str()
+                    };
+                    enum_name == base_en && variant == v
                 } else {
                     false
                 }

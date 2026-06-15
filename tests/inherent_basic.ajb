@@ -1,0 +1,16 @@
+struct User {
+    name: string,
+}
+
+impl User {
+    fn greet(self) {
+        print("Hello from ");
+        println(self.name);
+    }
+}
+
+function main() {
+    let u = User { name: "Ajmal" };
+    u.greet();
+    println("PASS: inherent_basic");
+}

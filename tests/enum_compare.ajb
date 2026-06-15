@@ -1,0 +1,18 @@
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+function main(): int {
+    let c1 = Color.Red;
+    let c2 = Color.Red;
+    let c3 = Color.Green;
+    if (c1 == c2) {
+        print("same");
+    }
+    if (c1 != c3) {
+        print("different");
+    }
+    return 0;
+}

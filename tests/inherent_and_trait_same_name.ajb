@@ -1,0 +1,27 @@
+struct User {
+    name: string,
+}
+
+impl User {
+    fn greet(self) {
+        print("Inherent: ");
+        println(self.name);
+    }
+}
+
+trait Greeter {
+    function greet(self);
+}
+
+impl Greeter for User {
+    function greet(self) {
+        print("Trait: ");
+        println(self.name);
+    }
+}
+
+function main() {
+    let u = User { name: "Ajmal" };
+    u.greet();
+    println("PASS: inherent_and_trait_same_name");
+}

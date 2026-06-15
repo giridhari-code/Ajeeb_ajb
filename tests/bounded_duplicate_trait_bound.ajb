@@ -1,0 +1,40 @@
+trait Printable {
+    fn print(self) -> string;
+}
+
+trait Display {
+    fn show(self) -> string;
+}
+
+struct User {
+    name: string
+}
+
+impl Printable for User {
+    fn print(self) -> string {
+        return self.name;
+    }
+}
+
+impl Display for User {
+    fn show(self) -> string {
+        return self.name;
+    }
+}
+
+// T has two bounds: Printable and Display
+// int does NOT implement either
+fn print_both[T: Printable + Display](item: T) {
+    let a = item.print();
+    let b = item.show();
+    println(a);
+    println(b);
+}
+
+function main() {
+    let u = User { name: "Ajmal" };
+    print_both[User](u);  // OK
+
+    let x = 42;
+    print_both[int](x);  // ERROR - int does NOT implement Printable
+}

@@ -1,0 +1,8 @@
+enum Pair {
+    Pair(int, string)
+}
+
+function main(): int {
+    let p = Pair.Pair(42, "hello");
+    return 0;
+}

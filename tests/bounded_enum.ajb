@@ -1,0 +1,33 @@
+trait Display {
+    fn show(self) -> string;
+}
+
+struct User {
+    name: string
+}
+
+impl Display for User {
+    fn show(self) -> string {
+        return self.name;
+    }
+}
+
+// Enum with type parameter bounds
+enum Option[T: Display] {
+    Some(T),
+    None
+}
+
+// Enum without bounds
+enum Result[T] {
+    Ok(T),
+    Err
+}
+
+function main() {
+    // OK — User implements Display
+    let x = Option[User].Some(User { name: "Ajmal" });
+
+    // OK — Result has no bounds
+    let y = Result[int].Ok(42);
+}

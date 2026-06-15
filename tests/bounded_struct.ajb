@@ -1,0 +1,32 @@
+trait Display {
+    fn show(self) -> string;
+}
+
+struct User {
+    name: string
+}
+
+impl Display for User {
+    fn show(self) -> string {
+        return self.name;
+    }
+}
+
+// Struct with type parameter bounds
+struct Container[T: Display] {
+    value: T
+}
+
+// Struct without bounds
+struct Wrapper[T] {
+    value: T
+}
+
+function main() {
+    // OK — Wrapper has no bounds
+    let w = Wrapper[int] { value: 42 };
+    assert_eq(w.value, 42);
+
+    // OK — User implements Display
+    let c = Container[User] { value: User { name: "Ajmal" } };
+}

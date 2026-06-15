@@ -1,0 +1,29 @@
+struct Point {
+    x: int,
+    y: int,
+}
+
+impl Point {
+    fn new(x: int, y: int) -> Point {
+        return Point { x: x, y: y };
+    }
+
+    fn distance_squared(self) -> int {
+        return self.x * self.x + self.y * self.y;
+    }
+
+    fn translate(self, dx: int, dy: int) {
+        self.x = self.x + dx;
+        self.y = self.y + dy;
+    }
+}
+
+function main() {
+    let p = Point::new(3, 4);
+    let d = p.distance_squared();
+    assert_eq(d, 25);
+    p.translate(1, 2);
+    let d2 = p.distance_squared();
+    assert_eq(d2, 50);
+    println("PASS: inherent_multiple_methods");
+}

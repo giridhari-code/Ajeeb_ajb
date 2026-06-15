@@ -1,0 +1,14 @@
+// PASS: Generic struct with correct type arg count
+struct Box[T] {
+    value: T;
+}
+
+function main() {
+    let b = Box[Int] { value: 42 };
+    assert_eq(b.value, 42);
+
+    let s = Box[String] { value: "hello" };
+    assert_eq(s.value, "hello");
+
+    println("PASS: generic_struct_valid");
+}

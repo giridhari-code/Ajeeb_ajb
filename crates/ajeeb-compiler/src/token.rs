@@ -15,6 +15,7 @@ pub enum Token {
     Void,
     Float,
     Import,
+    AtImport,
     Pub,
     Identifier(String),
     Number(i64),

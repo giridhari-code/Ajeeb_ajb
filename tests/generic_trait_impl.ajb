@@ -1,0 +1,31 @@
+struct Printer {
+    name: String,
+}
+
+struct Writer {
+    id: Int,
+}
+
+trait Display[T] {
+    function print(self, value: T);
+}
+
+impl Display[Int] for Printer {
+    function print(self, value: Int) {
+        print(value);
+    }
+}
+
+impl Display[String] for Writer {
+    function print(self, value: String) {
+        print(value);
+    }
+}
+
+function main() {
+    let p = Printer { name: "test" };
+    p.print(42);
+    let w = Writer { id: 1 };
+    w.print("hello");
+    println("PASS: generic_trait_impl");
+}

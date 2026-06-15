@@ -3,7 +3,7 @@ use crate::error::CompileError;
 use crate::token::Token;
 use std::collections::HashMap;
 
-pub struct Parser {
+    pub struct Parser {
     tokens: Vec<Token>,
     token_lines: Vec<usize>,
     token_cols: Vec<usize>,
@@ -11,6 +11,7 @@ pub struct Parser {
     var_types: HashMap<String, TypeAnnot>,
     current_class: Option<String>,
     generic_type_params: Vec<String>,
+    generic_type_bounds: HashMap<String, Vec<String>>,  // T -> [Trait1, Trait2]
 }
 
 impl Parser {
@@ -25,6 +26,7 @@ impl Parser {
             var_types: HashMap::new(),
             current_class: None,
             generic_type_params: Vec::new(),
+            generic_type_bounds: HashMap::new(),
         }
     }
 
@@ -37,6 +39,7 @@ impl Parser {
             var_types: HashMap::new(),
             current_class: None,
             generic_type_params: Vec::new(),
+            generic_type_bounds: HashMap::new(),
         }
     }
 
@@ -121,6 +124,7 @@ impl Parser {
             | Expr::StructLit { line, col, .. }
             | Expr::EnumRef { line, col, .. }
             | Expr::EnumCtor { line, col, .. }
+            | Expr::AssociatedFnCall { line, col, .. }
             | Expr::Match { line, col, .. }
             | Expr::GenericCall { line, col, .. } => (*line, *col),
         }
@@ -195,6 +199,10 @@ impl Parser {
             self.advance();
             let ty = self.parse_type_postfix()?;
             Ok(Some(ty))
+        } else if self.peek() == &Token::Arrow {
+            self.advance();
+            let ty = self.parse_type_postfix()?;
+            Ok(Some(ty))
         } else {
             Ok(None)
         }
@@ -265,6 +273,11 @@ impl Parser {
 
     pub fn parse_program(&mut self) -> Result<Vec<Stmt>, CompileError> {
         let mut stmts = Vec::new();
+        // Phase 1: Parse all @import statements at the top (before any declarations)
+        while self.peek() == &Token::AtImport {
+            stmts.push(self.parse_at_import()?);
+        }
+        // Phase 2: Parse remaining statements
         while self.peek() != &Token::Eof {
             stmts.push(self.parse_statement()?);
         }
@@ -317,6 +330,7 @@ impl Parser {
                     Token::Trait => self.parse_trait_def(pub_),
                     Token::Impl => self.parse_impl_block(),
                     Token::RBrace => Err(self.err("Extra '}' mil gaya.")),
+                    Token::AtImport => Err(self.err("'@import' sirf file ke shuru me ho sakta hai. Pehle declare karo, phir @import karo.")),
                     _ => self.parse_expr_stmt(),
                 }
             }
@@ -353,6 +367,38 @@ impl Parser {
             None
         };
         self.expect(&Token::Semicolon)?;
+        Ok(Stmt::Import(ImportDecl { path, alias, line, col }))
+    }
+
+    fn parse_at_import(&mut self) -> Result<Stmt, CompileError> {
+        self.advance(); // consume AtImport
+        let line = self.line();
+        let col = self.col();
+        let mut path = Vec::new();
+        loop {
+            match self.advance() {
+                Token::Identifier(name) => path.push(name),
+                _ => return Err(self.err("'@import' ke baad path chahiye (e.g. @import std.io)")),
+            }
+            if self.peek() == &Token::Dot {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        let alias = if self.peek() == &Token::Identifier("as".to_string()) {
+            self.advance();
+            match self.advance() {
+                Token::Identifier(a) => Some(a),
+                _ => return Err(self.err("'as' ke baad alias name chahiye.")),
+            }
+        } else {
+            None
+        };
+        let _ = self.peek(); // check if semicolon present (optional)
+        if self.peek() == &Token::Semicolon {
+            self.advance();
+        }
         Ok(Stmt::Import(ImportDecl { path, alias, line, col }))
     }
 
@@ -483,16 +529,41 @@ impl Parser {
         let col = self.col();
         let name = match self.advance() {
             Token::Identifier(n) => n,
+            Token::New => "new".to_string(),
             _ => return Err(self.err("'function' ke baad function ka naam chahiye.")),
         };
-        // Parse optional generic type params: fn name[T, U](...
+        // Parse optional generic type params with trait bounds: fn name[T: Trait, U](...
         let mut type_params = Vec::new();
+        let mut type_bounds: HashMap<String, Vec<String>> = HashMap::new();
         if self.peek() == &Token::LBracket && self.peek_next().map_or(false, |t| matches!(t, Token::Identifier(_) | Token::RBracket)) {
             self.advance();
+            let mut seen_params = std::collections::HashSet::new();
             while self.peek() != &Token::RBracket && self.peek() != &Token::Eof {
                 match self.advance() {
                     Token::Identifier(tp) => {
-                        type_params.push(tp);
+                        if !seen_params.insert(tp.clone()) {
+                            return Err(self.err(&format!("Duplicate type parameter '{}' in generic params", tp)));
+                        }
+                        type_params.push(tp.clone());
+                        // Parse optional trait bounds: T: Trait1 + Trait2
+                        if self.peek() == &Token::Colon {
+                            self.advance();
+                            let mut bounds = Vec::new();
+                            loop {
+                                match self.advance() {
+                                    Token::Identifier(trait_name) => {
+                                        bounds.push(trait_name);
+                                    }
+                                    _ => return Err(self.err("Trait bound name chahiye after ':'")),
+                                }
+                                if self.peek() == &Token::Plus {
+                                    self.advance();
+                                } else {
+                                    break;
+                                }
+                            }
+                            type_bounds.insert(tp, bounds);
+                        }
                     }
                     _ => return Err(self.err("Generic type parameter name chahiye.")),
                 }
@@ -503,14 +574,20 @@ impl Parser {
             self.expect(&Token::RBracket)?;
         }
         self.generic_type_params.extend(type_params.clone());
+        self.generic_type_bounds.extend(type_bounds.clone());
         self.expect(&Token::LParen)?;
         let mut params = Vec::new();
         while self.peek() != &Token::RParen {
             let pname = self.parse_param_name()?;
-            let ptype = match self.parse_type()? {
-                Some(t) => t,
-                None => {
-                    return Err(self.err("Parameter ka type batana zaroori hai (jaise x: int)."))
+            // In functions/methods, 'self' param type is optional (defaults to Void placeholder)
+            let ptype = if pname == "self" && self.peek() != &Token::Colon && self.peek() != &Token::Arrow {
+                TypeAnnot::Void
+            } else {
+                match self.parse_type()? {
+                    Some(t) => t,
+                    None => {
+                        return Err(self.err("Parameter ka type batana zaroori hai (jaise x: int)."))
+                    }
                 }
             };
             params.push((pname, ptype));
@@ -531,10 +608,12 @@ impl Parser {
             if let Some(pos) = self.generic_type_params.iter().position(|x| x == tp) {
                 self.generic_type_params.remove(pos);
             }
+            self.generic_type_bounds.remove(tp);
         }
         Ok(Stmt::FnDef {
             name,
             type_params,
+            type_param_bounds: type_bounds.into_iter().collect(),
             params,
             return_type,
             body,
@@ -593,13 +672,35 @@ impl Parser {
             Token::Identifier(n) => n,
             _ => return Err(self.err("'struct' ke baad naam chahiye.")),
         };
-        // Parse optional generic type params: struct Name[T]
+        // Parse optional generic type params: struct Name[T] or struct Name[T: Display]
         let mut type_params = Vec::new();
+        let mut type_param_bounds: Vec<(String, Vec<String>)> = Vec::new();
         if self.peek() == &Token::LBracket && self.peek_next().map_or(false, |t| matches!(t, Token::Identifier(_) | Token::RBracket)) {
             self.advance();
+            let mut seen_params = std::collections::HashSet::new();
             while self.peek() != &Token::RBracket && self.peek() != &Token::Eof {
                 match self.advance() {
-                    Token::Identifier(tp) => type_params.push(tp),
+                    Token::Identifier(tp) => {
+                        if !seen_params.insert(tp.clone()) {
+                            return Err(self.err(&format!("Duplicate type parameter '{}' in generic params", tp)));
+                        }
+                        type_params.push(tp.clone());
+                        // Parse optional trait bounds: T: Trait1 + Trait2
+                        if self.peek() == &Token::Colon {
+                            self.advance();
+                            let mut bounds = Vec::new();
+                            loop {
+                                match self.advance() {
+                                    Token::Identifier(trait_name) => { bounds.push(trait_name); }
+                                    _ => return Err(self.err("Trait bound name chahiye after ':'")),
+                                }
+                                if self.peek() == &Token::Plus { self.advance(); } else { break; }
+                            }
+                            if !bounds.is_empty() {
+                                type_param_bounds.push((tp, bounds));
+                            }
+                        }
+                    }
                     _ => return Err(self.err("Generic type parameter name chahiye.")),
                 }
                 if self.peek() == &Token::Comma { self.advance(); }
@@ -618,7 +719,10 @@ impl Parser {
                 Some(t) => t,
                 None => return Err(self.err("Struct field ka type batana zaroori hai.")),
             };
-            self.expect(&Token::Semicolon)?;
+            // Accept both ',' and ';' as field separators (trailing comma/semicolon allowed)
+            if self.peek() == &Token::Comma || self.peek() == &Token::Semicolon {
+                self.advance();
+            }
             fields.push(StructField { name: fname, type_ann: ftype });
         }
         self.expect(&Token::RBrace)?;
@@ -627,7 +731,7 @@ impl Parser {
                 self.generic_type_params.remove(pos);
             }
         }
-        Ok(Stmt::StructDef { name, type_params, fields, pub_, line, col })
+        Ok(Stmt::StructDef { name, type_params, type_param_bounds, fields, pub_, line, col })
     }
 
     fn parse_enum_def(&mut self, pub_: bool) -> Result<Stmt, CompileError> {
@@ -638,13 +742,35 @@ impl Parser {
             Token::Identifier(n) => n,
             _ => return Err(self.err("'enum' ke baad naam chahiye.")),
         };
-        // Parse optional generic type params: enum Option[T]
+        // Parse optional generic type params: enum Option[T] or enum Option[T: Display]
         let mut type_params = Vec::new();
+        let mut type_param_bounds: Vec<(String, Vec<String>)> = Vec::new();
         if self.peek() == &Token::LBracket && self.peek_next().map_or(false, |t| matches!(t, Token::Identifier(_) | Token::RBracket)) {
             self.advance();
+            let mut seen_params = std::collections::HashSet::new();
             while self.peek() != &Token::RBracket && self.peek() != &Token::Eof {
                 match self.advance() {
-                    Token::Identifier(tp) => type_params.push(tp),
+                    Token::Identifier(tp) => {
+                        if !seen_params.insert(tp.clone()) {
+                            return Err(self.err(&format!("Duplicate type parameter '{}' in generic params", tp)));
+                        }
+                        type_params.push(tp.clone());
+                        // Parse optional trait bounds: T: Trait1 + Trait2
+                        if self.peek() == &Token::Colon {
+                            self.advance();
+                            let mut bounds = Vec::new();
+                            loop {
+                                match self.advance() {
+                                    Token::Identifier(trait_name) => { bounds.push(trait_name); }
+                                    _ => return Err(self.err("Trait bound name chahiye after ':'")),
+                                }
+                                if self.peek() == &Token::Plus { self.advance(); } else { break; }
+                            }
+                            if !bounds.is_empty() {
+                                type_param_bounds.push((tp, bounds));
+                            }
+                        }
+                    }
                     _ => return Err(self.err("Generic type parameter name chahiye.")),
                 }
                 if self.peek() == &Token::Comma { self.advance(); }
@@ -703,7 +829,7 @@ impl Parser {
                 self.generic_type_params.remove(pos);
             }
         }
-        Ok(Stmt::EnumDef { name, type_params, variants, pub_, line, col })
+        Ok(Stmt::EnumDef { name, type_params, type_param_bounds, variants, pub_, line, col })
     }
 
     fn parse_param_name(&mut self) -> Result<String, CompileError> {
@@ -722,6 +848,45 @@ impl Parser {
             Token::Identifier(n) => n,
             _ => return Err(self.err("'trait' ke baad naam chahiye.")),
         };
+        // Parse optional generic type params: trait Display[T] or trait Map[K, V]
+        let mut type_params = Vec::new();
+        let mut type_param_bounds: Vec<(String, Vec<String>)> = Vec::new();
+        if self.peek() == &Token::LBracket && self.peek_next().map_or(false, |t| matches!(t, Token::Identifier(_) | Token::RBracket)) {
+            self.advance();
+            let mut seen_params = std::collections::HashSet::new();
+            while self.peek() != &Token::RBracket && self.peek() != &Token::Eof {
+                match self.advance() {
+                    Token::Identifier(tp) => {
+                        if !seen_params.insert(tp.clone()) {
+                            return Err(self.err(&format!("Duplicate type parameter '{}' in trait", tp)));
+                        }
+                        type_params.push(tp.clone());
+                        // Parse optional trait bounds: T: Trait1 + Trait2
+                        if self.peek() == &Token::Colon {
+                            self.advance();
+                            let mut bounds = Vec::new();
+                            loop {
+                                match self.advance() {
+                                    Token::Identifier(trait_name) => { bounds.push(trait_name); }
+                                    _ => return Err(self.err("Trait bound name chahiye after ':'")),
+                                }
+                                if self.peek() == &Token::Plus { self.advance(); } else { break; }
+                            }
+                            if !bounds.is_empty() {
+                                type_param_bounds.push((tp, bounds));
+                            }
+                        }
+                    }
+                    _ => return Err(self.err("Generic type parameter name expected in trait[]")),
+                }
+                if self.peek() == &Token::Comma {
+                    self.advance();
+                }
+            }
+            self.expect(&Token::RBracket)?;
+        }
+        // Push type params into parser scope so method bodies can reference them
+        self.generic_type_params.extend(type_params.clone());
         self.expect(&Token::LBrace)?;
         let mut methods = Vec::new();
         while self.peek() != &Token::RBrace && self.peek() != &Token::Eof {
@@ -735,9 +900,14 @@ impl Parser {
                 let mut params = Vec::new();
                 while self.peek() != &Token::RParen {
                     let pname = self.parse_param_name()?;
-                    let ptype = match self.parse_type()? {
-                        Some(t) => t,
-                        None => return Err(self.err("Parameter ka type batana zaroori hai.")),
+                    // In trait methods, 'self' param type is optional (defaults to Void placeholder)
+                    let ptype = if pname == "self" && self.peek() != &Token::Colon && self.peek() != &Token::Arrow {
+                        TypeAnnot::Void
+                    } else {
+                        match self.parse_type()? {
+                            Some(t) => t,
+                            None => return Err(self.err("Parameter ka type batana zaroori hai.")),
+                        }
                     };
                     params.push((pname, ptype));
                     if self.peek() == &Token::Comma {
@@ -756,29 +926,164 @@ impl Parser {
             }
         }
         self.expect(&Token::RBrace)?;
-        Ok(Stmt::TraitDef { name, methods, pub_, line, col })
+        // Pop type params from parser scope
+        for tp in &type_params {
+            self.generic_type_params.retain(|p| p != tp);
+        }
+        Ok(Stmt::TraitDef { name, type_params, type_param_bounds, methods, pub_, line, col })
     }
 
     fn parse_impl_block(&mut self) -> Result<Stmt, CompileError> {
         self.advance();
         let line = self.line();
         let col = self.col();
-        let trait_name = match self.advance() {
-            Token::Identifier(n) => n,
-            _ => return Err(self.err("'impl' ke baad trait ka naam chahiye.")),
-        };
-        self.expect(&Token::For)?;
-        let type_name = match self.advance() {
-            Token::Identifier(n) => n,
-            _ => return Err(self.err("Trait impl ke liye type ka naam chahiye.")),
-        };
-        self.expect(&Token::LBrace)?;
-        let mut methods = Vec::new();
-        while self.peek() != &Token::RBrace && self.peek() != &Token::Eof {
-            methods.push(self.parse_fn_def(false)?);
+        // Parse optional generic type params: impl[T] or impl[T: Bound, U]
+        let mut type_params = Vec::new();
+        let mut type_param_bounds: Vec<(String, Vec<String>)> = Vec::new();
+        if self.peek() == &Token::LBracket && self.peek_next().map_or(false, |t| matches!(t, Token::Identifier(_) | Token::RBracket)) {
+            self.advance();
+            let mut seen_params = std::collections::HashSet::new();
+            while self.peek() != &Token::RBracket && self.peek() != &Token::Eof {
+                match self.advance() {
+                    Token::Identifier(tp) => {
+                        if !seen_params.insert(tp.clone()) {
+                            return Err(self.err(&format!("Duplicate type parameter '{}' in impl", tp)));
+                        }
+                        type_params.push(tp.clone());
+                        // Parse optional trait bounds: T: Trait1 + Trait2
+                        let mut bounds = Vec::new();
+                        if self.peek() == &Token::Colon {
+                            self.advance();
+                            loop {
+                                match self.advance() {
+                                    Token::Identifier(b) => bounds.push(b),
+                                    _ => return Err(self.err("Trait bound expected")),
+                                }
+                                if self.peek() == &Token::Plus {
+                                    self.advance();
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                        if !bounds.is_empty() {
+                            type_param_bounds.push((tp, bounds));
+                        }
+                        if self.peek() == &Token::Comma {
+                            self.advance();
+                        }
+                    }
+                    _ => return Err(self.err("Type parameter name expected in impl[]")),
+                }
+            }
+            self.expect(&Token::RBracket)?;
+            // Push type params into parser scope so method bodies can reference them
+            self.generic_type_params.extend(type_params.clone());
+            for (tp, bounds) in &type_param_bounds {
+                self.generic_type_bounds.insert(tp.clone(), bounds.clone());
+            }
         }
-        self.expect(&Token::RBrace)?;
-        Ok(Stmt::ImplBlock { trait_name, type_name, methods, line, col })
+        let first_name = match self.advance() {
+            Token::Identifier(n) => n,
+            _ => return Err(self.err("'impl' ke baad type ya trait ka naam chahiye.")),
+        };
+        let trait_or_type_name = first_name.clone();
+        // Check if type name is followed by generic args: Box[T] or Trait[T]
+        let mut trait_type_args = Vec::new();
+        let full_type_name = if self.peek() == &Token::LBracket && self.peek_next().map_or(false, |t| matches!(t, Token::Identifier(_) | Token::RBracket)) {
+            // Parse generic args and build full name like "Box[T]"
+            self.advance(); // consume [
+            let mut name = first_name.clone();
+            name.push('[');
+            let mut first = true;
+            while self.peek() != &Token::RBracket && self.peek() != &Token::Eof {
+                // Skip commas between type args
+                if self.peek() == &Token::Comma {
+                    self.advance();
+                    continue;
+                }
+                if !first { name.push(','); }
+                first = false;
+                match self.advance() {
+                    Token::Identifier(arg) => { name.push_str(&arg); trait_type_args.push(arg); }
+                    Token::Int => { name.push_str("Int"); trait_type_args.push("Int".to_string()); }
+                    Token::Float => { name.push_str("Float"); trait_type_args.push("Float".to_string()); }
+                    Token::String => { name.push_str("String"); trait_type_args.push("String".to_string()); }
+                    Token::Bool => { name.push_str("Bool"); trait_type_args.push("Bool".to_string()); }
+                    _ => return Err(self.err("Type argument expected in impl")),
+                }
+            }
+            self.expect(&Token::RBracket)?;
+            name.push(']');
+            name
+        } else {
+            first_name
+        };
+        // Check if next token is 'for' (trait impl) or '{' (inherent impl)
+        if self.peek() == &Token::For {
+            // Trait impl: impl Trait for Type { ... }
+            self.advance();
+            let type_name_base = match self.advance() {
+                Token::Identifier(n) => n,
+                _ => return Err(self.err("Trait impl ke liye type ka naam chahiye.")),
+            };
+            // Parse optional generic type args on the type name: Option[Int]
+            let type_name = if self.peek() == &Token::LBracket && self.peek_next().map_or(false, |t| matches!(t, Token::Identifier(_) | Token::RBracket)) {
+                self.advance(); // consume [
+                let mut name = type_name_base.clone();
+                name.push('[');
+                let mut first = true;
+                while self.peek() != &Token::RBracket && self.peek() != &Token::Eof {
+                    if self.peek() == &Token::Comma {
+                        self.advance();
+                        continue;
+                    }
+                    if !first { name.push(','); }
+                    first = false;
+                    match self.advance() {
+                        Token::Identifier(arg) => name.push_str(&arg),
+                        Token::Int => name.push_str("Int"),
+                        Token::Float => name.push_str("Float"),
+                        Token::String => name.push_str("String"),
+                        Token::Bool => name.push_str("Bool"),
+                        _ => return Err(self.err("Type argument expected")),
+                    }
+                }
+                self.expect(&Token::RBracket)?;
+                name.push(']');
+                name
+            } else {
+                type_name_base
+            };
+            self.expect(&Token::LBrace)?;
+            let mut methods = Vec::new();
+            while self.peek() != &Token::RBrace && self.peek() != &Token::Eof {
+                methods.push(self.parse_fn_def(false)?);
+            }
+            self.expect(&Token::RBrace)?;
+            // Pop type params from parser scope
+            for tp in &type_params {
+                self.generic_type_params.retain(|p| p != tp);
+                self.generic_type_bounds.remove(tp);
+            }
+            Ok(Stmt::ImplBlock { trait_name: Some(trait_or_type_name), trait_type_args, type_params, type_param_bounds, type_name, methods, line, col })
+        } else if self.peek() == &Token::LBrace {
+            // Inherent impl: impl Type { ... }
+            self.expect(&Token::LBrace)?;
+            let mut methods = Vec::new();
+            while self.peek() != &Token::RBrace && self.peek() != &Token::Eof {
+                methods.push(self.parse_fn_def(false)?);
+            }
+            self.expect(&Token::RBrace)?;
+            // Pop type params from parser scope
+            for tp in &type_params {
+                self.generic_type_params.retain(|p| p != tp);
+                self.generic_type_bounds.remove(tp);
+            }
+            Ok(Stmt::ImplBlock { trait_name: None, trait_type_args: Vec::new(), type_params, type_param_bounds, type_name: full_type_name, methods, line, col })
+        } else {
+            Err(self.err("'impl' ke baad '{' ya 'for' expected hai."))
+        }
     }
 
     fn parse_return_stmt(&mut self) -> Result<Stmt, CompileError> {
@@ -1203,21 +1508,34 @@ impl Parser {
                 self.advance();
                 let line = self.line();
                 let col = self.col();
-                // Check for EnumRef or StructLit
+                // Check for EnumRef, StructLit, or AssociatedFnCall
                 if self.peek() == &Token::DoubleColon {
                     self.advance();
                     let variant = match self.advance() {
                         Token::Identifier(v) => v,
+                        Token::New => "new".to_string(),
                         _ => return Err(self.err("Enum variant name expected after ::")),
                     };
                     if self.peek() == &Token::LParen {
+                        // Heuristic: lowercase identifier = associated fn call, uppercase = enum ctor
+                        let is_assoc = variant.chars().next().map_or(false, |c| c.is_lowercase());
                         let args = self.parse_call_args()?;
-                        Expr::EnumCtor {
-                            enum_name: name,
-                            variant,
-                            args,
-                            line,
-                            col,
+                        if is_assoc {
+                            Expr::AssociatedFnCall {
+                                type_name: name,
+                                method: variant,
+                                args,
+                                line,
+                                col,
+                            }
+                        } else {
+                            Expr::EnumCtor {
+                                enum_name: name,
+                                variant,
+                                args,
+                                line,
+                                col,
+                            }
                         }
                     } else {
                         Expr::EnumRef {
@@ -1230,11 +1548,121 @@ impl Parser {
                 } else if self.peek() == &Token::LBrace && name.chars().next().map_or(false, |c| c.is_uppercase()) {
                     return self.parse_struct_lit(name, line, col);
                 } else if self.peek() == &Token::LBracket && self.peek_type_args() {
-                    // Generic function call: fnName[TypeArgs](args)
                     let type_args = self.parse_type_arg_list()?;
                     if self.peek() == &Token::LParen {
+                        // Generic function call: fnName[TypeArgs](args)
                         let args = self.parse_call_args()?;
                         Expr::GenericCall { name, type_args, args, line, col }
+                    } else if self.peek() == &Token::Dot && name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                        // Generic enum access: Option[Int].Some(10) or Option[Int].None
+                        self.advance(); // consume .
+                        let variant = match self.advance() {
+                            Token::Identifier(v) => v,
+                            _ => return Err(self.err("Enum variant name expected after .")),
+                        };
+                        // Build full enum name with type args
+                        let mut full_name = name.clone();
+                        full_name.push('[');
+                        for (i, ta) in type_args.iter().enumerate() {
+                            if i > 0 { full_name.push(','); }
+                            match ta {
+                                TypeAnnot::Class(s) => full_name.push_str(s),
+                                TypeAnnot::Generic(s) => full_name.push_str(s),
+                                TypeAnnot::Int => full_name.push_str("Int"),
+                                TypeAnnot::Float => full_name.push_str("Float"),
+                                TypeAnnot::String => full_name.push_str("String"),
+                                TypeAnnot::Bool => full_name.push_str("Bool"),
+                                _ => full_name.push_str("?"),
+                            }
+                        }
+                        full_name.push(']');
+                        if self.peek() == &Token::LParen {
+                            let args = self.parse_call_args()?;
+                            Expr::EnumCtor {
+                                enum_name: full_name,
+                                variant,
+                                args,
+                                line,
+                                col,
+                            }
+                        } else {
+                            Expr::EnumRef {
+                                enum_name: full_name,
+                                variant,
+                                line,
+                                col,
+                            }
+                        }
+                    } else if self.peek() == &Token::DoubleColon && name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                        // Generic associated function call: Box[Int]::new(42)
+                        self.advance(); // consume ::
+                        let method = match self.advance() {
+                            Token::Identifier(v) => v,
+                            Token::New => "new".to_string(),
+                            _ => return Err(self.err("Method name expected after ::")),
+                        };
+                        // Build full type name with type args
+                        let mut full_name = name.clone();
+                        full_name.push('[');
+                        for (i, ta) in type_args.iter().enumerate() {
+                            if i > 0 { full_name.push(','); }
+                            match ta {
+                                TypeAnnot::Class(s) => full_name.push_str(s),
+                                TypeAnnot::Generic(s) => full_name.push_str(s),
+                                TypeAnnot::Int => full_name.push_str("Int"),
+                                TypeAnnot::Float => full_name.push_str("Float"),
+                                TypeAnnot::String => full_name.push_str("String"),
+                                TypeAnnot::Bool => full_name.push_str("Bool"),
+                                _ => full_name.push_str("?"),
+                            }
+                        }
+                        full_name.push(']');
+                        let args = self.parse_call_args()?;
+                        Expr::AssociatedFnCall {
+                            type_name: full_name,
+                            method,
+                            args,
+                            line,
+                            col,
+                        }
+                    } else if self.peek() == &Token::LBrace && name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                        // Generic struct literal: Box[Int] { value: 42 }
+                        let mut fields = Vec::new();
+                        self.advance(); // consume {
+                        while self.peek() != &Token::RBrace && self.peek() != &Token::Eof {
+                            let fname = match self.advance() {
+                                Token::Identifier(n) => n,
+                                _ => return Err(self.err("Struct literal me field name chahiye.")),
+                            };
+                            self.expect(&Token::Colon)?;
+                            let fvalue = self.parse_expression()?;
+                            fields.push((fname, fvalue));
+                            if self.peek() == &Token::Comma {
+                                self.advance();
+                            }
+                        }
+                        self.expect(&Token::RBrace)?;
+                        let mut full_name = name.clone();
+                        full_name.push('[');
+                        for (i, ta) in type_args.iter().enumerate() {
+                            if i > 0 { full_name.push(','); }
+                            match ta {
+                                TypeAnnot::Class(s) => full_name.push_str(s),
+                                TypeAnnot::Generic(s) => full_name.push_str(s),
+                                TypeAnnot::Int => full_name.push_str("Int"),
+                                TypeAnnot::Float => full_name.push_str("Float"),
+                                TypeAnnot::String => full_name.push_str("String"),
+                                TypeAnnot::Bool => full_name.push_str("Bool"),
+                                _ => full_name.push_str("?"),
+                            }
+                        }
+                        full_name.push(']');
+                        Expr::StructLit {
+                            struct_name: full_name,
+                            fields,
+                            line,
+                            col,
+                        }
                     } else {
                         return Err(self.err("Generic function call requires arguments: fn[T](...)."));
                     }
@@ -1286,6 +1714,31 @@ impl Parser {
                         Token::Identifier(n) => n,
                         _ => return Err(self.err("'.' ke baad field/method ka naam chahiye.")),
                     };
+                    // Check for enum access: UppercaseIdent.UppercaseVariant
+                    if let Expr::Ident(ref obj_name, ..) = expr {
+                        if obj_name.chars().next().map_or(false, |c| c.is_uppercase())
+                            && field.chars().next().map_or(false, |c| c.is_uppercase())
+                        {
+                            if self.peek() == &Token::LParen {
+                                let args = self.parse_call_args()?;
+                                expr = Expr::EnumCtor {
+                                    enum_name: obj_name.clone(),
+                                    variant: field,
+                                    args,
+                                    line,
+                                    col,
+                                };
+                            } else {
+                                expr = Expr::EnumRef {
+                                    enum_name: obj_name.clone(),
+                                    variant: field,
+                                    line,
+                                    col,
+                                };
+                            }
+                            continue;
+                        }
+                    }
                     if self.peek() == &Token::LParen {
                         let args = self.parse_call_args()?;
                         expr = Expr::MethodCall {
@@ -1306,6 +1759,58 @@ impl Parser {
                 }
                 Token::LBracket => {
                     let (line, col) = Self::expr_pos(&expr);
+                    // Check for generic struct literal: TypeName[TypeArgs] { ... }
+                    if let Expr::Ident(ref name, ..) = expr {
+                        if name.chars().next().map_or(false, |c| c.is_uppercase())
+                            && self.peek_type_args()
+                        {
+                            let type_args = self.parse_type_arg_list()?;
+                            if self.peek() == &Token::LBrace {
+                                // Generic struct literal: Box<Int> { value: 42 }
+                                let mut fields = Vec::new();
+                                self.advance(); // consume {
+                                while self.peek() != &Token::RBrace && self.peek() != &Token::Eof {
+                                    let fname = match self.advance() {
+                                        Token::Identifier(n) => n,
+                                        _ => return Err(self.err("Struct literal me field name chahiye.")),
+                                    };
+                                    self.expect(&Token::Colon)?;
+                                    let fvalue = self.parse_expression()?;
+                                    fields.push((fname, fvalue));
+                                    if self.peek() == &Token::Comma {
+                                        self.advance();
+                                    }
+                                }
+                                self.expect(&Token::RBrace)?;
+                                // Return a struct lit with the generic type info stored in the name
+                                // The semantic analyzer will use the type annotation for resolution
+                                let mut full_name = name.clone();
+                                full_name.push('[');
+                                for (i, ta) in type_args.iter().enumerate() {
+                                    if i > 0 { full_name.push(','); }
+                                    match ta {
+                                        TypeAnnot::Class(s) => full_name.push_str(s),
+                                        TypeAnnot::Generic(s) => full_name.push_str(s),
+                                        TypeAnnot::Int => full_name.push_str("Int"),
+                                        TypeAnnot::Float => full_name.push_str("Float"),
+                                        TypeAnnot::String => full_name.push_str("String"),
+                                        TypeAnnot::Bool => full_name.push_str("Bool"),
+                                        _ => full_name.push_str("?"),
+                                    }
+                                }
+                                full_name.push(']');
+                                expr = Expr::StructLit {
+                                    struct_name: full_name,
+                                    fields,
+                                    line,
+                                    col,
+                                };
+                            } else {
+                                return Err(self.err("Generic type arguments must be followed by '{' for struct literal or '(' for constructor."));
+                            }
+                            continue;
+                        }
+                    }
                     self.advance();
                     let index = self.parse_expression()?;
                     self.expect(&Token::RBracket)?;

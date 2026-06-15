@@ -1,0 +1,36 @@
+trait Display {
+    fn show(self) -> string;
+}
+
+struct User {
+    name: string
+}
+
+struct Post {
+    title: string
+}
+
+impl Display for User {
+    fn show(self) -> string {
+        return self.name;
+    }
+}
+
+impl Display for Post {
+    fn show(self) -> string {
+        return self.title;
+    }
+}
+
+fn print_value[T: Display](value: T) {
+    let msg = value.show();
+    println(msg);
+}
+
+function main() {
+    let u = User { name: "Ajmal" };
+    let p = Post { title: "Hello World" };
+
+    print_value(u);
+    print_value(p);
+}

@@ -1,0 +1,100 @@
+// Cross-backend comparison test
+// Tests: variables, arithmetic, strings, functions, recursion, structs, enums, generics, traits
+
+// === VARIABLES & ARITHMETIC ===
+let x: int = 10;
+let y: int = 20;
+let sum = x + y;
+let diff = x - y;
+let prod = x * y;
+let quot = x / y;
+let neg = -x;
+println("=== Arithmetic ===");
+println("sum: ", itoa(sum));
+println("diff: ", itoa(diff));
+println("prod: ", itoa(prod));
+println("quot: ", itoa(quot));
+println("neg: ", itoa(neg));
+
+// === STRINGS ===
+let s1 = "Hello";
+let s2 = "World";
+let s3 = s1 + " " + s2;
+println("=== Strings ===");
+println(s3);
+println("len: ", itoa(len(s3)));
+
+// === FUNCTIONS & RECURSION ===
+function factorial(n: int): int {
+    if (n <= 1) { return 1; }
+    return n * factorial(n - 1);
+}
+
+function fib(n: int): int {
+    if (n <= 1) { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+
+println("=== Functions ===");
+println("factorial(5): ", itoa(factorial(5)));
+println("fib(10): ", itoa(fib(10)));
+
+// === STRUCTS ===
+struct Point {
+    x: int,
+    y: int
+}
+
+function point_distance(p: Point): int {
+    return p.x * p.x + p.y * p.y;
+}
+
+println("=== Structs ===");
+let p = Point { x: 3, y: 4 };
+println("dist: ", itoa(point_distance(p)));
+
+// === ENUMS ===
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+enum Option {
+    Some(int),
+    None
+}
+
+println("=== Enums ===");
+let c = Color.Red;
+let opt = Option.Some(42);
+println("enum created OK");
+
+// === GENERICS ===
+function identity[T](x: T): T {
+    return x;
+}
+
+println("=== Generics ===");
+println("identity(42): ", itoa(identity[int](42)));
+
+// === TRAITS ===
+trait Printable {
+    fn format(self) -> string;
+}
+
+struct User {
+    name: string
+}
+
+impl Printable for User {
+    fn format(self) -> string {
+        return self.name;
+    }
+}
+
+println("=== Traits ===");
+let u = User { name: "Ajmal" };
+println(u.format());
+
+println("=== All tests passed ===");

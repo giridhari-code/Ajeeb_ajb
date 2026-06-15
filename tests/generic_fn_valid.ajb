@@ -1,0 +1,21 @@
+// PASS: Generic function with correct type arg count
+function identity[T](x: T): T {
+    return x;
+}
+
+function pair[T](a: T, b: T): T {
+    return a;
+}
+
+function main() {
+    let a = identity[Int](42);
+    assert_eq(a, 42);
+
+    let b = identity[String]("hello");
+    assert_eq(b, "hello");
+
+    let c = pair[Int](1, 2);
+    assert_eq(c, 1);
+
+    println("PASS: generic_fn_valid");
+}

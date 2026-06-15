@@ -1,0 +1,9 @@
+enum Color {
+    Red,
+    Green
+}
+
+function main(): int {
+    let c = Color.Invalid;
+    return 0;
+}

@@ -2,6 +2,14 @@ use crate::ast::{BinOp, Expr, Pattern, Stmt, TypeAnnot};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
+fn host_target_triple() -> &'static str {
+    match std::env::consts::ARCH {
+        "aarch64" => "aarch64-unknown-linux-gnu",
+        "x86_64" => "x86_64-unknown-linux-gnu",
+        _ => "aarch64-unknown-linux-gnu",
+    }
+}
+
 pub struct Codegen {
     body: String,
     globals: String,
@@ -31,7 +39,7 @@ impl Codegen {
     pub fn new() -> Self {
         let mut g = String::new();
         writeln!(g, "target datalayout = \"e-m:e-i64:64-f80:128-n8:16:32:64-S128\"").unwrap();
-        writeln!(g, "target triple = \"aarch64-unknown-linux-gnu\"").unwrap();
+        writeln!(g, "target triple = \"{}\"", host_target_triple()).unwrap();
         writeln!(g, "").unwrap();
         writeln!(g, "declare i32 @puts(ptr)").unwrap();
         writeln!(g, "declare i32 @printf(ptr, ...)").unwrap();
@@ -104,16 +112,23 @@ impl Codegen {
             return true; // Already known
         }
         let decl: Option<String> = match name {
-            "str_concat" | "substring" | "indexOf" | "contains"
-            | "toUpperCase" | "toLowerCase" | "trim" | "readFile"
-            | "readArg" | "itoa" | "len" | "getInt" | "startsWith"
-            | "endsWith" | "charCode" | "strcmp_ajeeb"
+            // 0-arg functions
+            "getStateBuf" | "getOutbuf"
+                => Some(format!("declare i64 @{}()", name)),
+            // 1-arg functions
+            "len" | "itoa" | "readArg" | "readFile"
+            | "toUpperCase" | "toLowerCase" | "trim" | "chr"
+                => Some(format!("declare i64 @{}(i64)", name)),
+            // 2-arg functions
+            "str_concat" | "indexOf" | "contains"
+            | "getInt" | "startsWith" | "endsWith"
+            | "charCode" | "strcmp_ajeeb"
                 => Some(format!("declare i64 @{}(i64, i64)", name)),
+            // 3-arg functions
+            "substring" => Some("declare i64 @substring(i64, i64, i64)".into()),
             "replace" => Some("declare i64 @replace(i64, i64, i64)".into()),
-            "getStateBuf" | "getOutbuf" => Some(format!("declare i64 @{}()", name)),
             "lib_open" => Some(format!("declare i64 @lib_open(i64)")),
             "lib_sym" => Some(format!("declare i64 @lib_sym(i64, i64)")),
-            "chr" => Some("declare i64 @chr(i64)".into()),
             "tcp_listen" | "tcp_accept" | "tcp_connect" | "tls_connect" => Some(format!("declare i64 @{}(i64)", name)),
             "tcp_read" => Some(format!("declare i64 @tcp_read(i64, i64)")),
             "dns_lookup" | "tls_read" => Some(format!("declare i64 @{}(i64, i64)", name)),
@@ -134,10 +149,22 @@ impl Codegen {
     fn track_var_type(&mut self, name: &str, init_expr: &Expr) {
         match init_expr {
             Expr::StructLit { struct_name, .. } => {
-                self.var_types.insert(name.to_string(), ("struct".into(), struct_name.clone()));
+                // Strip generic type args: "Box[Int]" -> "Box"
+                let base_name = if let Some(bracket_pos) = struct_name.find('[') {
+                    struct_name[..bracket_pos].to_string()
+                } else {
+                    struct_name.clone()
+                };
+                self.var_types.insert(name.to_string(), ("struct".into(), base_name));
             }
             Expr::EnumCtor { enum_name, .. } | Expr::EnumRef { enum_name, .. } => {
-                self.var_types.insert(name.to_string(), ("enum".into(), enum_name.clone()));
+                // Strip generic type args: "Option[Int]" -> "Option"
+                let base_name = if let Some(bracket_pos) = enum_name.find('[') {
+                    enum_name[..bracket_pos].to_string()
+                } else {
+                    enum_name.clone()
+                };
+                self.var_types.insert(name.to_string(), ("enum".into(), base_name));
             }
             _ => {}
         }
@@ -167,13 +194,33 @@ impl Codegen {
                     }
                 }
                 Stmt::ImplBlock { trait_name, type_name, methods, .. } => {
-                    for m in methods {
-                        if let Stmt::FnDef { name: mname, params, body, return_type, .. } = m.clone() {
-                            let mangled = format!("{}_{}_{}", type_name, trait_name, mname);
-                            self.user_fns.insert(mangled.clone());
-                            self.method_map.insert((type_name.clone(), mname.clone()), mangled.clone());
-                            // Also directly emit the method as a function
-                            self.emit_fn_def(&mangled, &params, &body)?;
+                    // Strip generic type args: "Box[T]" -> "Box"
+                    let base_type_name = if let Some(bracket_pos) = type_name.find('[') {
+                        &type_name[..bracket_pos]
+                    } else {
+                        type_name.as_str()
+                    };
+                    if let Some(ref trait_name) = trait_name {
+                        // Trait impl: mangled as Type_Trait_method
+                        // Use a distinct key (type, method@trait) to avoid overwriting inherent methods
+                        for m in methods {
+                            if let Stmt::FnDef { name: mname, params, body, return_type, .. } = m.clone() {
+                                let mangled = format!("{}_{}_{}", base_type_name, trait_name, mname);
+                                self.user_fns.insert(mangled.clone());
+                                let trait_key = format!("{}@{}", mname, trait_name);
+                                self.method_map.insert((base_type_name.to_string(), trait_key), mangled.clone());
+                                self.emit_fn_def(&mangled, &params, &body)?;
+                            }
+                        }
+                    } else {
+                        // Inherent impl: mangled as Type_method
+                        for m in methods {
+                            if let Stmt::FnDef { name: mname, params, body, return_type, .. } = m.clone() {
+                                let mangled = format!("{}_{}", base_type_name, mname);
+                                self.user_fns.insert(mangled.clone());
+                                self.method_map.insert((base_type_name.to_string(), mname.clone()), mangled.clone());
+                                self.emit_fn_def(&mangled, &params, &body)?;
+                            }
                         }
                     }
                 }
@@ -215,7 +262,7 @@ impl Codegen {
         // Emit global initializers
         for (name, val) in &global_init_stmts {
             let v = self.emit_expr(val)?;
-            let gname = self.globals_map.get(name).unwrap();
+            let gname = self.globals_map.get(name).ok_or_else(|| format!("Unknown global variable: {}", name))?;
             writeln!(self.body, "  store i64 {}, ptr @{}", v, gname).unwrap();
         }
         self.emit_stmts(&main_stmts)?;
@@ -506,6 +553,86 @@ impl Codegen {
         }
     }
 
+    // Determine which struct a field access expression refers to,
+    // then return the positional offset for that field within that struct.
+    fn resolve_field_type(&self, obj: &Expr, field: &str) -> Option<TypeAnnot> {
+        // Step 1: resolve the struct type name (same logic as resolve_field_offset)
+        let struct_type: Option<String> = match obj {
+            Expr::StructLit { struct_name, .. } => {
+                let base = struct_name.split('[').next().unwrap_or(struct_name);
+                Some(base.to_string())
+            }
+            Expr::Ident(name, ..) => {
+                self.var_types.get(name).and_then(|(kind, tn)| {
+                    if kind == "struct" { Some(tn.clone()) } else { None }
+                })
+            }
+            Expr::Field { obj: inner, field: inner_field, .. } => {
+                // Chain: look up parent's struct type, then find field's type
+                let inner_type = match inner.as_ref() {
+                    Expr::Ident(v, ..) => self.var_types.get(v).map(|(_, tn)| tn.clone()),
+                    _ => None,
+                };
+                inner_type.and_then(|tn| {
+                    self.struct_defs.get(&tn)
+                        .and_then(|fields| fields.iter().find(|(n, _)| n == inner_field))
+                        .map(|(_, ty)| match ty {
+                            TypeAnnot::Class(s) | TypeAnnot::Generic(s) => s.clone(),
+                            _ => String::new(),
+                        })
+                })
+            }
+            _ => None,
+        };
+        // Step 2: look up the field's TypeAnnot in that struct's definition
+        struct_type.and_then(|st| {
+            self.struct_defs.get(&st)
+                .and_then(|fields| fields.iter().find(|(n, _)| n == field))
+                .map(|(_, ty)| ty.clone())
+        })
+    }
+
+    // Determine which struct a field access expression refers to,
+    // then return the positional offset for that field within that struct.
+    fn resolve_field_offset(&self, obj: &Expr, field: &str) -> Option<usize> {
+        // Try to determine the struct type from the object expression
+        let struct_type = match obj {
+            Expr::StructLit { struct_name, .. } => {
+                let base = struct_name.split('[').next().unwrap_or(struct_name);
+                Some(base.to_string())
+            }
+            Expr::Ident(name, ..) => {
+                self.var_types.get(name).and_then(|(kind, tn)| {
+                    if kind == "struct" { Some(tn.clone()) } else { None }
+                })
+            }
+            Expr::Field { obj: inner, field: inner_field, .. } => {
+                // Chain: look up parent's struct type, then find field's type
+                let inner_type = match inner.as_ref() {
+                    Expr::Ident(v, ..) => self.var_types.get(v).map(|(_, tn)| tn.clone()),
+                    _ => None,
+                };
+                inner_type.and_then(|tn| {
+                    self.struct_defs.get(&tn)
+                        .and_then(|fields| fields.iter().find(|(n, _)| n == inner_field))
+                        .map(|(_, ty)| match ty {
+                            TypeAnnot::Class(s) | TypeAnnot::Generic(s) => s.clone(),
+                            _ => String::new(),
+                        })
+                })
+            }
+            _ => None,
+        };
+        // Use the specific struct's field list; fall back to searching all structs
+        if let Some(st) = struct_type {
+            self.struct_defs.get(&st)
+                .and_then(|fields| fields.iter().position(|(n, _)| n == field))
+        } else {
+            self.struct_defs.iter()
+                .find_map(|(_, fields)| fields.iter().position(|(n, _)| n == field))
+        }
+    }
+
     fn emit_expr(&mut self, expr: &Expr) -> Result<String, String> {
         match expr {
             Expr::Number(n, ..) => {
@@ -581,7 +708,18 @@ impl Codegen {
                     }
                     BinOp::Sub => writeln!(self.body, "  {} = sub i64 {}, {}", reg, lhs, rhs).unwrap(),
                     BinOp::Mul => writeln!(self.body, "  {} = mul i64 {}, {}", reg, lhs, rhs).unwrap(),
-                    BinOp::Div => writeln!(self.body, "  {} = sdiv i64 {}, {}", reg, lhs, rhs).unwrap(),
+                    BinOp::Div => {
+                        // Safe division: guard against zero divisor (interpreter returns 0)
+                        let is_zero = self.fresh();
+                        writeln!(self.body, "  {} = icmp eq i64 {}, 0", is_zero, rhs).unwrap();
+                        let safe_rhs = self.fresh();
+                        writeln!(self.body, "  {} = select i1 {}, i64 1, i64 {}", safe_rhs, is_zero, rhs).unwrap();
+                        let div_raw = self.fresh();
+                        writeln!(self.body, "  {} = sdiv i64 {}, {}", div_raw, lhs, safe_rhs).unwrap();
+                        let final_reg = self.fresh();
+                        writeln!(self.body, "  {} = select i1 {}, i64 0, i64 {}", final_reg, is_zero, div_raw).unwrap();
+                        return Ok(final_reg);
+                    }
                     BinOp::Eq => {
                         // Use reg for icmp (allocated first), then zext gets the next register
                         writeln!(self.body, "  {} = icmp eq i64 {}, {}", reg, lhs, rhs).unwrap();
@@ -659,12 +797,56 @@ impl Codegen {
                 }
                 match name.as_str() {
                     "println" | "print" => {
-                        if let Some(arg) = compiled_args.first() {
-                            // Arguments are i64. For string pointers, we need inttoptr.
+                        let is_println = *name == "println";
+                        // Convert non-string arguments to strings via itoa
+                        let mut string_args = Vec::new();
+                        for (i, arg_reg) in compiled_args.iter().enumerate() {
+                            if self.string_regs.contains(arg_reg) {
+                                string_args.push(arg_reg.clone());
+                            } else {
+                                // Wrap integer arg in itoa call
+                                let buf = self.fresh();
+                                writeln!(self.body, "  {} = alloca i8, i64 32", buf).unwrap();
+                                let fmt_name = self.global_str("%ld");
+                                let fmt_ptr = self.fresh();
+                                writeln!(self.body, "  {} = getelementptr inbounds i8, ptr @{}, i64 0", fmt_ptr, fmt_name).unwrap();
+                                let r = self.fresh();
+                                writeln!(self.body, "  {} = call i32 (ptr, i64, ptr, ...) @snprintf(ptr {}, i64 32, ptr {}, i64 {})", r, buf, fmt_ptr, arg_reg).unwrap();
+                                let ptr_as_int = self.fresh();
+                                writeln!(self.body, "  {} = ptrtoint ptr {} to i64", ptr_as_int, buf).unwrap();
+                                self.string_regs.insert(ptr_as_int.clone());
+                                string_args.push(ptr_as_int);
+                            }
+                        }
+                        // Concatenate all string arguments
+                        if string_args.is_empty() {
+                            let fmt_name = self.global_str("");
+                            let fmt_ptr = self.fresh();
+                            writeln!(self.body, "  {} = getelementptr inbounds i8, ptr @{}, i64 0", fmt_ptr, fmt_name).unwrap();
                             let str_ptr = self.fresh();
-                            writeln!(self.body, "  {} = inttoptr i64 {} to ptr", str_ptr, arg).unwrap();
+                            writeln!(self.body, "  {} = inttoptr i64 {} to ptr", str_ptr, fmt_ptr).unwrap();
                             let reg = self.fresh();
-                            writeln!(self.body, "  {} = call i32 @puts(ptr {})", reg, str_ptr).unwrap();
+                            if is_println {
+                                writeln!(self.body, "  {} = call i32 @puts(ptr {})", reg, str_ptr).unwrap();
+                            } else {
+                                writeln!(self.body, "  {} = call i32 (ptr, ...) @printf(ptr {})", reg, str_ptr).unwrap();
+                            }
+                        } else {
+                            self.declare_extern("str_concat");
+                            let mut concat = string_args[0].clone();
+                            for arg in &string_args[1..] {
+                                let next_concat = self.fresh();
+                                writeln!(self.body, "  {} = call i64 @str_concat(i64 {}, i64 {})", next_concat, concat, arg).unwrap();
+                                concat = next_concat;
+                            }
+                            let str_ptr = self.fresh();
+                            writeln!(self.body, "  {} = inttoptr i64 {} to ptr", str_ptr, concat).unwrap();
+                            let reg = self.fresh();
+                            if is_println {
+                                writeln!(self.body, "  {} = call i32 @puts(ptr {})", reg, str_ptr).unwrap();
+                            } else {
+                                writeln!(self.body, "  {} = call i32 (ptr, ...) @printf(ptr {})", reg, str_ptr).unwrap();
+                            }
                         }
                         let reg = self.fresh();
                         writeln!(self.body, "  {} = add i64 0, 0", reg).unwrap();
@@ -774,14 +956,18 @@ impl Codegen {
                 let obj_val = self.emit_expr(obj)?;
                 let obj_ptr = self.fresh();
                 writeln!(self.body, "  {} = inttoptr i64 {} to ptr", obj_ptr, obj_val).unwrap();
-                // Determine field offset: need struct type info. Default to position 0.
-                let offset = self.struct_defs.iter()
-                    .find_map(|(_, fields)| fields.iter().position(|(n, _)| n == field))
-                    .unwrap_or(0);
+                // Determine field offset from the specific struct type
+                let offset = self.resolve_field_offset(obj, field).unwrap_or(0);
                 let elem_ptr = self.fresh();
                 writeln!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}", elem_ptr, obj_ptr, offset).unwrap();
                 let reg = self.fresh();
                 writeln!(self.body, "  {} = load i64, ptr {}", reg, elem_ptr).unwrap();
+                // Track string-typed fields
+                if let Some(ty) = self.resolve_field_type(obj, field) {
+                    if matches!(ty, TypeAnnot::String) {
+                        self.string_regs.insert(reg.clone());
+                    }
+                }
                 Ok(reg)
             }
             Expr::FieldAssign { obj, field, value, .. } => {
@@ -789,9 +975,7 @@ impl Codegen {
                 let obj_val = self.emit_expr(obj)?;
                 let obj_ptr = self.fresh();
                 writeln!(self.body, "  {} = inttoptr i64 {} to ptr", obj_ptr, obj_val).unwrap();
-                let offset = self.struct_defs.iter()
-                    .find_map(|(_, fields)| fields.iter().position(|(n, _)| n == field))
-                    .unwrap_or(0);
+                let offset = self.resolve_field_offset(obj, field).unwrap_or(0);
                 let elem_ptr = self.fresh();
                 writeln!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}", elem_ptr, obj_ptr, offset).unwrap();
                 writeln!(self.body, "  store i64 {}, ptr {}", val, elem_ptr).unwrap();
@@ -828,7 +1012,13 @@ impl Codegen {
                     _ => None,
                 };
                 if let Some(rt) = receiver_type {
-                    let mangled = self.method_map.get(&(rt.clone(), method.clone())).cloned();
+                    // Check inherent methods first, then trait methods
+                    let mangled = self.method_map.get(&(rt.clone(), method.clone())).cloned()
+                        .or_else(|| {
+                            self.method_map.iter()
+                                .find(|(k, _)| k.0 == rt && k.1.starts_with(&format!("{}@", method)))
+                                .map(|(_, v)| v.clone())
+                        });
                     if let Some(mangled_name) = mangled {
                         let mut call_args = vec![obj_val];
                         for a in args {
@@ -997,6 +1187,25 @@ impl Codegen {
                 let args_str = compiled_args.iter().map(|a| format!("i64 {}", a)).collect::<Vec<_>>().join(", ");
                 let reg = self.fresh();
                 writeln!(self.body, "  {} = call i64 @{}({})", reg, name, args_str).unwrap();
+                Ok(reg)
+            }
+            Expr::AssociatedFnCall { type_name, method, args, .. } => {
+                let base_name = if let Some(bracket_pos) = type_name.find('[') {
+                    &type_name[..bracket_pos]
+                } else {
+                    type_name.as_str()
+                };
+                let mangled = format!("{}_{}", base_name, method);
+                let mut compiled_args = Vec::new();
+                for arg in args {
+                    compiled_args.push(self.emit_expr(arg)?);
+                }
+                if !self.user_fns.contains(mangled.as_str()) {
+                    return Err(format!("LLVM codegen: unknown associated function '{}::{}'", type_name, method));
+                }
+                let args_str = compiled_args.iter().map(|a| format!("i64 {}", a)).collect::<Vec<_>>().join(", ");
+                let reg = self.fresh();
+                writeln!(self.body, "  {} = call i64 @{}({})", reg, mangled, args_str).unwrap();
                 Ok(reg)
             }
             _ => Err(format!("Unsupported expression: {:?}", expr)),

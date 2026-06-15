@@ -1,0 +1,14 @@
+struct Box[T] {
+    value: T,
+}
+
+impl[T] Box[T] {
+    fn new(value: T) -> Box[T] {
+        return Box[T] { value: value };
+    }
+}
+
+function main() {
+    let b = Box[Int]::new(42);
+    b.missing();
+}

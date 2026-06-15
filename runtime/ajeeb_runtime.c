@@ -328,7 +328,7 @@ extern char __ajeeb_outbuf[65536];
 static char* saved_argv[256];
 static int saved_argc = 0;
 
-#define FILE_CACHE_SIZE 256
+#define FILE_CACHE_SIZE 65536
 static struct { const char* path; FILE* fp; } file_cache[FILE_CACHE_SIZE];
 static int file_cache_count = 0;
 

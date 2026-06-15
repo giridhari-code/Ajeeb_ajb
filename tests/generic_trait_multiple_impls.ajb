@@ -1,0 +1,31 @@
+struct Printer {
+    name: String,
+}
+
+struct Logger {
+    level: Int,
+}
+
+trait Display[T] {
+    function print(self, value: T);
+}
+
+impl Display[Int] for Printer {
+    function print(self, value: Int) {
+        print(value);
+    }
+}
+
+impl Display[Int] for Logger {
+    function print(self, value: Int) {
+        print(value);
+    }
+}
+
+function main() {
+    let p = Printer { name: "test" };
+    p.print(42);
+    let l = Logger { level: 1 };
+    l.print(99);
+    println("PASS: generic_trait_multiple_impls");
+}

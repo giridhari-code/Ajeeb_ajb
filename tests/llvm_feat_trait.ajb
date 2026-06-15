@@ -1,0 +1,20 @@
+// LLVM Feature Test: Traits + Impl (single arg println)
+trait Printable {
+    fn format(self) -> string;
+}
+
+struct User {
+    name: string
+}
+
+impl Printable for User {
+    fn format(self) -> string {
+        return self.name;
+    }
+}
+
+function main(): int {
+    let u = User { name: "Ajmal" };
+    println(u.format());
+    return 0;
+}

@@ -1,0 +1,14 @@
+struct Box[T] {
+    value: T
+}
+
+enum Option[T] {
+    Some(T),
+    None
+}
+
+function main(): int {
+    let b = Box[Int] { value: 42 };
+    let x = Option[Int].Some(10);
+    return 0;
+}

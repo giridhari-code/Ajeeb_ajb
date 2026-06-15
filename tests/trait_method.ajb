@@ -1,0 +1,50 @@
+trait Display {
+    function show(self: User): string;
+}
+
+trait Greetable {
+    function greet(self: User): string;
+}
+
+struct User {
+    name: string
+}
+
+struct Bot {
+    name: string
+}
+
+impl Display for User {
+    function show(self: User): string {
+        return self.name;
+    }
+}
+
+impl Greetable for User {
+    function greet(self: User): string {
+        return "Hello, I am " + self.name;
+    }
+}
+
+impl Display for Bot {
+    function show(self: Bot): string {
+        return "Bot:" + self.name;
+    }
+}
+
+function main() {
+    let u = User { name: "Ajmal" };
+    let b = Bot { name: "RustBot" };
+
+    let s1 = u.show();
+    println(s1);
+    assert_eq(s1, "Ajmal");
+
+    let s2 = u.greet();
+    println(s2);
+    assert_eq(s2, "Hello, I am Ajmal");
+
+    let s3 = b.show();
+    println(s3);
+    assert_eq(s3, "Bot:RustBot");
+}

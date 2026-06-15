@@ -1,0 +1,12 @@
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+function main(): int {
+    let c1 = Color.Red;
+    let c2 = Color.Green;
+    let c3 = Color.Blue;
+    return 0;
+}

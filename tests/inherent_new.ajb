@@ -1,0 +1,15 @@
+struct User {
+    name: string,
+}
+
+impl User {
+    fn new(name: string) -> User {
+        return User { name: name };
+    }
+}
+
+function main() {
+    let u = User::new("Ajmal");
+    println(u.name);
+    println("PASS: inherent_new");
+}

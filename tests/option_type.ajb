@@ -1,0 +1,10 @@
+enum Option[T] {
+    Some(T),
+    None
+}
+
+function main(): int {
+    let x = Option[Int].Some(10);
+    let y = Option[String].None;
+    return 0;
+}

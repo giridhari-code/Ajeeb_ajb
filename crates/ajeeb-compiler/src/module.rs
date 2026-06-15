@@ -16,6 +16,8 @@ pub struct ModuleLoader {
     pub modules: HashMap<String, Module>,
     pub errors: Vec<CompileError>,
     import_paths: Vec<PathBuf>,
+    loading_stack: Vec<String>,
+    imported_names: HashMap<String, (usize, usize)>,
 }
 
 impl ModuleLoader {
@@ -24,6 +26,8 @@ impl ModuleLoader {
             modules: HashMap::new(),
             errors: Vec::new(),
             import_paths: Vec::new(),
+            loading_stack: Vec::new(),
+            imported_names: HashMap::new(),
         }
     }
 
@@ -59,6 +63,22 @@ impl ModuleLoader {
         if self.modules.contains_key(name) {
             return Ok(());
         }
+
+        // Cycle detection
+        if self.loading_stack.contains(&name.to_string()) {
+            let cycle: Vec<String> = self.loading_stack.iter()
+                .skip_while(|s| s.as_str() != name)
+                .cloned()
+                .chain(std::iter::once(name.to_string()))
+                .collect();
+            return Err(CompileError::new(
+                0,
+                0,
+                format!("Circular import detected: {}", cycle.join(" -> ")),
+            ));
+        }
+
+        self.loading_stack.push(name.to_string());
 
         let source = std::fs::read_to_string(file_path).map_err(|e| {
             CompileError::new(
@@ -110,6 +130,7 @@ impl ModuleLoader {
             self.resolve_import(import)?;
         }
 
+        self.loading_stack.pop();
         Ok(())
     }
 
@@ -122,17 +143,31 @@ impl ModuleLoader {
             return Ok(());
         }
 
+        // Duplicate detection
+        if let Some(&(prev_line, prev_col)) = self.imported_names.get(&module_name) {
+            return Err(CompileError::new(
+                import.line,
+                import.col,
+                format!(
+                    "Duplicate import: '{}' already imported at line {}, col {}",
+                    module_name, prev_line, prev_col
+                ),
+            ));
+        }
+
         // Try each import path
         for base in &self.import_paths {
             let rel_path: PathBuf = import.path.iter().collect();
             // Try mod.ajb
             let candidate1 = base.join(&rel_path).join("mod.ajb");
             if candidate1.exists() {
+                self.imported_names.insert(module_name.clone(), (import.line, import.col));
                 return self.load_module_file(&module_name, &candidate1);
             }
             // Try module_name.ajb
             let candidate2 = base.join(&rel_path).with_extension("ajb");
             if candidate2.exists() {
+                self.imported_names.insert(module_name.clone(), (import.line, import.col));
                 return self.load_module_file(&module_name, &candidate2);
             }
         }

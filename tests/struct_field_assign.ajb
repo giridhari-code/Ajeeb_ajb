@@ -1,0 +1,12 @@
+struct User {
+    name: string,
+    age: int
+}
+
+function main(): int {
+    let user = User { name: "Ajeeb", age: 1 };
+    print(itoa(user.age));
+    user.age = 2;
+    print(itoa(user.age));
+    return 0;
+}

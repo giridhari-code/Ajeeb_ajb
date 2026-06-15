@@ -1,0 +1,9 @@
+struct Box[T] {
+    value: T
+}
+
+function main(): int {
+    let a = Box { value: true };
+    let b: Box[Int] = a;
+    return 0;
+}
