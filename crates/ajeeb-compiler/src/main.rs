@@ -1,6 +1,6 @@
 mod ast;
 mod cache;
-mod codegen;
+mod llvm;
 mod das_parser;
 mod error;
 mod eval;
@@ -182,7 +182,7 @@ fn main() -> io::Result<()> {
     let mut gcc_ok = false;
 
     if use_llvm && Command::new("llc").arg("--version").status().is_ok() {
-        let mut codegen = codegen::Codegen::new();
+        let mut codegen = llvm::Codegen::new();
         match codegen.compile(&all_stmts) {
             Ok(_) => {
                 std::fs::create_dir_all("build").ok();
