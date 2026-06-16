@@ -160,7 +160,6 @@ fn cmd_add(args: &[String]) {
     let cfg = config::read_config(Path::new("parth.das")).unwrap_or_else(|e| {
         eprintln!("Error: {}", e); std::process::exit(1);
     });
-    let registry_url = get_registry_url(&cfg);
 
     let mut deps = cfg.deps.clone();
     if deps.iter().any(|d| d.name == pkg_name) {
@@ -168,13 +167,30 @@ fn cmd_add(args: &[String]) {
         return;
     }
 
-    let _ = registry::download_package(&pkg_name, &"latest".to_string(), &registry_url);
+    // Try to find package locally first
+    match registry::find_local_package(&pkg_name) {
+        Some(local_path) => {
+            println!("📦 Found '{}' locally at {}", pkg_name, local_path.display());
+            // Copy to cache
+            match registry::link_local_package(&local_path, &pkg_name) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("❌ Could not link '{}': {}", pkg_name, e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        None => {
+            // Try to download (will also search local paths)
+            let _ = registry::download_package(&pkg_name, &"latest".to_string(), "");
+        }
+    }
 
     let new_dep = types::PkgDep { name: pkg_name.clone(), version_req };
     let mut all_deps = deps.clone();
     all_deps.push(new_dep);
 
-    match resolver::resolve_and_cache(&all_deps, Path::new("."), &registry_url) {
+    match resolver::resolve_and_cache(&all_deps, Path::new("."), "") {
         Ok((_resolved, _lock)) => {
             deps.push(types::PkgDep { name: pkg_name.clone(), version_req: original_req });
             config::update_deps(Path::new("parth.das"), &deps).unwrap_or_else(|e| {
@@ -207,78 +223,6 @@ fn cmd_remove(args: &[String]) {
     lock.remove(name);
     resolver::write_lock(&lock, Path::new(".")).unwrap_or_default();
     println!("✓ Removed '{}'", name);
-}
-
-fn collect_library_sources(deps: &[types::PkgDep]) -> (String, Vec<String>) {
-    let mut combined = String::new();
-    let mut runtime_c_files: Vec<String> = Vec::new();
-
-    for dep in deps {
-        let mut found = false;
-        // Search locations in priority order: libs/, packages/, ~/.parth/packages/<name>/
-        let search_roots = {
-            let home = registry::parth_home().join("packages").join(&dep.name);
-            let mut roots = vec![
-                PathBuf::from("libs").join(&dep.name),
-                PathBuf::from("packages").join(&dep.name),
-            ];
-            if home.exists() {
-                if let Ok(entries) = fs::read_dir(&home) {
-                    let mut versions: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-                    versions.sort_by_key(|e| e.file_name());
-                    for entry in versions {
-                        roots.push(entry.path());
-                    }
-                }
-            }
-            roots
-        };
-
-        for root in &search_roots {
-            if !root.exists() { continue; }
-
-            let src_dir = root.join("src");
-            if src_dir.exists() {
-                if let Ok(entries) = fs::read_dir(&src_dir) {
-                    for entry in entries.flatten() {
-                        let p = entry.path();
-                        if p.extension().map(|e| e == "ajb").unwrap_or(false) {
-                            if let Ok(content) = fs::read_to_string(&p) {
-                                combined.push_str("\n// --- ");
-                                combined.push_str(dep.name.as_str());
-                                combined.push_str(": ");
-                                combined.push_str(p.file_name().unwrap().to_string_lossy().as_ref());
-                                combined.push_str(" ---\n");
-                                combined.push_str(&content);
-                                combined.push('\n');
-                            }
-                        }
-                    }
-                }
-                found = true;
-            }
-
-            let runtime_dir = root.join("runtime");
-            if runtime_dir.exists() {
-                if let Ok(entries) = fs::read_dir(&runtime_dir) {
-                    for entry in entries.flatten() {
-                        let p = entry.path();
-                        if p.extension().map(|e| e == "c").unwrap_or(false) {
-                            runtime_c_files.push(p.to_string_lossy().to_string());
-                        }
-                    }
-                }
-            }
-
-            if found { break; }
-        }
-
-        if !found {
-            eprintln!("⚠️  Library '{}' not found in libs/, packages/, or ~/.parth/packages/", dep.name);
-        }
-    }
-
-    (combined, runtime_c_files)
 }
 
 fn cmd_build_file(args: &[String]) {
@@ -472,21 +416,6 @@ fn cmd_build() {
     let cfg = config::read_config(Path::new("parth.das")).unwrap_or_else(|e| {
         eprintln!("Error: {}", e); std::process::exit(1);
     });
-    let registry_url = get_registry_url(&cfg);
-
-    if !cfg.deps.is_empty() {
-        match resolver::resolve_and_cache(&cfg.deps, Path::new("."), &registry_url) {
-            Ok((_resolved, lock)) => {
-                match resolver::compilation_order(&lock) {
-                    Ok(order) => { if !order.is_empty() { println!("📦 Dependencies: {}", order.join(", ")); } }
-                    Err(e) => { eprintln!("❌ {}", e); std::process::exit(1); }
-                }
-            }
-            Err(e) => { eprintln!("❌ Dependency resolution failed: {}", e); std::process::exit(1); }
-        }
-    }
-
-    let profile = cfg.profiles.first().cloned().unwrap_or_default();
 
     let (name, output_dir, runtime) = read_config_basic_for_build();
     let root = find_ajeeb_root();
@@ -494,27 +423,67 @@ fn cmd_build() {
     // Use absolute paths throughout
     let build_dir = project_dir.join(&output_dir);
     fs::create_dir_all(&build_dir).ok();
-    let entry = project_dir.join("src/main.ajb");
     let combined_path = build_dir.join("combined.ajb");
     let bin_path = build_dir.join(&name);
-
     let runtime_src = root.join(&runtime);
 
-    let (lib_ajb_sources, _lib_runtime_c) = collect_library_sources(&cfg.deps);
+    // ── STEP 1 & 2: Resolve dependencies ──
+    println!("📦 Resolving dependencies...");
+    let mut all_ajb_files: Vec<PathBuf> = Vec::new();
+    let mut all_runtime_c: Vec<PathBuf> = Vec::new();
 
-    let mut user_src = fs::read_to_string(&entry).unwrap_or_default();
-    user_src.push('\n');
-    user_src.push_str(&lib_ajb_sources);
+    for dep in &cfg.deps {
+        let dep_path = find_dep(&dep.name);
+        match dep_path {
+            Some(path) => {
+                println!("  ✓ {} v{} → {}", dep.name, dep.version_req, path.display());
+                // Collect .ajb source files
+                collect_ajb_files(&path, &mut all_ajb_files);
+                // Collect runtime .c files
+                let rc = path.join("runtime").join(format!("{}_runtime.c", dep.name));
+                if rc.exists() {
+                    all_runtime_c.push(rc);
+                }
+            }
+            None => {
+                eprintln!("❌ Dep not found: {}", dep.name);
+                eprintln!("   Run: parth link <path>");
+                std::process::exit(1);
+            }
+        }
+    }
 
-    fs::write(&combined_path, &user_src).unwrap_or_else(|e| {
+    // ── STEP 3: Add project source ──
+    let entry = project_dir.join("src/main.ajb");
+    all_ajb_files.push(entry);
+
+    // ── STEP 4: Combine all .ajb sources ──
+    println!("🔨 Compiling: src/main.ajb{}", 
+        if !cfg.deps.is_empty() {
+            format!(" + {}", cfg.deps.iter().map(|d| d.name.as_str()).collect::<Vec<_>>().join(", "))
+        } else {
+            String::new()
+        }
+    );
+
+    let combined = all_ajb_files.iter()
+        .filter_map(|f| {
+            let content = fs::read_to_string(f).ok()?;
+            let stem = f.file_stem()?.to_string_lossy();
+            Some(format!("\n// --- {} ---\n{}", stem, content))
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    fs::write(&combined_path, &combined).unwrap_or_else(|e| {
         eprintln!("Error writing combined source: {}", e); std::process::exit(1);
     });
 
+    // ── STEP 5: Compile ──
     let native_binary = root.join("build/ajeeb_native");
     let combined_str = combined_path.to_string_lossy().to_string();
 
     if native_binary.exists() {
-        // Use self-hosted binary (no cargo needed!)
         println!("⚡ Using self-hosted compiler");
         let output_c = build_dir.join("output.c");
         let status = Command::new(&native_binary)
@@ -525,22 +494,42 @@ fn cmd_build() {
             eprintln!("❌ Self-hosted compilation failed");
             std::process::exit(1);
         }
+
+        // ── STEP 6: Link with runtime .c files ──
+        println!("🔗 Linking: {}", 
+            if all_runtime_c.is_empty() {
+                format!("ajeeb_runtime.c")
+            } else {
+                let mut files = vec!["ajeeb_runtime.c".to_string()];
+                files.extend(all_runtime_c.iter().map(|f| f.file_name().unwrap().to_string_lossy().to_string()));
+                files.join(", ")
+            }
+        );
+
+        let mut gcc_args: Vec<String> = vec![
+            output_c.to_string_lossy().to_string(),
+            runtime_src.to_string_lossy().to_string(),
+        ];
+        // Add dependency runtime .c files
+        for rc in &all_runtime_c {
+            gcc_args.push(rc.to_string_lossy().to_string());
+        }
+        gcc_args.extend([
+            "-o".to_string(), bin_path.to_string_lossy().to_string(),
+            "-Wall".to_string(), "-Wno-int-to-pointer-cast".to_string(), "-Wno-pointer-to-int-cast".to_string(),
+        ]);
+
         let gcc_status = Command::new("gcc")
-            .args([
-                &output_c.to_string_lossy(),
-                &runtime_src.to_string_lossy(),
-                "-o", &bin_path.to_string_lossy(),
-                "-Wall", "-Wno-int-to-pointer-cast", "-Wno-pointer-to-int-cast",
-            ])
+            .args(&gcc_args)
             .status().expect("Failed to run gcc");
         if !gcc_status.success() {
             eprintln!("❌ Native compilation failed");
             std::process::exit(1);
         }
-        println!("✓ Build: {} (opt-level: {})", bin_path.display(), profile.opt_level);
+        println!("✅ Built: {}", bin_path.display());
     } else {
         // Fall back to Rust interpreter + LLVM pipeline
-        println!("🔧 Using Rust interpreter (run `scripts/install.sh` for faster builds)");
+        println!("🔧 Using Rust interpreter");
         let status = Command::new("cargo")
             .args(["run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
                    "--", &combined_str, "--skip-run"])
@@ -555,19 +544,27 @@ fn cmd_build() {
             .status();
         match llc_status {
             Ok(s) if s.success() => {
+                // Link with runtime .c files
+                let mut gcc_args: Vec<String> = vec![
+                    asm_file.to_string_lossy().to_string(),
+                    runtime_src.to_string_lossy().to_string(),
+                ];
+                for rc in &all_runtime_c {
+                    gcc_args.push(rc.to_string_lossy().to_string());
+                }
+                gcc_args.extend([
+                    "-o".to_string(), bin_path.to_string_lossy().to_string(),
+                    "-lm".to_string(), "-ldl".to_string(), "-Wl,--allow-multiple-definition".to_string(),
+                ]);
+
                 let gcc_status = Command::new("gcc")
-                    .args([
-                        &asm_file.to_string_lossy(),
-                        &runtime_src.to_string_lossy(),
-                        "-o", &bin_path.to_string_lossy(),
-                        "-lm", "-ldl", "-Wl,--allow-multiple-definition",
-                    ])
+                    .args(&gcc_args)
                     .status().expect("Failed to run gcc");
                 if !gcc_status.success() {
                     eprintln!("❌ Native compilation failed");
                     std::process::exit(1);
                 }
-                println!("✓ Build: {} (opt-level: {})", bin_path.display(), profile.opt_level);
+                println!("✅ Built: {}", bin_path.display());
             }
             Ok(_) => { eprintln!("❌ LLVM -> asm compilation failed"); std::process::exit(1); }
             Err(e) => { eprintln!("❌ Could not run llc: {}", e); std::process::exit(1); }
@@ -596,6 +593,53 @@ fn cmd_build() {
             std::process::exit(1);
         }
         println!("✓ Workspace member '{}' built successfully", member.path);
+    }
+}
+
+/// Find a dependency in local locations
+fn find_dep(name: &str) -> Option<PathBuf> {
+    let search_paths = dep_search_paths();
+    for base in &search_paths {
+        let pkg_dir = base.join(name);
+        if pkg_dir.exists() && pkg_dir.join("parth.das").exists() {
+            return Some(pkg_dir);
+        }
+    }
+    None
+}
+
+/// Get all search paths for dependencies
+fn dep_search_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    
+    // 1) ./packages/<name>/
+    if let Ok(cwd) = std::env::current_dir() {
+        paths.push(cwd.join("packages"));
+    }
+    
+    // 2) ~/.parth/packages/<name>/
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    paths.push(PathBuf::from(home).join(".parth").join("packages"));
+    
+    // 3) <ajeeb_root>/packages/<name>/
+    let root = find_ajeeb_root();
+    paths.push(root.join("packages"));
+    
+    paths
+}
+
+/// Collect .ajb source files from a package
+fn collect_ajb_files(pkg_dir: &Path, files: &mut Vec<PathBuf>) {
+    let src_dir = pkg_dir.join("src");
+    if src_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&src_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().map(|e| e == "ajb").unwrap_or(false) {
+                    files.push(p);
+                }
+            }
+        }
     }
 }
 
@@ -685,14 +729,7 @@ fn cmd_info() {
 fn cmd_search(args: &[String]) {
     let query = args.first().map(|s| s.as_str()).unwrap_or("");
 
-    let cfg = if Path::new("parth.das").exists() {
-        config::read_config(Path::new("parth.das")).unwrap_or_default()
-    } else {
-        ProjectConfig::default()
-    };
-    let registry_url = get_registry_url(&cfg);
-
-    let results = registry::search_packages(query, &registry_url);
+    let results = registry::search_packages(query, "");
     if results.is_empty() {
         println!("No packages found matching '{}'", query);
         return;
@@ -813,8 +850,7 @@ fn cmd_outdated() {
         eprintln!("No parth.lock found. Run `parth build` first.");
         std::process::exit(1);
     }
-    let registry_url = get_registry_url(&cfg);
-    let outdated = resolver::check_outdated(&lock, &registry_url);
+    let outdated = resolver::check_outdated(&lock, "");
     if outdated.is_empty() {
         println!("✓ All dependencies are up to date");
     } else {
@@ -868,7 +904,6 @@ fn cmd_update() {
         println!("No dependencies to update.");
         return;
     }
-    let registry_url = get_registry_url(&cfg);
 
     // Delete existing lock to force re-resolution
     let lock_path = Path::new("parth.lock");
@@ -876,7 +911,7 @@ fn cmd_update() {
         let _ = fs::remove_file(lock_path);
     }
 
-    match resolver::resolve_and_cache(&cfg.deps, Path::new("."), &registry_url) {
+    match resolver::resolve_and_cache(&cfg.deps, Path::new("."), "") {
         Ok((resolved, _lock)) => {
             println!("✓ Dependencies updated:");
             for dep in &resolved {
@@ -902,31 +937,48 @@ fn cmd_install(args: &[String]) {
         (spec.clone(), String::new())
     };
 
-    let cfg = if Path::new("parth.das").exists() {
-        config::read_config(Path::new("parth.das")).unwrap_or_default()
-    } else {
-        ProjectConfig::default()
-    };
-    let registry_url = get_registry_url(&cfg);
-
-    match registry::download_package(&name, &version, &registry_url) {
-        Ok(path) => {
-            println!("✓ Installed '{}@{}' to {}", name, version, path.display());
-            if Path::new("parth.das").exists() {
-                let deps = vec![types::PkgDep { name: name.clone(), version_req: format!("={}", version) }];
-                config::update_deps(Path::new("parth.das"), &deps).unwrap_or_else(|e| {
-                    eprintln!("Warning: could not update parth.das: {}", e);
-                });
+    // Try to find package locally first
+    match registry::find_local_package(&name) {
+        Some(local_path) => {
+            println!("📦 Found '{}' locally at {}", name, local_path.display());
+            match registry::link_local_package(&local_path, &name) {
+                Ok(path) => {
+                    println!("✓ Installed '{}' from local path: {}", name, path.display());
+                    if Path::new("parth.das").exists() {
+                        let deps = vec![types::PkgDep { name: name.clone(), version_req: format!("={}", version) }];
+                        config::update_deps(Path::new("parth.das"), &deps).unwrap_or_else(|e| {
+                            eprintln!("Warning: could not update parth.das: {}", e);
+                        });
+                    }
+                }
+                Err(e) => {
+                    eprintln!("❌ Install failed: {}", e);
+                    std::process::exit(1);
+                }
             }
         }
-        Err(e) => {
-            eprintln!("❌ Install failed: {}", e);
-            std::process::exit(1);
+        None => {
+            // Try to download (will also search local paths)
+            match registry::download_package(&name, &version, "") {
+                Ok(path) => {
+                    println!("✓ Installed '{}@{}' to {}", name, version, path.display());
+                    if Path::new("parth.das").exists() {
+                        let deps = vec![types::PkgDep { name: name.clone(), version_req: format!("={}", version) }];
+                        config::update_deps(Path::new("parth.das"), &deps).unwrap_or_else(|e| {
+                            eprintln!("Warning: could not update parth.das: {}", e);
+                        });
+                    }
+                }
+                Err(e) => {
+                    eprintln!("❌ Install failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
     }
 }
 
-fn cmd_publish(args: &[String]) {
+fn cmd_publish(_args: &[String]) {
     if !Path::new("parth.das").exists() {
         eprintln!("Error: no parth.das found"); std::process::exit(1);
     }
@@ -942,7 +994,6 @@ fn cmd_publish(args: &[String]) {
         std::process::exit(1);
     }
 
-    let registry_arg = args.first().map(|s| s.as_str()).unwrap_or(&cfg.registry_url);
     let pkg_dir = Path::new(".");
     let cache_dir = registry::package_src(pkg_dir, &cfg.pkg_name, &cfg.pkg_version).unwrap_or_else(|e| {
         eprintln!("❌ Package failed: {}", e); std::process::exit(1);
@@ -960,20 +1011,7 @@ fn cmd_publish(args: &[String]) {
     }
 
     println!("✓ Published '{}@{}' (checksum: {}...)", cfg.pkg_name, cfg.pkg_version, &checksum[..16]);
-
-    if !registry_arg.is_empty() && registry_arg != "local" {
-        match registry::publish_to_remote(
-            &cfg.pkg_name, &cfg.pkg_version,
-            &cfg.pkg_author, &cfg.pkg_description,
-            &cache_dir, registry_arg, &checksum,
-        ) {
-            Ok(()) => println!("✓ Published '{}@{}' to {}", cfg.pkg_name, cfg.pkg_version, registry_arg),
-            Err(e) => {
-                eprintln!("⚠️  Local publish succeeded, but remote publish failed: {}", e);
-                eprintln!("ℹ️  To push manually: rsync -avz ~/.parth/ user@host:~/.parth/");
-            }
-        }
-    }
+    println!("📦 Package cached at: {}", cache_dir.display());
 }
 
 fn cmd_sign(args: &[String]) {
@@ -1245,6 +1283,118 @@ fn cmd_clean() {
     println!("🧹 Cleaned build directory");
 }
 
+fn cmd_link(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Usage: parth link <path>");
+        std::process::exit(1);
+    }
+    let path = &args[0];
+    let source_path = std::fs::canonicalize(path).unwrap_or_else(|e| {
+        eprintln!("Error: cannot resolve path '{}': {}", path, e);
+        std::process::exit(1);
+    });
+    
+    if !source_path.join("parth.das").exists() {
+        eprintln!("Error: '{}' is not a valid package (no parth.das found)", path);
+        std::process::exit(1);
+    }
+    
+    // Read package name from parth.das
+    let cfg = config::read_config(&source_path.join("parth.das")).unwrap_or_else(|e| {
+        eprintln!("Error: {}", e); std::process::exit(1);
+    });
+    
+    if cfg.pkg_name.is_empty() || cfg.pkg_name == "project" {
+        eprintln!("Error: package name must be set in [package] section");
+        std::process::exit(1);
+    }
+
+    // Get version from parth.das
+    let version = if cfg.pkg_version.is_empty() { "0.1.0" } else { &cfg.pkg_version };
+    
+    // Copy to ~/.parth/packages/<name>/
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let global_dir = PathBuf::from(home).join(".parth").join("packages").join(&cfg.pkg_name);
+    
+    // Remove existing if present
+    if global_dir.exists() {
+        let _ = fs::remove_dir_all(&global_dir);
+    }
+    
+    // Copy the package
+    if let Err(e) = registry::copy_dir_recursive(&source_path, &global_dir) {
+        eprintln!("❌ Link failed: {}", e);
+        std::process::exit(1);
+    }
+    
+    println!("🔗 Linked: {} v{}", cfg.pkg_name, version);
+    println!("   Path: {}", global_dir.display());
+}
+
+fn cmd_list() {
+    println!("📦 Available packages:");
+    let mut found = false;
+
+    // 1. Global packages (~/.parth/packages/)
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let global_dir = PathBuf::from(home).join(".parth").join("packages");
+    if global_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&global_dir) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let version = read_package_version_from_dir(&entry.path())
+                        .unwrap_or_else(|| "0.1.0".to_string());
+                    println!("  {} v{} (global)", name, version);
+                    found = true;
+                }
+            }
+        }
+    }
+
+    // 2. Local packages (./packages/)
+    if let Ok(cwd) = std::env::current_dir() {
+        let local_dir = cwd.join("packages");
+        if local_dir.exists() {
+            if let Ok(entries) = fs::read_dir(&local_dir) {
+                for entry in entries.flatten() {
+                    if entry.path().is_dir() {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        let version = read_package_version_from_dir(&entry.path())
+                            .unwrap_or_else(|| "0.1.0".to_string());
+                        println!("  {} v{} (local)", name, version);
+                        found = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if !found {
+        println!("  (no packages found)");
+    }
+}
+
+fn read_package_version_from_dir(pkg_dir: &Path) -> Option<String> {
+    let das_path = pkg_dir.join("parth.das");
+    if !das_path.exists() { return None; }
+    let content = fs::read_to_string(&das_path).ok()?;
+    let mut in_package = false;
+    for line in content.lines() {
+        let t = line.trim();
+        if t == "[package]" { in_package = true; continue; }
+        if t.starts_with('[') && t.ends_with(']') { in_package = false; continue; }
+        if in_package {
+            if let Some(eq) = t.find('=') {
+                let key = t[..eq].trim();
+                let val = t[eq + 1..].trim().trim_matches('"');
+                if key == "version" { return Some(val.to_string()); }
+            }
+        }
+    }
+    None
+}
+
 fn cmd_help() {
     println!("Ajeeb Package Manager — parth v0.1.0");
     println!();
@@ -1286,6 +1436,8 @@ fn cmd_help() {
     println!("  audit            Security audit");
     println!("  cache <cmd>      Cache management");
     println!("  workspace <cmd>  Workspace management");
+    println!("  link <path>      Link a local package to cache");
+    println!("  list             Show all available packages");
 }
 
 fn main() {
@@ -1340,6 +1492,8 @@ fn main() {
         "audit" => cmd_audit(&args[2..]),
         "cache" => cmd_cache(&args[2..]),
         "workspace" => cmd_workspace(&args[2..]),
+        "link" => cmd_link(&args[2..]),
+        "list" => cmd_list(),
         "version" => cmd_version(),
         "clean" => cmd_clean(),
         "help" | "-h" | "--help" => cmd_help(),

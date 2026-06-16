@@ -30,6 +30,100 @@ pub fn package_cache_dir(name: &str, version: &str) -> PathBuf {
     parth_home().join("packages").join(sanitize_pkg_segment(name)).join(sanitize_pkg_segment(version))
 }
 
+// ── Local Package Resolution (4 locations) ──────────────────────────
+
+/// Search locations for local packages:
+/// 1) ./packages/<name>/
+/// 2) ~/.parth/packages/<name>/
+/// 3) ../packages/<name>/
+/// 4) <ajeeb_root>/packages/<name>/
+pub fn find_local_package(name: &str) -> Option<PathBuf> {
+    let search_roots = local_package_search_paths();
+    for root in &search_roots {
+        let pkg_dir = root.join(sanitize_pkg_segment(name));
+        if pkg_dir.exists() && pkg_dir.join("parth.das").exists() {
+            return Some(pkg_dir);
+        }
+    }
+    None
+}
+
+/// Get all search paths for local packages
+pub fn local_package_search_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    
+    // 1) ./packages/<name>/
+    if let Ok(cwd) = std::env::current_dir() {
+        paths.push(cwd.join("packages"));
+    }
+    
+    // 2) ~/.parth/packages/<name>/
+    paths.push(parth_home().join("packages"));
+    
+    // 3) ../packages/<name>/
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Some(parent) = cwd.parent() {
+            paths.push(parent.join("packages"));
+        }
+    }
+    
+    // 4) <ajeeb_root>/packages/<name>/
+    let root = find_ajeeb_root();
+    paths.push(root.join("packages"));
+    
+    paths
+}
+
+/// Find the Ajeeb root directory
+fn find_ajeeb_root() -> PathBuf {
+    if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
+        let mut dir = PathBuf::from(manifest);
+        loop {
+            if dir.join("compiler").join("compiler.ajb").exists() { return dir; }
+            if !dir.pop() { break; }
+        }
+    }
+    let mut dir = std::env::current_dir().unwrap_or_default();
+    loop {
+        if dir.join("compiler").join("compiler.ajb").exists() { return dir; }
+        if !dir.pop() { break; }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let mut d = parent.to_path_buf();
+            loop {
+                if d.join("compiler").join("compiler.ajb").exists() { return d; }
+                if !d.pop() { break; }
+            }
+        }
+    }
+    PathBuf::from("..")
+}
+
+/// Find all local packages across all search locations
+pub fn find_all_local_packages() -> Vec<(String, PathBuf)> {
+    let mut packages = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    
+    for root in local_package_search_paths() {
+        if !root.exists() { continue; }
+        if let Ok(entries) = fs::read_dir(&root) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let name = path.file_name().unwrap().to_string_lossy().to_string();
+                    if !seen.contains(&name) && path.join("parth.das").exists() {
+                        seen.insert(name.clone());
+                        packages.push((name, path));
+                    }
+                }
+            }
+        }
+    }
+    
+    packages
+}
+
 // ── Ed25519 Key Management ──────────────────────────────────────────
 
 /// Generate a new Ed25519 keypair and save to ~/.parth/keys/
@@ -300,7 +394,7 @@ pub fn package_src(pkg_dir: &Path, name: &str, version: &str) -> Result<PathBuf,
     Ok(cache_dir)
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+pub fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
     fs::create_dir_all(dst).map_err(|e| format!("Cannot create {}: {}", dst.display(), e))?;
     for entry in fs::read_dir(src).map_err(|e| format!("Cannot read {}: {}", src.display(), e))? {
         let entry = entry.map_err(|e| format!("Dir entry: {}", e))?;
@@ -347,21 +441,29 @@ pub fn remote_fetch_index(_registry_url: &str, _package_name: &str) -> RegistryI
 }
 
 /// Download a package from the remote registry and cache it
-pub fn download_package(name: &str, version: &str, registry_url: &str) -> Result<PathBuf, String> {
+pub fn download_package(name: &str, version: &str, _registry_url: &str) -> Result<PathBuf, String> {
     let cached = package_cache_dir(name, version);
     if cached.join("parth.das").exists() {
         return Ok(cached); // Already cached
     }
 
-    if registry_url.is_empty() || registry_url == "local" {
-        return Err(format!(
-            "Package '{}@{}' not found locally and no remote registry configured.",
-            name, version
-        ));
+    // Try to find in local search paths
+    if let Some(local_path) = find_local_package(name) {
+        // Copy from local path to cache
+        fs::create_dir_all(&cached).map_err(|e| format!("Cannot create cache dir: {}", e))?;
+        if let Some(das_file) = local_path.join("parth.das").as_path().to_str() {
+            let _ = fs::copy(das_file, cached.join("parth.das"));
+        }
+        if local_path.join("src").exists() {
+            copy_dir_recursive(&local_path.join("src"), &cached.join("src"))?;
+        }
+        return Ok(cached);
     }
 
-    download_from_remote(name, version, registry_url, &cached)?;
-    Ok(cached)
+    Err(format!(
+        "Package '{}' not found locally. Searched in:\n  1) ./packages/\n  2) ~/.parth/packages/\n  3) ../packages/\n  4) <ajeeb_root>/packages/",
+        name
+    ))
 }
 
 fn download_from_remote(name: &str, version: &str, url: &str, dest: &Path) -> Result<(), String> {
@@ -424,13 +526,30 @@ fn http_get(url: &str) -> Result<String, String> {
 }
 
 /// Search the registry for packages matching a query
-pub fn search_packages(query: &str, registry_url: &str) -> Vec<SearchResult> {
+pub fn search_packages(query: &str, _registry_url: &str) -> Vec<SearchResult> {
     let mut results = Vec::new();
+    let mut seen = std::collections::HashSet::new();
 
-    // Search local index
+    // Search all local packages
+    for (name, pkg_dir) in find_all_local_packages() {
+        if !seen.contains(&name) && (name.contains(query) || query.is_empty()) {
+            // Try to read version from parth.das
+            let version = read_package_version(&pkg_dir).unwrap_or_else(|| "0.1.0".to_string());
+            let description = read_package_description(&pkg_dir).unwrap_or_default();
+            
+            results.push(SearchResult {
+                name: name.clone(),
+                latest_version: version,
+                description,
+            });
+            seen.insert(name);
+        }
+    }
+
+    // Also search local index
     let index = read_index();
     for (name, versions) in &index {
-        if name.contains(query) || query.is_empty() {
+        if !seen.contains(name) && (name.contains(query) || query.is_empty()) {
             let latest = versions.keys().max_by(|a, b| {
                 match (Version::parse(a), Version::parse(b)) {
                     (Some(va), Some(vb)) => va.cmp(&vb),
@@ -438,31 +557,93 @@ pub fn search_packages(query: &str, registry_url: &str) -> Vec<SearchResult> {
                 }
             }).cloned().unwrap_or_default();
 
-            // Get metadata
             let meta = read_metadata(name, &latest);
             results.push(SearchResult {
                 name: name.clone(),
                 latest_version: latest,
                 description: meta.description,
             });
-        }
-    }
-
-    // If remote registry is configured, merge remote results
-    if !registry_url.is_empty() && registry_url != "local" {
-        if let Ok(json) = http_get(&format!("{}/api/v1/search?q={}", registry_url.trim_end_matches('/'), query)) {
-            if let Ok(remote_results) = serde_json::from_str::<Vec<SearchResult>>(&json) {
-                for r in remote_results {
-                    if !results.iter().any(|x| x.name == r.name) {
-                        results.push(r);
-                    }
-                }
-            }
+            seen.insert(name.clone());
         }
     }
 
     results.sort_by(|a, b| a.name.cmp(&b.name));
     results
+}
+
+/// Read version from a package's parth.das
+fn read_package_version(pkg_dir: &Path) -> Option<String> {
+    let das_path = pkg_dir.join("parth.das");
+    if !das_path.exists() { return None; }
+    let content = fs::read_to_string(&das_path).ok()?;
+    let mut in_package = false;
+    for line in content.lines() {
+        let t = line.trim();
+        if t == "[package]" { in_package = true; continue; }
+        if t.starts_with('[') && t.ends_with(']') { in_package = false; continue; }
+        if in_package {
+            if let Some(eq) = t.find('=') {
+                let key = t[..eq].trim();
+                let val = t[eq + 1..].trim().trim_matches('"');
+                if key == "version" { return Some(val.to_string()); }
+            }
+        }
+    }
+    None
+}
+
+/// Read description from a package's parth.das
+fn read_package_description(pkg_dir: &Path) -> Option<String> {
+    let das_path = pkg_dir.join("parth.das");
+    if !das_path.exists() { return None; }
+    let content = fs::read_to_string(&das_path).ok()?;
+    let mut in_package = false;
+    for line in content.lines() {
+        let t = line.trim();
+        if t == "[package]" { in_package = true; continue; }
+        if t.starts_with('[') && t.ends_with(']') { in_package = false; continue; }
+        if in_package {
+            if let Some(eq) = t.find('=') {
+                let key = t[..eq].trim();
+                let val = t[eq + 1..].trim().trim_matches('"');
+                if key == "description" { return Some(val.to_string()); }
+            }
+        }
+    }
+    None
+}
+
+/// Link a local package to the cache
+pub fn link_local_package(source_path: &Path, name: &str) -> Result<PathBuf, String> {
+    if !source_path.exists() {
+        return Err(format!("Source path '{}' does not exist", source_path.display()));
+    }
+    
+    let version = read_package_version(source_path)
+        .unwrap_or_else(|| "0.1.0".to_string());
+    
+    let cached = package_cache_dir(name, &version);
+    fs::create_dir_all(&cached).map_err(|e| format!("Cannot create cache dir: {}", e))?;
+    
+    // Copy parth.das
+    let das_file = source_path.join("parth.das");
+    if das_file.exists() {
+        fs::copy(&das_file, cached.join("parth.das"))
+            .map_err(|e| format!("Cannot copy parth.das: {}", e))?;
+    }
+    
+    // Copy src directory
+    if source_path.join("src").exists() {
+        copy_dir_recursive(&source_path.join("src"), &cached.join("src"))?;
+    }
+    
+    // Copy runtime directory if it exists
+    if source_path.join("runtime").exists() {
+        copy_dir_recursive(&source_path.join("runtime"), &cached.join("runtime"))?;
+    }
+    
+    println!("🔗 Linked '{}' from {} to cache", name, source_path.display());
+    Ok(cached)
 }
 
 // ── Package signing (Ed25519) ─────────────────────────────────────
