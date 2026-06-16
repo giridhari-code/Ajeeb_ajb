@@ -43,7 +43,18 @@ impl Codegen {
         let saved_unnamed = self.unnamed_count;
         let saved_string_vars = self.string_vars.clone();
         let saved_string_regs = self.string_regs.clone();
+        let saved_var_types = self.var_types.clone();
+        let saved_bool_regs = self.bool_regs.clone();
+        let saved_array_regs = self.array_regs.clone();
+        let saved_array_vars = self.array_vars.clone();
+        let saved_enum_regs = self.enum_regs.clone();
+        let saved_enum_vars = self.enum_vars.clone();
         self.string_regs.clear();
+        self.bool_regs.clear();
+        self.array_regs.clear();
+        self.array_vars.clear();
+        self.enum_regs.clear();
+        self.enum_vars.clear();
         self.unnamed_count = params.len() as u64 + 1;
 
         let mut fn_body = String::new();
@@ -89,13 +100,19 @@ impl Codegen {
         self.unnamed_count = saved_unnamed;
         self.string_vars = saved_string_vars;
         self.string_regs = saved_string_regs;
+        self.var_types = saved_var_types;
+        self.bool_regs = saved_bool_regs;
+        self.array_regs = saved_array_regs;
+        self.array_vars = saved_array_vars;
+        self.enum_regs = saved_enum_regs;
+        self.enum_vars = saved_enum_vars;
         Ok(())
     }
 
     pub(super) fn collect_vars(&mut self, stmt: &Stmt, vars: &mut HashMap<String, String>, out: &mut String) {
         match stmt {
             Stmt::Let { name, .. } | Stmt::Const { name, .. } => {
-                if !vars.contains_key(name) {
+                if !vars.contains_key(name) && !self.globals_map.contains_key(name) {
                     let reg = self.fresh();
                     write!(out, "  {} = alloca i64, align 8\n", reg).unwrap();
                     vars.insert(name.clone(), reg);
@@ -148,24 +165,50 @@ impl Codegen {
                 Err(format!("Nested function not supported: {}", name))
             }
             Stmt::Let { name, value, .. } => {
-                let var_reg = self.variables.get(name).cloned()
-                    .ok_or_else(|| format!("Unknown variable: {}", name))?;
+                let var_reg = if let Some(gname) = self.globals_map.get(name) {
+                    format!("@{}", gname)
+                } else {
+                    self.variables.get(name).cloned()
+                        .ok_or_else(|| format!("Unknown variable: {}", name))?
+                };
                 let val = self.emit_expr(value)?;
                 write!(self.body, "  store i64 {}, ptr {}\n", val, var_reg).unwrap();
                 self.track_var_type(name, value);
                 if self.string_regs.contains(&val) {
                     self.string_vars.insert(name.clone());
                 }
+                if self.bool_regs.contains(&val) {
+                    self.bool_vars.insert(name.clone());
+                }
+                if self.array_regs.contains(&val) {
+                    self.array_vars.insert(name.clone());
+                }
+                if self.enum_regs.contains(&val) {
+                    self.enum_vars.insert(name.clone());
+                }
                 Ok(())
             }
             Stmt::Const { name, value, .. } => {
-                let var_reg = self.variables.get(name).cloned()
-                    .ok_or_else(|| format!("Unknown const: {}", name))?;
+                let var_reg = if let Some(gname) = self.globals_map.get(name) {
+                    format!("@{}", gname)
+                } else {
+                    self.variables.get(name).cloned()
+                        .ok_or_else(|| format!("Unknown const: {}", name))?
+                };
                 let val = self.emit_expr(value)?;
                 write!(self.body, "  store i64 {}, ptr {}\n", val, var_reg).unwrap();
                 self.track_var_type(name, value);
                 if self.string_regs.contains(&val) {
                     self.string_vars.insert(name.clone());
+                }
+                if self.bool_regs.contains(&val) {
+                    self.bool_vars.insert(name.clone());
+                }
+                if self.array_regs.contains(&val) {
+                    self.array_vars.insert(name.clone());
+                }
+                if self.enum_regs.contains(&val) {
+                    self.enum_vars.insert(name.clone());
                 }
                 Ok(())
             }

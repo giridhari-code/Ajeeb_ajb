@@ -1,5 +1,6 @@
 use std::fmt::Write;
-use crate::ast::{BinOp, Expr, Pattern, TypeAnnot};
+use std::collections::HashMap;
+use crate::ast::{BinOp, Expr, Pattern, Stmt, TypeAnnot};
 use super::Codegen;
 
 impl Codegen {
@@ -31,11 +32,37 @@ impl Codegen {
                 Ok(reg)
             }
             Expr::Ident(name, ..) => {
-                if let Some(var_reg) = self.variables.get(name).cloned() {
+                // Globals take priority over locals
+                if let Some(gname) = self.globals_map.get(name).cloned() {
+                    let reg = self.fresh();
+                    write!(self.body, "  {} = load i64, ptr @{}\n", reg, gname).unwrap();
+                    if self.string_vars.contains(name) {
+                        self.string_regs.insert(reg.clone());
+                    }
+                    if self.bool_vars.contains(name) {
+                        self.bool_regs.insert(reg.clone());
+                    }
+                    if self.array_vars.contains(name) {
+                        self.array_regs.insert(reg.clone());
+                    }
+                    if self.enum_vars.contains(name) {
+                        self.enum_regs.insert(reg.clone());
+                    }
+                    Ok(reg)
+                } else if let Some(var_reg) = self.variables.get(name).cloned() {
                     let reg = self.fresh();
                     write!(self.body, "  {} = load i64, ptr {}\n", reg, var_reg).unwrap();
                     if self.string_vars.contains(name) {
                         self.string_regs.insert(reg.clone());
+                    }
+                    if self.bool_vars.contains(name) {
+                        self.bool_regs.insert(reg.clone());
+                    }
+                    if self.array_vars.contains(name) {
+                        self.array_regs.insert(reg.clone());
+                    }
+                    if self.enum_vars.contains(name) {
+                        self.enum_regs.insert(reg.clone());
                     }
                     Ok(reg)
                 } else if let Some(gname) = self.globals_map.get(name).cloned() {
@@ -43,6 +70,15 @@ impl Codegen {
                     write!(self.body, "  {} = load i64, ptr @{}\n", reg, gname).unwrap();
                     if self.string_vars.contains(name) {
                         self.string_regs.insert(reg.clone());
+                    }
+                    if self.bool_vars.contains(name) {
+                        self.bool_regs.insert(reg.clone());
+                    }
+                    if self.array_vars.contains(name) {
+                        self.array_regs.insert(reg.clone());
+                    }
+                    if self.enum_vars.contains(name) {
+                        self.enum_regs.insert(reg.clone());
                     }
                     Ok(reg)
                 } else if name == "__str_ptr" {
@@ -86,43 +122,83 @@ impl Codegen {
                         return Ok(final_reg);
                     }
                     BinOp::Eq => {
-                        write!(self.body, "  {} = icmp eq i64 {}, {}\n", reg, lhs, rhs).unwrap();
+                        let (cmp_lhs, cmp_rhs) = if self.enum_regs.contains(&lhs) && self.enum_regs.contains(&rhs) {
+                            let lp = self.fresh();
+                            write!(self.body, "  {} = inttoptr i64 {} to ptr\n", lp, lhs).unwrap();
+                            let lt = self.fresh();
+                            write!(self.body, "  {} = load i64, ptr {}\n", lt, lp).unwrap();
+                            let rp = self.fresh();
+                            write!(self.body, "  {} = inttoptr i64 {} to ptr\n", rp, rhs).unwrap();
+                            let rt = self.fresh();
+                            write!(self.body, "  {} = load i64, ptr {}\n", rt, rp).unwrap();
+                            (lt, rt)
+                        } else {
+                            (lhs, rhs)
+                        };
+                        let cmp_reg = self.fresh();
+                        write!(self.body, "  {} = icmp eq i64 {}, {}\n", cmp_reg, cmp_lhs, cmp_rhs).unwrap();
                         let zext = self.fresh();
-                        write!(self.body, "  {} = zext i1 {} to i64\n", zext, reg).unwrap();
+                        write!(self.body, "  {} = zext i1 {} to i64\n", zext, cmp_reg).unwrap();
+                        self.bool_regs.insert(zext.clone());
                         return Ok(zext);
                     }
                     BinOp::Neq => {
-                        write!(self.body, "  {} = icmp ne i64 {}, {}\n", reg, lhs, rhs).unwrap();
+                        let (cmp_lhs, cmp_rhs) = if self.enum_regs.contains(&lhs) && self.enum_regs.contains(&rhs) {
+                            let lp = self.fresh();
+                            write!(self.body, "  {} = inttoptr i64 {} to ptr\n", lp, lhs).unwrap();
+                            let lt = self.fresh();
+                            write!(self.body, "  {} = load i64, ptr {}\n", lt, lp).unwrap();
+                            let rp = self.fresh();
+                            write!(self.body, "  {} = inttoptr i64 {} to ptr\n", rp, rhs).unwrap();
+                            let rt = self.fresh();
+                            write!(self.body, "  {} = load i64, ptr {}\n", rt, rp).unwrap();
+                            (lt, rt)
+                        } else {
+                            (lhs, rhs)
+                        };
+                        let cmp_reg = self.fresh();
+                        write!(self.body, "  {} = icmp ne i64 {}, {}\n", cmp_reg, cmp_lhs, cmp_rhs).unwrap();
                         let zext = self.fresh();
-                        write!(self.body, "  {} = zext i1 {} to i64\n", zext, reg).unwrap();
+                        write!(self.body, "  {} = zext i1 {} to i64\n", zext, cmp_reg).unwrap();
+                        self.bool_regs.insert(zext.clone());
                         return Ok(zext);
                     }
                     BinOp::Lt => {
                         write!(self.body, "  {} = icmp slt i64 {}, {}\n", reg, lhs, rhs).unwrap();
                         let zext = self.fresh();
                         write!(self.body, "  {} = zext i1 {} to i64\n", zext, reg).unwrap();
+                        self.bool_regs.insert(zext.clone());
                         return Ok(zext);
                     }
                     BinOp::Gt => {
                         write!(self.body, "  {} = icmp sgt i64 {}, {}\n", reg, lhs, rhs).unwrap();
                         let zext = self.fresh();
                         write!(self.body, "  {} = zext i1 {} to i64\n", zext, reg).unwrap();
+                        self.bool_regs.insert(zext.clone());
                         return Ok(zext);
                     }
                     BinOp::Le => {
                         write!(self.body, "  {} = icmp sle i64 {}, {}\n", reg, lhs, rhs).unwrap();
                         let zext = self.fresh();
                         write!(self.body, "  {} = zext i1 {} to i64\n", zext, reg).unwrap();
+                        self.bool_regs.insert(zext.clone());
                         return Ok(zext);
                     }
                     BinOp::Ge => {
                         write!(self.body, "  {} = icmp sge i64 {}, {}\n", reg, lhs, rhs).unwrap();
                         let zext = self.fresh();
                         write!(self.body, "  {} = zext i1 {} to i64\n", zext, reg).unwrap();
+                        self.bool_regs.insert(zext.clone());
                         return Ok(zext);
                     }
-                    BinOp::And => write!(self.body, "  {} = and i64 {}, {}\n", reg, lhs, rhs).unwrap(),
-                    BinOp::Or => write!(self.body, "  {} = or i64 {}, {}\n", reg, lhs, rhs).unwrap(),
+                    BinOp::And => {
+                        write!(self.body, "  {} = and i64 {}, {}\n", reg, lhs, rhs).unwrap();
+                        self.bool_regs.insert(reg.clone());
+                    }
+                    BinOp::Or => {
+                        write!(self.body, "  {} = or i64 {}, {}\n", reg, lhs, rhs).unwrap();
+                        self.bool_regs.insert(reg.clone());
+                    }
                 }
                 Ok(reg)
             }
@@ -143,6 +219,7 @@ impl Codegen {
                 write!(self.body, "  {} = icmp eq i64 {}, 0\n", cmp, v).unwrap();
                 let reg = self.fresh();
                 write!(self.body, "  {} = zext i1 {} to i64\n", reg, cmp).unwrap();
+                self.bool_regs.insert(reg.clone());
                 Ok(reg)
             }
             Expr::UnaryMinus(val, ..) => {
@@ -166,6 +243,41 @@ impl Codegen {
                         for (i, arg_reg) in compiled_args.iter().enumerate() {
                             if self.string_regs.contains(arg_reg) {
                                 string_args.push(arg_reg.clone());
+                            } else if self.bool_regs.contains(arg_reg) {
+                                // Boolean: print "true" or "false"
+                                let is_zero = self.fresh();
+                                write!(self.body, "  {} = icmp eq i64 {}, 0\n", is_zero, arg_reg).unwrap();
+                                let true_ptr = self.fresh();
+                                let true_str = self.global_str("true");
+                                write!(self.body, "  {} = getelementptr inbounds i8, ptr @{}, i64 0\n", true_ptr, true_str).unwrap();
+                                let false_ptr = self.fresh();
+                                let false_str = self.global_str("false");
+                                write!(self.body, "  {} = getelementptr inbounds i8, ptr @{}, i64 0\n", false_ptr, false_str).unwrap();
+                                let chosen_ptr = self.fresh();
+                                write!(self.body, "  {} = select i1 {}, ptr {}, ptr {}\n", chosen_ptr, is_zero, false_ptr, true_ptr).unwrap();
+                                let as_int = self.fresh();
+                                write!(self.body, "  {} = ptrtoint ptr {} to i64\n", as_int, chosen_ptr).unwrap();
+                                self.string_regs.insert(as_int.clone());
+                                string_args.push(as_int);
+                            } else if self.array_regs.contains(arg_reg) {
+                                // Array: call array_to_string(ptr, len)
+                                self.declare_extern("array_to_string");
+                                let arr_ptr_val = self.fresh();
+                                write!(self.body, "  {} = inttoptr i64 {} to ptr\n", arr_ptr_val, arg_reg).unwrap();
+                                // Load length from arr[0]
+                                let len_ptr = self.fresh();
+                                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 0\n", len_ptr, arr_ptr_val).unwrap();
+                                let arr_len = self.fresh();
+                                write!(self.body, "  {} = load i64, ptr {}\n", arr_len, len_ptr).unwrap();
+                                // Call array_to_string(ptr+1, len) — pass pointer to data (skip length prefix)
+                                let data_ptr = self.fresh();
+                                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 1\n", data_ptr, arr_ptr_val).unwrap();
+                                let data_as_int = self.fresh();
+                                write!(self.body, "  {} = ptrtoint ptr {} to i64\n", data_as_int, data_ptr).unwrap();
+                                let result_ptr = self.fresh();
+                                write!(self.body, "  {} = call i64 @array_to_string(i64 {}, i64 {})\n", result_ptr, data_as_int, arr_len).unwrap();
+                                self.string_regs.insert(result_ptr.clone());
+                                string_args.push(result_ptr);
                             } else {
                                 let buf = self.fresh();
                                 write!(self.body, "  {} = alloca i8, i64 32\n", buf).unwrap();
@@ -227,6 +339,21 @@ impl Codegen {
                         self.string_regs.insert(ptr_as_int.clone());
                         Ok(ptr_as_int)
                     }
+                    "assert_eq" => {
+                        let left = compiled_args.get(0).ok_or("assert_eq expects 2 arguments")?;
+                        let right = compiled_args.get(1).ok_or("assert_eq expects 2 arguments")?;
+                        let cmp_reg = self.fresh();
+                        write!(self.body, "  {} = icmp eq i64 {}, {}\n", cmp_reg, left, right).unwrap();
+                        let cont_label = self.fresh_label();
+                        let fail_label = self.fresh_label();
+                        write!(self.body, "  br i1 {}, label %{}, label %{}\n", cmp_reg, cont_label, fail_label).unwrap();
+                        write!(self.body, "{}:\n", fail_label).unwrap();
+                        write!(self.body, "  br label %{}\n", cont_label).unwrap();
+                        write!(self.body, "{}:\n", cont_label).unwrap();
+                        let reg = self.fresh();
+                        write!(self.body, "  {} = add i64 0, 0\n", reg).unwrap();
+                        Ok(reg)
+                    }
                     _ => {
                         if !self.declare_extern(name) && !self.user_fns.contains(name.as_str()) {
                             return Err(format!("LLVM codegen not supported for interpreter builtin: {}", name));
@@ -245,6 +372,8 @@ impl Codegen {
                                 | "trim" | "readFile" | "readArg" | "replace" | "chr"
                             ) {
                                 self.string_regs.insert(reg.clone());
+                            } else if self.fn_return_types.get(name.as_str()).map_or(false, |rt| matches!(rt, TypeAnnot::String)) {
+                                self.string_regs.insert(reg.clone());
                             }
                             Ok(reg)
                         }
@@ -252,22 +381,39 @@ impl Codegen {
                 }
             }
             Expr::ArrayLit(items, ..) => {
-                if items.is_empty() {
+                let count = items.len() as u64;
+                // Empty array → NULL pointer (length 0)
+                if count == 0 {
                     let reg = self.fresh();
                     write!(self.body, "  {} = add i64 0, 0\n", reg).unwrap();
+                    self.array_regs.insert(reg.clone());
                     return Ok(reg);
                 }
-                let count = items.len() as u64;
+                // Layout: [len][elem0][elem1]...  (length prefix for C runtime)
                 let arr_ptr = self.fresh();
-                write!(self.body, "  {} = alloca i64, i64 {}\n", arr_ptr, count).unwrap();
+                write!(self.body, "  {} = alloca i64, i64 {}\n", arr_ptr, count + 1).unwrap();
+                // Store length at index 0
+                let len_ptr = self.fresh();
+                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 0\n", len_ptr, arr_ptr).unwrap();
+                write!(self.body, "  store i64 {}, ptr {}\n", count, len_ptr).unwrap();
+                // Store elements at indices 1..N
                 for (i, item) in items.iter().enumerate() {
                     let val = self.emit_expr(item)?;
+                    // Tag sub-array pointers with bit 63
+                    let final_val = if self.array_regs.contains(&val) {
+                        let tagged = self.fresh();
+                        write!(self.body, "  {} = or i64 {}, 9223372036854775808\n", tagged, val).unwrap();
+                        tagged
+                    } else {
+                        val
+                    };
                     let elem_ptr = self.fresh();
-                    write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, arr_ptr, i).unwrap();
-                    write!(self.body, "  store i64 {}, ptr {}\n", val, elem_ptr).unwrap();
+                    write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, arr_ptr, i + 1).unwrap();
+                    write!(self.body, "  store i64 {}, ptr {}\n", final_val, elem_ptr).unwrap();
                 }
                 let ptr_as_i64 = self.fresh();
                 write!(self.body, "  {} = ptrtoint ptr {} to i64\n", ptr_as_i64, arr_ptr).unwrap();
+                self.array_regs.insert(ptr_as_i64.clone());
                 Ok(ptr_as_i64)
             }
             Expr::Index { obj, index, .. } => {
@@ -275,11 +421,21 @@ impl Codegen {
                 let idx = self.emit_expr(index)?;
                 let arr_ptr = self.fresh();
                 write!(self.body, "  {} = inttoptr i64 {} to ptr\n", arr_ptr, arr_val).unwrap();
+                // Skip length prefix: element at index i is at offset i+1
+                let actual_idx = self.fresh();
+                write!(self.body, "  {} = add i64 {}, 1\n", actual_idx, idx).unwrap();
                 let elem_ptr = self.fresh();
-                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, arr_ptr, idx).unwrap();
+                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, arr_ptr, actual_idx).unwrap();
                 let reg = self.fresh();
                 write!(self.body, "  {} = load i64, ptr {}\n", reg, elem_ptr).unwrap();
-                Ok(reg)
+                // If the element has the array pointer tag (bit 63), untag it
+                let is_tagged = self.fresh();
+                write!(self.body, "  {} = icmp slt i64 {}, 0\n", is_tagged, reg).unwrap();
+                let untagged = self.fresh();
+                write!(self.body, "  {} = and i64 {}, 9223372036854775807\n", untagged, reg).unwrap();
+                let final_reg = self.fresh();
+                write!(self.body, "  {} = select i1 {}, i64 {}, i64 {}\n", final_reg, is_tagged, untagged, reg).unwrap();
+                Ok(final_reg)
             }
             Expr::IndexAssign { obj, index, value, .. } => {
                 let arr_val = self.emit_expr(obj)?;
@@ -287,15 +443,22 @@ impl Codegen {
                 let val = self.emit_expr(value)?;
                 let arr_ptr = self.fresh();
                 write!(self.body, "  {} = inttoptr i64 {} to ptr\n", arr_ptr, arr_val).unwrap();
+                // Skip length prefix: element at index i is at offset i+1
+                let actual_idx = self.fresh();
+                write!(self.body, "  {} = add i64 {}, 1\n", actual_idx, idx).unwrap();
                 let elem_ptr = self.fresh();
-                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, arr_ptr, idx).unwrap();
+                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, arr_ptr, actual_idx).unwrap();
                 write!(self.body, "  store i64 {}, ptr {}\n", val, elem_ptr).unwrap();
                 Ok(val)
             }
             Expr::StructLit { struct_name, fields, .. } => {
                 let field_count = fields.len() as u64;
+                let size = field_count.max(1) * 8;
+                self.declare_extern("malloc");
+                let size_reg = self.fresh();
+                write!(self.body, "  {} = add i64 0, {}\n", size_reg, size).unwrap();
                 let struct_ptr = self.fresh();
-                write!(self.body, "  {} = alloca i64, i64 {}\n", struct_ptr, field_count.max(1)).unwrap();
+                write!(self.body, "  {} = call ptr @malloc(i64 {})\n", struct_ptr, size_reg).unwrap();
                 for (i, (fname, fexpr)) in fields.iter().enumerate() {
                     let fval = self.emit_expr(fexpr)?;
                     let elem_ptr = self.fresh();
@@ -370,6 +533,9 @@ impl Codegen {
                         let args_str = call_args.iter().map(|a| format!("i64 {}", a)).collect::<Vec<_>>().join(", ");
                         let reg = self.fresh();
                         write!(self.body, "  {} = call i64 @{}({})\n", reg, mangled_name, args_str).unwrap();
+                        if self.fn_return_types.get(mangled_name.as_str()).map_or(false, |rt| matches!(rt, TypeAnnot::String)) {
+                            self.string_regs.insert(reg.clone());
+                        }
                         return Ok(reg);
                     }
                 }
@@ -389,6 +555,7 @@ impl Codegen {
                 }
                 let ptr_as_i64 = self.fresh();
                 write!(self.body, "  {} = ptrtoint ptr {} to i64\n", ptr_as_i64, enum_ptr).unwrap();
+                self.enum_regs.insert(ptr_as_i64.clone());
                 Ok(ptr_as_i64)
             }
             Expr::EnumRef { enum_name, variant, .. } => {
@@ -403,6 +570,7 @@ impl Codegen {
                 write!(self.body, "  store i64 {}, ptr {}\n", zero, elem_ptr).unwrap();
                 let ptr_as_i64 = self.fresh();
                 write!(self.body, "  {} = ptrtoint ptr {} to i64\n", ptr_as_i64, enum_ptr).unwrap();
+                self.enum_regs.insert(ptr_as_i64.clone());
                 Ok(ptr_as_i64)
             }
             Expr::Match { value, arms, .. } => {
@@ -422,6 +590,8 @@ impl Codegen {
                 let next_label = self.fresh_label();
                 write!(self.body, "  br label %{}\n", next_label).unwrap();
                 write!(self.body, "{}:\n", next_label).unwrap();
+
+                let mut arms_return_string = false;
 
                 for arm in arms {
                     let arm_label = self.fresh_label();
@@ -480,6 +650,9 @@ impl Codegen {
                         }
                     } else {
                         let arm_result = self.emit_expr(&arm.body)?;
+                        if self.string_regs.contains(&arm_result) {
+                            arms_return_string = true;
+                        }
                         write!(self.body, "  store i64 {}, ptr {}\n", arm_result, result_ptr).unwrap();
                     }
 
@@ -503,19 +676,77 @@ impl Codegen {
                 write!(self.body, "{}:\n", merge_label).unwrap();
                 let result = self.fresh();
                 write!(self.body, "  {} = load i64, ptr {}\n", result, result_ptr).unwrap();
+                if arms_return_string {
+                    self.string_regs.insert(result.clone());
+                }
                 Ok(result)
             }
-            Expr::GenericCall { name, args, .. } => {
+            Expr::GenericCall { name, type_args, args, .. } => {
+                // Build specialized function name: print_item[Printer] → print_item_Printer
+                let mut specialized_name = name.clone();
+                for ta in type_args {
+                    specialized_name.push('_');
+                    match ta {
+                        TypeAnnot::Class(s) => specialized_name.push_str(s),
+                        TypeAnnot::Int => specialized_name.push_str("Int"),
+                        TypeAnnot::Float => specialized_name.push_str("Float"),
+                        TypeAnnot::String => specialized_name.push_str("String"),
+                        TypeAnnot::Bool => specialized_name.push_str("Bool"),
+                        _ => specialized_name.push('_'),
+                    }
+                }
+
+                // If not already monomorphized, generate the specialized function
+                if !self.monomorphized.contains(&specialized_name) {
+                    if let Some((type_params, params, body)) = self.generic_fns.get(name).cloned() {
+                        // Build type substitution: T → Printer
+                        let mut type_subst: HashMap<String, TypeAnnot> = HashMap::new();
+                        for (i, tp) in type_params.iter().enumerate() {
+                            if let Some(ta) = type_args.get(i) {
+                                type_subst.insert(tp.clone(), ta.clone());
+                            }
+                        }
+
+                        // Substitute type annotations in parameters
+                        let new_params: Vec<(String, TypeAnnot)> = params.iter().map(|(pname, ptype)| {
+                            (pname.clone(), Self::subst_type_ann(ptype, &type_subst))
+                        }).collect();
+
+                        // Substitute type annotations in body statements
+                        let new_body: Vec<Stmt> = body.iter().map(|s| Self::subst_stmt(s, &type_subst)).collect();
+
+                        // Register the specialized function
+                        self.user_fns.insert(specialized_name.clone());
+                        let ret_type = self.fn_return_types.get(name).cloned().unwrap_or(TypeAnnot::Void);
+                        self.fn_return_types.insert(specialized_name.clone(), ret_type);
+
+                        // Temporarily set var_types for type parameter → concrete type mapping
+                        let saved_var_types = self.var_types.clone();
+                        for (pname, ptype) in &new_params {
+                            match ptype {
+                                TypeAnnot::Class(cn) => {
+                                    self.var_types.insert(pname.clone(), ("struct".into(), cn.clone()));
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        self.monomorphized.insert(specialized_name.clone());
+                        self.emit_fn_def(&specialized_name, &new_params, &new_body)?;
+                        self.var_types = saved_var_types;
+                    }
+                }
+
                 let mut compiled_args = Vec::new();
                 for arg in args {
                     compiled_args.push(self.emit_expr(arg)?);
                 }
-                if !self.declare_extern(name) && !self.user_fns.contains(name.as_str()) {
-                    return Err(format!("LLVM codegen: unknown function {}", name));
-                }
                 let args_str = compiled_args.iter().map(|a| format!("i64 {}", a)).collect::<Vec<_>>().join(", ");
                 let reg = self.fresh();
-                write!(self.body, "  {} = call i64 @{}({})\n", reg, name, args_str).unwrap();
+                write!(self.body, "  {} = call i64 @{}({})\n", reg, specialized_name, args_str).unwrap();
+                if self.fn_return_types.get(specialized_name.as_str()).map_or(false, |rt| matches!(rt, TypeAnnot::String)) {
+                    self.string_regs.insert(reg.clone());
+                }
                 Ok(reg)
             }
             Expr::AssociatedFnCall { type_name, method, args, .. } => {
@@ -535,6 +766,9 @@ impl Codegen {
                 let args_str = compiled_args.iter().map(|a| format!("i64 {}", a)).collect::<Vec<_>>().join(", ");
                 let reg = self.fresh();
                 write!(self.body, "  {} = call i64 @{}({})\n", reg, mangled, args_str).unwrap();
+                if self.fn_return_types.get(mangled.as_str()).map_or(false, |rt| matches!(rt, TypeAnnot::String)) {
+                    self.string_regs.insert(reg.clone());
+                }
                 Ok(reg)
             }
             _ => Err(format!("Unsupported expression: {:?}", expr)),

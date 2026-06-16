@@ -1,0 +1,69 @@
+// ============================================================
+// LLVM Bug-Fix Sprint — PASS/FAIL Regression Tests
+// Covers: CRASH-1, CRASH-2, DISPATCH, PRINTNL
+// Expected: all PASS lines, no crashes
+// ============================================================
+
+// --- BUG-LLVM-CRASH-1: println/print with integer args ---
+function test_crash1(): void {
+    let i: int = 42;
+    let j: int = 100;
+    println("count: ", i, " total: ", j);
+    println("CRASH-1 PASS: multi-arg println with ints");
+}
+
+// --- BUG-LLVM-CRASH-2: Division by zero ---
+function test_crash2(): void {
+    let a: int = 10;
+    let b: int = 0;
+    let result: int = a / b;
+    if (result == 0) {
+        println("CRASH-2 PASS: 10/0 = ", result, " (no crash)");
+    } else {
+        println("CRASH-2 FAIL: expected 0, got ", result);
+    }
+}
+
+// --- BUG-LLVM-PRINTNL: print() vs println() newline ---
+function test_printnl(): void {
+    // print should NOT add newline — next print appears on same line
+    print("PRINTNL-");
+    println("PASS: print without newline");
+}
+
+// --- BUG-LLVM-DISPATCH: Inherent vs trait method dispatch ---
+struct Greeter {
+    name: string,
+}
+
+impl Greeter {
+    fn greet(self) {
+        println("DISPATCH PASS: inherent method on ", self.name);
+    }
+}
+
+trait SayHello {
+    function greet(self);
+}
+
+impl SayHello for Greeter {
+    function greet(self) {
+        println("DISPATCH FAIL: trait method called instead of inherent");
+    }
+}
+
+function test_dispatch(): void {
+    let g = Greeter { name: "Ajeeb" };
+    g.greet();
+}
+
+// --- Main ---
+function main(): int {
+    println("=== LLVM Bug-Fix Sprint ===\n");
+    test_crash1();
+    test_crash2();
+    test_printnl();
+    test_dispatch();
+    println("\n=== All Tests Complete ===");
+    return 0;
+}

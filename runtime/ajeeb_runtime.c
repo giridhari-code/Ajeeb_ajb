@@ -1100,3 +1100,110 @@ AjeebValue ajeeb_now_ms(void) {
 intptr_t now_ms(void) {
     return (intptr_t)ajeeb_now_ms().data.as_int;
 }
+
+// ── Array Printing ────────────────────────────────────────────────────
+// Arrays in the LLVM backend are raw i64* pointers.
+// Convention: bit 63 = 1 means "this element is a pointer to a sub-array"
+//             bit 63 = 0 means "this element is a plain integer"
+
+#define ARRAY_PTR_TAG ((int64_t)1 << 63)
+
+static void array_to_string_rec(int64_t* arr, int64_t len, char* out, int* pos, int* cap) {
+    out[*pos] = '[';
+    (*pos)++;
+    for (int64_t i = 0; i < len; i++) {
+        if (i > 0) {
+            out[*pos] = ',';
+            (*pos)++;
+            out[*pos] = ' ';
+            (*pos)++;
+        }
+        int64_t elem = arr[i];
+        if (elem & ARRAY_PTR_TAG) {
+            // It's a pointer to a sub-array
+            int64_t* sub = (int64_t*)(uintptr_t)(elem & ~ARRAY_PTR_TAG);
+            // First element of sub-array is its length
+            int64_t sub_len = sub[0];
+            array_to_string_rec(sub + 1, sub_len, out, pos, cap);
+        } else {
+            // Plain integer
+            int written = snprintf(out + *pos, *cap - *pos, "%ld", (long)elem);
+            *pos += written;
+        }
+    }
+    out[*pos] = ']';
+    (*pos)++;
+}
+
+// LLVM backend passes arrays as: [len][elem0][elem1]...
+// The len is stored as the first i64 element.
+static char* ll_array_to_string(int64_t* raw) {
+    if (!raw) {
+        char* empty = (char*)malloc(3);
+        strcpy(empty, "[]");
+        return empty;
+    }
+    int64_t len = raw[0];
+    int64_t* data = raw + 1;
+    int cap = 4096;
+    char* out = (char*)malloc(cap);
+    int pos = 0;
+    out[pos] = '[';
+    pos++;
+    for (int64_t i = 0; i < len; i++) {
+        if (i > 0) {
+            out[pos] = ',';
+            pos++;
+            out[pos] = ' ';
+            pos++;
+        }
+        int64_t elem = data[i];
+        if (elem & ARRAY_PTR_TAG) {
+            int64_t* sub = (int64_t*)(uintptr_t)(elem & ~ARRAY_PTR_TAG);
+            int64_t sub_len = sub[0];
+            array_to_string_rec(sub + 1, sub_len, out, &pos, &cap);
+        } else {
+            int written = snprintf(out + pos, cap - pos, "%ld", (long)elem);
+            pos += written;
+        }
+    }
+    out[pos] = ']';
+    pos++;
+    out[pos] = '\0';
+    return out;
+}
+
+// Simple wrapper: LLVM codegen passes (ptr, len) separately
+intptr_t array_to_string(intptr_t ptr, int64_t len) {
+    if (!ptr) {
+        char* empty = (char*)malloc(3);
+        strcpy(empty, "[]");
+        return (intptr_t)empty;
+    }
+    int cap = 4096;
+    char* out = (char*)malloc(cap);
+    int pos = 0;
+    out[pos] = '[';
+    pos++;
+    for (int64_t i = 0; i < len; i++) {
+        if (i > 0) {
+            out[pos] = ',';
+            pos++;
+            out[pos] = ' ';
+            pos++;
+        }
+        int64_t elem = ((int64_t*)ptr)[i];
+        if (elem & ARRAY_PTR_TAG) {
+            int64_t* sub = (int64_t*)(uintptr_t)(elem & ~ARRAY_PTR_TAG);
+            int64_t sub_len = sub[0];
+            array_to_string_rec(sub + 1, sub_len, out, &pos, &cap);
+        } else {
+            int written = snprintf(out + pos, cap - pos, "%ld", (long)elem);
+            pos += written;
+        }
+    }
+    out[pos] = ']';
+    pos++;
+    out[pos] = '\0';
+    return (intptr_t)out;
+}

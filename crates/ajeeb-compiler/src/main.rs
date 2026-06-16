@@ -34,8 +34,9 @@ fn main() -> io::Result<()> {
     }
 
     let file_path = &args[1];
-    let output_path = if args.len() >= 3 { &args[2] } else { "build/output.ll" };
     let use_llvm = args.iter().any(|a| a == "--llvm");
+    let positional: Vec<&String> = args[1..].iter().filter(|a| !a.starts_with("--")).collect();
+    let output_path = if positional.len() >= 2 { positional[1].as_str() } else { "build/output.ll" };
 
     // Auto-discover parth.das (check cwd, then parent)
     for dir in [Path::new("."), Path::new("..")] {
@@ -167,8 +168,10 @@ fn main() -> io::Result<()> {
         println!("\n🚀 --- Ajeeb Direct Run Started ---");
         let mut evaluator = Evaluator::new();
         let mut program_args = vec![args[0].clone()];
-        if args.len() >= 3 {
-            program_args.extend_from_slice(&args[2..]);
+        for arg in &args[2..] {
+            if !arg.starts_with("--") {
+                program_args.push(arg.clone());
+            }
         }
         evaluator.set_program_args(program_args);
         evaluator.evaluate_program(&all_stmts);
