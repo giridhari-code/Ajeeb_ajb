@@ -13,9 +13,9 @@ impl Display for Counter {
 }
 
 function main() {
-    let c = Counter { value: 42 };
+    set c = Counter { value: 42 };
     // Trait method dispatch
-    let s = c.show();
+    set s = c.show();
     println(s);
     assert_eq(s, "Counter");
 }

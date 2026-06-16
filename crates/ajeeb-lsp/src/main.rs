@@ -466,7 +466,7 @@ fn collect_symbols(stmt: &Stmt, symbols: &mut Vec<SymbolInfo>) {
         Stmt::Class { name, line, col, .. } => (name.clone(), "class", *line, *col),
         Stmt::StructDef { name, line, col, .. } => (name.clone(), "struct", *line, *col),
         Stmt::EnumDef { name, line, col, .. } => (name.clone(), "enum", *line, *col),
-        Stmt::Let { name, line, col, .. } => (name.clone(), "variable", *line, *col),
+        Stmt::Set { name, line, col, .. } => (name.clone(), "variable", *line, *col),
         Stmt::Const { name, line, col, .. } => (name.clone(), "constant", *line, *col),
         Stmt::TraitDef { name, line, col, .. } => (name.clone(), "trait", *line, *col),
         _ => return,
@@ -476,7 +476,7 @@ fn collect_symbols(stmt: &Stmt, symbols: &mut Vec<SymbolInfo>) {
 
 fn find_name_in_stmt(stmt: &Stmt, line: usize, col: usize) -> Option<(String, String)> {
     match stmt {
-        Stmt::Let { name, line: l, col: c, value, .. } | Stmt::Const { name, line: l, col: c, value, .. } => {
+        Stmt::Set { name, line: l, col: c, value, .. } | Stmt::Const { name, line: l, col: c, value, .. } => {
             if *l == line && *c <= col && col <= *c + name.len() { return Some((name.clone(), "variable".to_string())); }
             if let Some(r) = find_name_in_expr(value, line, col) { return Some(r); }
         }
@@ -545,7 +545,7 @@ fn find_id_refs(stmts: &[Stmt], name: &str, uri: &str, refs: &mut Vec<serde_json
 
 fn find_ref_in_stmt(stmt: &Stmt, name: &str, uri: &str, refs: &mut Vec<serde_json::Value>) {
     match stmt {
-        Stmt::Let { name: n, line, col, value, .. } | Stmt::Const { name: n, line, col, value, .. } => {
+        Stmt::Set { name: n, line, col, value, .. } | Stmt::Const { name: n, line, col, value, .. } => {
             if n == name { refs.push(make_loc(uri, *line, *col, name.len())); }
             find_ref_in_expr(value, name, uri, refs);
         }

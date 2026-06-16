@@ -2,13 +2,13 @@
 // Tests: variables, arithmetic, strings, functions, recursion, structs, enums, generics, traits
 
 // === VARIABLES & ARITHMETIC ===
-let x: int = 10;
-let y: int = 20;
-let sum = x + y;
-let diff = x - y;
-let prod = x * y;
-let quot = x / y;
-let neg = -x;
+set x: int = 10;
+set y: int = 20;
+set sum = x + y;
+set diff = x - y;
+set prod = x * y;
+set quot = x / y;
+set neg = -x;
 println("=== Arithmetic ===");
 println("sum: ", itoa(sum));
 println("diff: ", itoa(diff));
@@ -17,9 +17,9 @@ println("quot: ", itoa(quot));
 println("neg: ", itoa(neg));
 
 // === STRINGS ===
-let s1 = "Hello";
-let s2 = "World";
-let s3 = s1 + " " + s2;
+set s1 = "Hello";
+set s2 = "World";
+set s3 = s1 + " " + s2;
 println("=== Strings ===");
 println(s3);
 println("len: ", itoa(len(s3)));
@@ -50,7 +50,7 @@ function point_distance(p: Point): int {
 }
 
 println("=== Structs ===");
-let p = Point { x: 3, y: 4 };
+set p = Point { x: 3, y: 4 };
 println("dist: ", itoa(point_distance(p)));
 
 // === ENUMS ===
@@ -66,8 +66,8 @@ enum Option {
 }
 
 println("=== Enums ===");
-let c = Color.Red;
-let opt = Option.Some(42);
+set c = Color.Red;
+set opt = Option.Some(42);
 println("enum created OK");
 
 // === GENERICS ===
@@ -94,7 +94,7 @@ impl Printable for User {
 }
 
 println("=== Traits ===");
-let u = User { name: "Ajmal" };
+set u = User { name: "Ajmal" };
 println(u.format());
 
 println("=== All tests passed ===");

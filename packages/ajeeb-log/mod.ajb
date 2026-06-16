@@ -3,8 +3,8 @@
 // Supports six log levels: debug, info, warn, error, fatal
 // Default output is stdout. Can be redirected to a file.
 
-let log_current_level = 1;   // 0=debug, 1=info, 2=warn, 3=error, 4=fatal
-let log_file_path = "";      // Empty = stdout
+set log_current_level = 1;   // 0=debug, 1=info, 2=warn, 3=error, 4=fatal
+set log_file_path = "";      // Empty = stdout
 
 const LOG_LEVELS = ["DEBUG", "INFO ", "WARN ", "ERROR", "FATAL"];
 
@@ -12,8 +12,8 @@ function log_write(level_idx: Int, message: String) {
     if (level_idx < log_current_level) {
         return;
     }
-    let prefix = LOG_LEVELS[level_idx];
-    let formatted = "[" + prefix + "] " + message;
+    set prefix = LOG_LEVELS[level_idx];
+    set formatted = "[" + prefix + "] " + message;
     if (log_file_path == "") {
         println(formatted);
     } else {

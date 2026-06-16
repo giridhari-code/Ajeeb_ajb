@@ -432,7 +432,7 @@ impl SemanticAnalyzer {
 
     fn check_stmt(&mut self, stmt: &Stmt) {
         match stmt {
-            Stmt::Let { name, type_ann, value, line, col, .. }
+            Stmt::Set { name, type_ann, value, line, col, .. }
             | Stmt::Const { name, type_ann, value, line, col, .. } => {
                 let value_ty = self.infer_expr_type(value);
                 if let Some(ann) = type_ann {

@@ -8,13 +8,13 @@ function pair[T](a: T, b: T): T {
 }
 
 function main() {
-    let a = identity[Int](42);
+    set a = identity[Int](42);
     assert_eq(a, 42);
 
-    let b = identity[String]("hello");
+    set b = identity[String]("hello");
     assert_eq(b, "hello");
 
-    let c = pair[Int](1, 2);
+    set c = pair[Int](1, 2);
     assert_eq(c, 1);
 
     println("PASS: generic_fn_valid");

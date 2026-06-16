@@ -3,9 +3,9 @@
 
 /// Normalize a path by removing trailing slashes.
 pub function path_normalize(p: String): String {
-    let n = len(p);
+    set n = len(p);
     while (n > 1) {
-        let c = charCode(p, n - 1);
+        set c = charCode(p, n - 1);
         if (c == 47) {
             n = n - 1;
         } else {
@@ -17,12 +17,12 @@ pub function path_normalize(p: String): String {
 
 /// Join two path components with a separator.
 pub function path_join(a: String, b: String): String {
-    let an = len(a);
-    let bn = len(b);
+    set an = len(a);
+    set bn = len(b);
     if (an == 0) { return path_normalize(b); }
     if (bn == 0) { return path_normalize(a); }
-    let a_end = charCode(a, an - 1);
-    let b_start = charCode(b, 0);
+    set a_end = charCode(a, an - 1);
+    set b_start = charCode(b, 0);
     if (a_end == 47 && b_start == 47) {
         return path_normalize(a) + "/" + path_normalize(b);
     }
@@ -34,11 +34,11 @@ pub function path_join(a: String, b: String): String {
 
 /// Get the parent directory of a path.
 pub function path_parent(p: String): String {
-    let pn = path_normalize(p);
-    let n = len(pn);
-    let i = n - 1;
+    set pn = path_normalize(p);
+    set n = len(pn);
+    set i = n - 1;
     while (i >= 0) {
-        let c = charCode(pn, i);
+        set c = charCode(pn, i);
         if (c == 47) {
             if (i == 0) { return "/"; }
             return substring(pn, 0, i);
@@ -51,11 +51,11 @@ pub function path_parent(p: String): String {
 
 /// Get the filename (last component) of a path.
 pub function path_filename(p: String): String {
-    let pn = path_normalize(p);
-    let n = len(pn);
-    let i = n - 1;
+    set pn = path_normalize(p);
+    set n = len(pn);
+    set i = n - 1;
     while (i >= 0) {
-        let c = charCode(pn, i);
+        set c = charCode(pn, i);
         if (c == 47) {
             return substring(pn, i + 1, n);
         }
@@ -67,11 +67,11 @@ pub function path_filename(p: String): String {
 
 /// Get the file extension (including dot) from a path.
 pub function path_extension(p: String): String {
-    let name = path_filename(p);
-    let n = len(name);
-    let i = n - 1;
+    set name = path_filename(p);
+    set n = len(name);
+    set i = n - 1;
     while (i >= 0) {
-        let c = charCode(name, i);
+        set c = charCode(name, i);
         if (c == 46) {
             return substring(name, i, n);
         }

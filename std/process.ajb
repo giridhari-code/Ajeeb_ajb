@@ -17,7 +17,7 @@ pub function process_arg(idx: Int): String {
 /// Get the number of program arguments available.
 /// readArg returns "" (or 0) for out-of-bounds indices.
 pub function process_arg_count(): Int {
-    let i = 0;
+    set i = 0;
     while (len(readArg(i)) > 0) {
         i = i + 1;
     }

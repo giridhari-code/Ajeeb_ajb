@@ -5,17 +5,17 @@
 
 // --- B1: Division by zero should not panic ---
 function test_div_by_zero(): void {
-    let a: int = 5;
-    let b: int = 0;
-    let result: int = a / b;
+    set a: int = 5;
+    set b: int = 0;
+    set result: int = a / b;
     // Should print 0 instead of crashing
     println("B1 PASS: 5/0 = ", result);
 }
 
 // --- B2: !x operator should work for booleans ---
 function test_not_operator(): void {
-    let t: bool = true;
-    let f: bool = false;
+    set t: bool = true;
+    set f: bool = false;
 
     if (!t) {
         println("B2 FAIL: !true should be false");
@@ -30,8 +30,8 @@ function test_not_operator(): void {
     }
 
     // ! should also work on integers
-    let z: int = 0;
-    let nz: int = 42;
+    set z: int = 0;
+    set nz: int = 42;
     if (!z) {
         println("B2 PASS: !0 = true");
     } else {
@@ -46,14 +46,14 @@ function test_not_operator(): void {
 
 // --- B3: Functions should access global variables ---
 // IMPORTANT: global must be declared BEFORE the function that uses it
-let global_val: int = 42;
+set global_val: int = 42;
 
 function test_global_access(): int {
     return global_val;
 }
 
 function test_global_scope(): void {
-    let result: int = test_global_access();
+    set result: int = test_global_access();
     if (result == 42) {
         println("B3 PASS: Global variable accessible from function = ", result);
     } else {
@@ -63,8 +63,8 @@ function test_global_scope(): void {
 
 // --- B7: For loop should work correctly ---
 function test_for_loop(): void {
-    let sum: int = 0;
-    for (let i: int = 0; i < 5; i = i + 1) {
+    set sum: int = 0;
+    for (set i: int = 0; i < 5; i = i + 1) {
         sum = sum + i;
     }
     // sum should be 0+1+2+3+4 = 10
@@ -77,7 +77,7 @@ function test_for_loop(): void {
 
 // --- M2: Nested arrays should print fully ---
 function test_nested_array(): void {
-    let arr: int[] = [1, [2, 3]];
+    set arr: int[] = [1, [2, 3]];
     println("M2 PASS: Nested array = ", arr);
 }
 

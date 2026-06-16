@@ -7,7 +7,7 @@ impl Codegen {
     pub(super) fn emit_allocas_for_stmts(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
             match stmt {
-                Stmt::Let { name, .. } | Stmt::Const { name, .. } => {
+                Stmt::Set { name, .. } | Stmt::Const { name, .. } => {
                     if !self.variables.contains_key(name) {
                         let reg = self.fresh();
                         write!(self.body, "  {} = alloca i64, align 8\n", reg).unwrap();
@@ -15,7 +15,7 @@ impl Codegen {
                     }
                 }
                 Stmt::ForLoop { init, .. } => {
-                    if let Stmt::Let { name, .. } = init.as_ref() {
+                    if let Stmt::Set { name, .. } = init.as_ref() {
                         if !self.variables.contains_key(name) {
                             let reg = self.fresh();
                             write!(self.body, "  {} = alloca i64, align 8\n", reg).unwrap();
@@ -111,7 +111,7 @@ impl Codegen {
 
     pub(super) fn collect_vars(&mut self, stmt: &Stmt, vars: &mut HashMap<String, String>, out: &mut String) {
         match stmt {
-            Stmt::Let { name, .. } | Stmt::Const { name, .. } => {
+            Stmt::Set { name, .. } | Stmt::Const { name, .. } => {
                 if !vars.contains_key(name) && !self.globals_map.contains_key(name) {
                     let reg = self.fresh();
                     write!(out, "  {} = alloca i64, align 8\n", reg).unwrap();
@@ -119,7 +119,7 @@ impl Codegen {
                 }
             }
             Stmt::ForLoop { init, body, .. } => {
-                if let Stmt::Let { name, .. } = init.as_ref() {
+                if let Stmt::Set { name, .. } = init.as_ref() {
                     if !vars.contains_key(name) {
                         let reg = self.fresh();
                         write!(out, "  {} = alloca i64, align 8\n", reg).unwrap();
@@ -164,7 +164,7 @@ impl Codegen {
             Stmt::FnDef { name, .. } => {
                 Err(format!("Nested function not supported: {}", name))
             }
-            Stmt::Let { name, value, .. } => {
+            Stmt::Set { name, value, .. } => {
                 let var_reg = if let Some(gname) = self.globals_map.get(name) {
                     format!("@{}", gname)
                 } else {

@@ -4,7 +4,7 @@ enum Option[T] {
 }
 
 function main(): int {
-    let x = Option[Int].Some(10);
-    let y = Option[String].None;
+    set x = Option[Int].Some(10);
+    set y = Option[String].None;
     return 0;
 }

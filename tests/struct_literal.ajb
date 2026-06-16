@@ -4,7 +4,7 @@ struct Point {
 }
 
 function main(): int {
-    let p = Point { x: 10, y: 20 };
+    set p = Point { x: 10, y: 20 };
     print(itoa(p.x));
     print(itoa(p.y));
     return 0;

@@ -5,9 +5,9 @@ enum Color {
 }
 
 function main(): int {
-    let c1 = Color.Red;
-    let c2 = Color.Red;
-    let c3 = Color.Green;
+    set c1 = Color.Red;
+    set c2 = Color.Red;
+    set c3 = Color.Green;
     if (c1 == c2) {
         print("same");
     }

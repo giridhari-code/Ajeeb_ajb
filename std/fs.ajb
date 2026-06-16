@@ -19,7 +19,7 @@ pub function fs_append_text(path: String, content: String) {
 /// Check if a file exists by attempting to read it.
 /// Returns 1 if exists, 0 if not.
 pub function fs_exists(path: String): Bool {
-    let content = readFile(path);
+    set content = readFile(path);
     if (content == "") {
         return 0;
     }

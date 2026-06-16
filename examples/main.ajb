@@ -17,15 +17,15 @@ class Counter {
 function main(): int {
     println("Ajeeb v0.2 — OOP ke saath!");
 
-    let c: Counter = new Counter;
+    set c: Counter = new Counter;
     c.init(10);
-    let val: int = c.get();
+    set val: int = c.get();
     println("Initial value 10 hai");
 
     c.increment();
     val = c.get();
     println("Increment ke baad 11 hai");
 
-    let result: int = val - 11;
+    set result: int = val - 11;
     return result;
 }

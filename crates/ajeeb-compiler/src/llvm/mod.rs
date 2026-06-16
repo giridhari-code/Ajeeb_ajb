@@ -186,8 +186,8 @@ impl Codegen {
 
     fn subst_stmt(s: &Stmt, subst: &HashMap<String, TypeAnnot>) -> Stmt {
         match s {
-            Stmt::Let { name, type_ann, value, pub_, line, col } => {
-                Stmt::Let {
+            Stmt::Set { name, type_ann, value, pub_, line, col } => {
+                Stmt::Set {
                     name: name.clone(),
                     type_ann: type_ann.as_ref().map(|t| Self::subst_type_ann(t, subst)),
                     value: Self::subst_expr(value, subst),
@@ -387,7 +387,7 @@ impl Codegen {
                         self.emit_fn_def(name, params, body)?;
                     }
                 }
-                Stmt::Let { name, value, .. } | Stmt::Const { name, value, .. } => {
+                Stmt::Set { name, value, .. } | Stmt::Const { name, value, .. } => {
                     // Top-level variables become LLVM globals accessible from any function
                     let gname = format!("__ajb_global_{}", name);
                     writeln!(self.globals, "@{} = global i64 0", gname).unwrap();

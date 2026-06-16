@@ -9,7 +9,7 @@ function bad_match(x: Option[Int]): Int {
 
 function main(): Int {
     // This is fine — exhaustive with wildcard
-    let x = Option::Some(42);
+    set x = Option::Some(42);
     match x {
         Option::Some(val) => println(itoa(val)),
         _ => println("none"),

@@ -23,13 +23,13 @@ impl Display for Post {
 }
 
 fn print_value[T: Display](value: T) {
-    let msg = value.show();
+    set msg = value.show();
     println(msg);
 }
 
 function main() {
-    let u = User { name: "Ajmal" };
-    let p = Post { title: "Hello World" };
+    set u = User { name: "Ajmal" };
+    set p = Post { title: "Hello World" };
 
     print_value(u);
     print_value(p);

@@ -4,6 +4,6 @@ enum Option[T] {
 }
 
 function main(): int {
-    let x = Option[Int].Some(10);
+    set x = Option[Int].Some(10);
     return 0;
 }

@@ -13,7 +13,7 @@
 
 function json_skip_ws(s: String, pos: Int): Int {
     while (pos < len(s)) {
-        let c = charCode(s, pos);
+        set c = charCode(s, pos);
         if (c == 32 || c == 10 || c == 13 || c == 9) {
             pos = pos + 1;
         } else {
@@ -50,8 +50,8 @@ function json_parse_bool(s: String, pos: Int): Array {
 }
 
 function json_parse_number(s: String, pos: Int): Array {
-    let start = pos;
-    let neg = 0;
+    set start = pos;
+    set neg = 0;
     if (pos < len(s) && charCode(s, pos) == 45) {
         neg = 1;
         pos = pos + 1;
@@ -60,19 +60,19 @@ function json_parse_number(s: String, pos: Int): Array {
         return [0, start];
     }
     while (pos < len(s)) {
-        let c = charCode(s, pos);
+        set c = charCode(s, pos);
         if (c >= 48 && c <= 57) {
             pos = pos + 1;
         } else {
             break;
         }
     }
-    let frac = 0;
+    set frac = 0;
     if (pos < len(s) && charCode(s, pos) == 46) {
         frac = 1;
         pos = pos + 1;
         while (pos < len(s)) {
-            let c = charCode(s, pos);
+            set c = charCode(s, pos);
             if (c >= 48 && c <= 57) {
                 pos = pos + 1;
             } else {
@@ -80,7 +80,7 @@ function json_parse_number(s: String, pos: Int): Array {
             }
         }
     }
-    let num_str = substring(s, start, pos);
+    set num_str = substring(s, start, pos);
     return [["num", num_str], pos];
 }
 
@@ -89,9 +89,9 @@ function json_parse_string_val(s: String, pos: Int): Array {
         return [0, pos];
     }
     pos = pos + 1;
-    let result = "";
+    set result = "";
     while (pos < len(s)) {
-        let c = charCode(s, pos);
+        set c = charCode(s, pos);
         if (c == 34) {
             pos = pos + 1;
             return [["str", result], pos];
@@ -126,18 +126,18 @@ function json_parse_array_val(s: String, pos: Int): Array {
         return [0, pos];
     }
     pos = pos + 1;
-    let arr = ["arr"];
+    set arr = ["arr"];
     pos = json_skip_ws(s, pos);
     if (pos < len(s) && charCode(s, pos) == 93) {
         return [arr, pos + 1];
     }
     while (pos < len(s)) {
         pos = json_skip_ws(s, pos);
-        let res = json_parse_value(s, pos);
-        let val = res[0];
+        set res = json_parse_value(s, pos);
+        set val = res[0];
         pos = res[1];
         if (val == 0) { return [0, pos]; }
-        let n = arr_len(arr);
+        set n = arr_len(arr);
         arr[n] = val;
         pos = json_skip_ws(s, pos);
         if (pos < len(s) && charCode(s, pos) == 44) {
@@ -157,18 +157,18 @@ function json_parse_object_val(s: String, pos: Int): Array {
         return [0, pos];
     }
     pos = pos + 1;
-    let obj = ["obj"];
+    set obj = ["obj"];
     pos = json_skip_ws(s, pos);
     if (pos < len(s) && charCode(s, pos) == 125) {
         return [obj, pos + 1];
     }
     while (pos < len(s)) {
         pos = json_skip_ws(s, pos);
-        let key_res = json_parse_string_val(s, pos);
-        let key_val = key_res[0];
+        set key_res = json_parse_string_val(s, pos);
+        set key_val = key_res[0];
         pos = key_res[1];
         if (key_val == 0) { return [0, pos]; }
-        let key = key_val[1];
+        set key = key_val[1];
         pos = json_skip_ws(s, pos);
         if (pos < len(s) && charCode(s, pos) == 58) {
             pos = pos + 1;
@@ -176,11 +176,11 @@ function json_parse_object_val(s: String, pos: Int): Array {
             return [0, pos];
         }
         pos = json_skip_ws(s, pos);
-        let val_res = json_parse_value(s, pos);
-        let val = val_res[0];
+        set val_res = json_parse_value(s, pos);
+        set val = val_res[0];
         pos = val_res[1];
         if (val == 0) { return [0, pos]; }
-        let n = arr_len(obj);
+        set n = arr_len(obj);
         obj[n] = key;
         obj[n + 1] = val;
         pos = json_skip_ws(s, pos);
@@ -199,7 +199,7 @@ function json_parse_object_val(s: String, pos: Int): Array {
 function json_parse_value(s: String, pos: Int): Array {
     pos = json_skip_ws(s, pos);
     if (pos >= len(s)) { return [0, pos]; }
-    let c = charCode(s, pos);
+    set c = charCode(s, pos);
     if (c == 110) { return json_parse_null(s, pos); }
     if (c == 116 || c == 102) { return json_parse_bool(s, pos); }
     if (c == 34) { return json_parse_string_val(s, pos); }
@@ -214,8 +214,8 @@ function json_parse_value(s: String, pos: Int): Array {
 /// Parse a JSON string into a structured value.
 /// Returns a tagged value array. Returns ["null"] on parse failure.
 pub function json_parse(s: String): Array {
-    let result = json_parse_value(s, 0);
-    let val = result[0];
+    set result = json_parse_value(s, 0);
+    set val = result[0];
     if (val == 0) {
         return ["null"];
     }
@@ -225,11 +225,11 @@ pub function json_parse(s: String): Array {
 // ── JSON Stringifier ────────────────────────────────────────────────
 
 function json_escape_str(s: String): String {
-    let result = "";
-    let i = 0;
-    let n = len(s);
+    set result = "";
+    set i = 0;
+    set n = len(s);
     while (i < n) {
-        let c = charCode(s, i);
+        set c = charCode(s, i);
         if (c == 34) { result = result + "\\\""; }
         else if (c == 92) { result = result + "\\\\"; }
         else if (c == 8) { result = result + "\\b"; }
@@ -246,7 +246,7 @@ function json_escape_str(s: String): String {
 }
 
 function json_stringify_val(val: Array): String {
-    let tag = val[0];
+    set tag = val[0];
     if (tag == "null") { return "null"; }
     if (tag == "bool") {
         if (val[1] == 1) { return "true"; }
@@ -259,10 +259,10 @@ function json_stringify_val(val: Array): String {
         return "\"" + json_escape_str(val[1]) + "\"";
     }
     if (tag == "arr") {
-        let result = "[";
-        let first = true;
-        let i = 1;
-        let n = arr_len(val);
+        set result = "[";
+        set first = true;
+        set i = 1;
+        set n = arr_len(val);
         while (i < n) {
             if (first) { first = false; }
             else { result = result + ","; }
@@ -272,10 +272,10 @@ function json_stringify_val(val: Array): String {
         return result + "]";
     }
     if (tag == "obj") {
-        let result = "{";
-        let first = true;
-        let i = 1;
-        let n = arr_len(val);
+        set result = "{";
+        set first = true;
+        set i = 1;
+        set n = arr_len(val);
         while (i < n) {
             if (first) { first = false; }
             else { result = result + ","; }
@@ -296,6 +296,6 @@ pub function json_stringify(val: Array): String {
 /// Quick helper: parse a JSON string and then stringify it back.
 /// Useful for validation.
 pub function json_roundtrip(s: String): String {
-    let val = json_parse(s);
+    set val = json_parse(s);
     return json_stringify(val);
 }

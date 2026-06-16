@@ -6,8 +6,8 @@ function main() {
     println("=== ajeeb-log tests ===");
 
     // Test 1: Default level
-    let level = 1;
-    let r = 0;
+    set level = 1;
+    set r = 0;
     if (0 < level) { r = 0; } else { r = 1; }
     assert_eq(r, 0);
     if (1 < level) { r = 0; } else { r = 1; }

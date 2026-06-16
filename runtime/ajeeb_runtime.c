@@ -92,6 +92,103 @@ static Arena* get_arena(void) {
     return the_arena;
 }
 
+// ── String Arena (Individual Free Support) ─────────────────────────
+// Unlike the bump arena above, this arena tracks individual allocations
+// and supports freeing them. Used for temporary strings that outlive
+// their creation scope but should not leak.
+
+#define STR_ARENA_BLOCK_SIZE (64 * 1024)  // 64 KB blocks
+#define STR_ARENA_MAX_BLOCKS 256
+
+typedef struct StrArenaBlock {
+    char data[STR_ARENA_BLOCK_SIZE];
+    size_t offset;
+    struct StrArenaBlock* next;
+} StrArenaBlock;
+
+typedef struct StrAlloc {
+    char* ptr;
+    size_t size;
+    int free;  // 1 = freed, 0 = in use
+} StrAlloc;
+
+typedef struct StringArena {
+    StrArenaBlock* blocks;
+    StrAlloc allocs[16384];  // tracking table
+    int alloc_count;
+    size_t total_allocated;
+    size_t total_freed;
+} StringArena;
+
+static StringArena* the_str_arena = NULL;
+
+static StringArena* str_arena_create(void) {
+    StringArena* sa = (StringArena*)calloc(1, sizeof(StringArena));
+    return sa;
+}
+
+static StrArenaBlock* str_arena_new_block(StringArena* sa) {
+    StrArenaBlock* blk = (StrArenaBlock*)malloc(sizeof(StrArenaBlock));
+    if (!blk) return NULL;
+    blk->offset = 0;
+    blk->next = sa->blocks;
+    sa->blocks = blk;
+    return blk;
+}
+
+static char* str_arena_alloc(StringArena* sa, size_t size) {
+    if (!sa) sa = str_arena_create();
+    if (!the_str_arena) the_str_arena = sa;
+
+    size_t aligned = (size + 15) & ~15;  // 16-byte aligned
+    StrArenaBlock* blk = sa->blocks;
+    if (!blk || blk->offset + aligned > STR_ARENA_BLOCK_SIZE) {
+        blk = str_arena_new_block(sa);
+        if (!blk) return NULL;
+    }
+    char* ptr = blk->data + blk->offset;
+    blk->offset += aligned;
+
+    // Track allocation
+    if (sa->alloc_count < 16384) {
+        sa->allocs[sa->alloc_count].ptr = ptr;
+        sa->allocs[sa->alloc_count].size = aligned;
+        sa->allocs[sa->alloc_count].free = 0;
+        sa->alloc_count++;
+    }
+    sa->total_allocated += aligned;
+    return ptr;
+}
+
+static void str_arena_free(StringArena* sa, char* ptr) {
+    if (!sa || !ptr) return;
+    for (int i = 0; i < sa->alloc_count; i++) {
+        if (sa->allocs[i].ptr == ptr && !sa->allocs[i].free) {
+            sa->allocs[i].free = 1;
+            sa->total_freed += sa->allocs[i].size;
+            return;
+        }
+    }
+}
+
+static void str_arena_destroy(StringArena* sa) {
+    if (!sa) return;
+    StrArenaBlock* blk = sa->blocks;
+    while (blk) {
+        StrArenaBlock* next = blk->next;
+        free(blk);
+        blk = next;
+    }
+    free(sa);
+}
+
+static StringArena* get_str_arena(void) {
+    if (!the_str_arena) {
+        the_str_arena = str_arena_create();
+    }
+    return the_str_arena;
+}
+
 // ── Reference Counting Data Structures ─────────────────────────────
 // RC-managed strings live on the heap (malloc/free) rather than the arena.
 // Each RC allocation has a small header before the string data.
@@ -259,6 +356,19 @@ int32_t ajeeb_rc_refcount(AjeebValue v) {
 int ajeeb_rc_allocs(void) { return rc_total_allocs; }
 int ajeeb_rc_frees(void)  { return rc_total_frees;  }
 
+// ── String Free API ────────────────────────────────────────────────
+// Free a string allocated by string operations (str_concat, substring, etc.)
+// Arena strings are no-ops (freed at program exit).
+// RC strings decrement ref_count and free when it hits 0.
+
+void ajeeb_string_free(AjeebValue v) {
+    if (v.tag != AJB_STRING || !v.string) return;
+    if (v.is_rc) {
+        ajeeb_release(v);
+    }
+    // Arena strings are freed at program exit (no-op here)
+}
+
 // ── Forward declarations for AjeebValue API ─────────────────────────
 // All ajeeb_* functions are the canonical implementation. intptr_t wrappers
 // call these; keep forward decls here so order doesn't matter.
@@ -285,6 +395,7 @@ AjeebValue ajeeb_sqlite_open(AjeebValue path);
 AjeebValue ajeeb_sqlite_close(AjeebValue handle);
 AjeebValue ajeeb_sqlite_exec(AjeebValue handle, AjeebValue sql);
 AjeebValue ajeeb_now_ms(void);
+void ajeeb_string_free(AjeebValue v);
 
 // ── Leak Detection ─────────────────────────────────────────────────
 // Call at program exit. Asserts no net allocation leaks.
@@ -298,6 +409,19 @@ void ajeeb_leak_check(void) {
     } else {
         fprintf(stderr, "[Ajeeb Runtime] RC: %d allocs, %d frees — no leaks\n",
             rc_total_allocs, rc_total_frees);
+    }
+    // Report string arena stats
+    if (the_str_arena) {
+        size_t str_leaked = the_str_arena->total_allocated - the_str_arena->total_freed;
+        if (str_leaked > 0) {
+            fprintf(stderr, "[Ajeeb Runtime] String Arena: %zu bytes allocated, %zu bytes freed, %zu bytes leaked\n",
+                the_str_arena->total_allocated, the_str_arena->total_freed, str_leaked);
+        } else {
+            fprintf(stderr, "[Ajeeb Runtime] String Arena: %zu bytes allocated, %zu bytes freed — no leaks\n",
+                the_str_arena->total_allocated, the_str_arena->total_freed);
+        }
+        str_arena_destroy(the_str_arena);
+        the_str_arena = NULL;
     }
     // Report arena stats
     if (the_arena) {

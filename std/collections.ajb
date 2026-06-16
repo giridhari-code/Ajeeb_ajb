@@ -10,7 +10,7 @@ pub function vec_new(): Array {
 
 /// Push a value to the end of a Vec.
 pub function vec_push(vec: Int[], val: Int) {
-    let i = arr_len(vec);
+    set i = arr_len(vec);
     vec[i] = val;
 }
 
@@ -43,11 +43,11 @@ pub function hashmap_new(): Array {
 
 /// Set a key-value pair in the HashMap.
 pub function hashmap_set(map: Int[], key: String, value: Int) {
-    let i = 0;
-    let n = arr_len(map);
-    let found = 0;
+    set i = 0;
+    set n = arr_len(map);
+    set found = 0;
     while (i < n) {
-        let entry = map[i];
+        set entry = map[i];
         if (entry[0] == key) {
             entry[1] = value;
             found = 1;
@@ -56,17 +56,17 @@ pub function hashmap_set(map: Int[], key: String, value: Int) {
         i = i + 1;
     }
     if (found == 0) {
-        let entry = [key, value];
+        set entry = [key, value];
         map[n] = entry;
     }
 }
 
 /// Get a value from the HashMap by key. Returns 0 if key not found.
 pub function hashmap_get(map: Int[], key: String): Int {
-    let i = 0;
-    let n = arr_len(map);
+    set i = 0;
+    set n = arr_len(map);
     while (i < n) {
-        let entry = map[i];
+        set entry = map[i];
         if (entry[0] == key) {
             return entry[1];
         }
@@ -77,8 +77,8 @@ pub function hashmap_get(map: Int[], key: String): Int {
 
 /// Check if a key exists in the HashMap.
 pub function hashmap_contains(map: Int[], key: String): Bool {
-    let i = 0;
-    let n = arr_len(map);
+    set i = 0;
+    set n = arr_len(map);
     while (i < n) {
         if (map[i][0] == key) {
             return true;
@@ -90,11 +90,11 @@ pub function hashmap_contains(map: Int[], key: String): Bool {
 
 /// Remove a key from the HashMap.
 pub function hashmap_remove(map: Int[], key: String) {
-    let i = 0;
-    let n = arr_len(map);
+    set i = 0;
+    set n = arr_len(map);
     while (i < n) {
         if (map[i][0] == key) {
-            let j = i;
+            set j = i;
             while (j < n - 1) {
                 map[j] = map[j + 1];
                 j = j + 1;
@@ -113,9 +113,9 @@ pub function hashmap_len(map: Int[]): Int {
 
 /// Get all keys from the HashMap as an array.
 pub function hashmap_keys(map: Int[]): Array {
-    let keys = [];
-    let i = 0;
-    let n = arr_len(map);
+    set keys = [];
+    set i = 0;
+    set n = arr_len(map);
     while (i < n) {
         keys[i] = map[i][0];
         i = i + 1;
@@ -125,9 +125,9 @@ pub function hashmap_keys(map: Int[]): Array {
 
 /// Get all values from the HashMap as an array.
 pub function hashmap_values(map: Int[]): Array {
-    let vals = [];
-    let i = 0;
-    let n = arr_len(map);
+    set vals = [];
+    set i = 0;
+    set n = arr_len(map);
     while (i < n) {
         vals[i] = map[i][1];
         i = i + 1;
@@ -145,15 +145,15 @@ pub function hashset_new(): Array {
 /// Add a value to the HashSet.
 pub function hashset_add(set: Int[], val: Int) {
     if (!hashset_contains(set, val)) {
-        let n = arr_len(set);
+        set n = arr_len(set);
         set[n] = val;
     }
 }
 
 /// Check if a value is in the HashSet.
 pub function hashset_contains(set: Int[], val: Int): Bool {
-    let i = 0;
-    let n = arr_len(set);
+    set i = 0;
+    set n = arr_len(set);
     while (i < n) {
         if (set[i] == val) {
             return true;
@@ -165,11 +165,11 @@ pub function hashset_contains(set: Int[], val: Int): Bool {
 
 /// Remove a value from the HashSet.
 pub function hashset_remove(set: Int[], val: Int) {
-    let i = 0;
-    let n = arr_len(set);
+    set i = 0;
+    set n = arr_len(set);
     while (i < n) {
         if (set[i] == val) {
-            let j = i;
+            set j = i;
             while (j < n - 1) {
                 set[j] = set[j + 1];
                 j = j + 1;

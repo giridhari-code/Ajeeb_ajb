@@ -4,6 +4,6 @@ enum Result {
 }
 
 function main(): int {
-    let r = Result.Ok(42);
+    set r = Result.Ok(42);
     return 0;
 }

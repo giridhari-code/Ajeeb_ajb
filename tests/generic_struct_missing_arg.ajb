@@ -4,5 +4,5 @@ struct Box[T] {
 }
 
 function main() {
-    let b = Box { value: 42 };
+    set b = Box { value: 42 };
 }

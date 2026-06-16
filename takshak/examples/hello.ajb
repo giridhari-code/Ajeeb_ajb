@@ -9,7 +9,7 @@ function handleHello(req: int, res: int): void {
 }
 
 function handleEcho(req: int, res: int): void {
-    let body: string = takshakReqBody(req);
+    set body: string = takshakReqBody(req);
     takshakResJson(res, body);
 }
 

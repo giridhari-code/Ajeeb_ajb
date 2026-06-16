@@ -13,17 +13,17 @@ function wrap[T](x: T): T {
 }
 
 function main() {
-    let b = Box[Int] { value: 42 };
+    set b = Box[Int] { value: 42 };
     assert_eq(b.value, 42);
 
-    let opt = Option[Int].Some(10);
-    let result = match opt {
+    set opt = Option[Int].Some(10);
+    set result = match opt {
         Option::Some(n) => n,
         Option::None => 0,
     };
     assert_eq(result, 10);
 
-    let v = wrap[String]("hello");
+    set v = wrap[String]("hello");
     assert_eq(v, "hello");
 
     println("PASS: nested_generic_valid");

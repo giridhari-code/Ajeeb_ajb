@@ -31,6 +31,7 @@ pub enum Visibility {
 pub struct ImportDecl {
     pub path: Vec<String>,
     pub alias: Option<String>,
+    pub c_import: bool,  // true = C shared library import (@import "lib.so")
     pub line: usize,
     pub col: usize,
 }
@@ -75,7 +76,7 @@ pub enum Pattern {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    Let {
+    Set {
         name: String,
         type_ann: Option<TypeAnnot>,
         value: Expr,

@@ -17,12 +17,12 @@ impl[T] Box[T] {
 }
 
 function main() {
-    let b = Box[Int]::new(10);
+    set b = Box[Int]::new(10);
     assert_eq(b.get(), 10);
     b.set(20);
     assert_eq(b.get(), 20);
 
-    let s = Box[String]::new("hello");
+    set s = Box[String]::new("hello");
     assert_eq(s.get(), "hello");
     s.set("world");
     assert_eq(s.get(), "world");

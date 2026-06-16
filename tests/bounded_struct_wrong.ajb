@@ -7,5 +7,5 @@ struct Container[T: Display] {
 }
 
 function main() {
-    let bad = Container[int] { value: 42 };
+    set bad = Container[int] { value: 42 };
 }

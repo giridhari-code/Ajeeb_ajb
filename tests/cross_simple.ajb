@@ -9,22 +9,22 @@ function factorial(n: int): int {
 }
 
 function main(): int {
-    let x = 10;
-    let y = 20;
-    let sum = add(x, y);
+    set x = 10;
+    set y = 20;
+    set sum = add(x, y);
     println("sum: ", itoa(sum));
 
-    let f = factorial(5);
+    set f = factorial(5);
     println("factorial(5): ", itoa(f));
 
-    let s1 = "Hello";
-    let s2 = "World";
-    let s3 = s1 + " " + s2;
+    set s1 = "Hello";
+    set s2 = "World";
+    set s3 = s1 + " " + s2;
     println(s3);
 
-    let i = 0;
-    let acc = 0;
-    for (let j = 0; j < 5; j = j + 1) {
+    set i = 0;
+    set acc = 0;
+    for (set j = 0; j < 5; j = j + 1) {
         acc = acc + j;
     }
     println("sum 0..4: ", itoa(acc));

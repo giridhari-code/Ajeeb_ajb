@@ -73,6 +73,7 @@ pub struct Evaluator {
     sqlite_dbs: HashMap<i64, String>,
     next_handle: i64,
     call_stack: Vec<FrameInfo>,
+    ffi_registry: crate::interop::FfiRegistry,
 }
 
 impl Evaluator {
@@ -95,6 +96,7 @@ impl Evaluator {
             sqlite_dbs: HashMap::new(),
             next_handle: 100,
             call_stack: Vec::new(),
+            ffi_registry: crate::interop::FfiRegistry::new(),
         }
     }
 
@@ -207,6 +209,20 @@ impl Evaluator {
                     }
                 }
                 Stmt::TraitDef { .. } => {} // Traits are just declarations at runtime
+                Stmt::Import(decl) if decl.c_import => {
+                    // C library import: @import "lib.so" as alias
+                    let lib_path = decl.path.join("/");
+                    let alias = decl.alias.as_deref().unwrap_or(&decl.path[decl.path.len().saturating_sub(1)]);
+                    match self.ffi_registry.load_library(&lib_path) {
+                        Ok(_handle) => {
+                            self.ffi_registry.register_alias(alias, &lib_path);
+                        }
+                        Err(e) => {
+                            eprintln!("[FFI] {}", e);
+                        }
+                    }
+                }
+                Stmt::Import(_) => {} // Module imports handled elsewhere
                 other => {
                     top_stmts.push(other.clone());
                 }
@@ -222,7 +238,7 @@ impl Evaluator {
 
     fn exec_stmt(&mut self, stmt: &Stmt) -> RuntimeValue {
         match stmt {
-            Stmt::Let { name, value, .. } | Stmt::Const { name, value, .. } => {
+            Stmt::Set { name, value, .. } | Stmt::Const { name, value, .. } => {
                 let val = self.eval_expr(value);
                 self.insert_var(name.clone(), val);
                 RuntimeValue::Void
@@ -501,21 +517,23 @@ impl Evaluator {
                         return result;
                     }
                     let prefix = format!("{}_", base_tn);
-                    for (key, _) in self.functions.clone() {
-                        if key.starts_with(&prefix) && key.ends_with(&format!("_{}", method)) {
-                            let mut call_args = vec![obj_val];
-                            for a in args {
-                                call_args.push(self.eval_expr(a));
-                            }
-                            self.call_stack.push(FrameInfo {
-                                function_name: key.clone(),
-                                line: *line,
-                                col: *col,
-                            });
-                            let result = self.exec_fn_call_raw(&key, &call_args);
-                            self.call_stack.pop();
-                            return result;
+                    let suffix = format!("_{}", method);
+                    let matching_key: Option<String> = self.functions.keys()
+                        .find(|k| k.starts_with(&prefix) && k.ends_with(&suffix))
+                        .cloned();
+                    if let Some(key) = matching_key {
+                        let mut call_args = vec![obj_val];
+                        for a in args {
+                            call_args.push(self.eval_expr(a));
                         }
+                        self.call_stack.push(FrameInfo {
+                            function_name: key.clone(),
+                            line: *line,
+                            col: *col,
+                        });
+                        let result = self.exec_fn_call_raw(&key, &call_args);
+                        self.call_stack.pop();
+                        return result;
                     }
                     self.print_stack_trace();
                     eprintln!("[ERROR] No method '{}' found for type '{}' at line {}, col {}", method, tn, line, col);

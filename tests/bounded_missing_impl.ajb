@@ -19,14 +19,14 @@ impl Printable for User {
 // User implements Printable, but Post does NOT
 
 fn print_item[T: Printable](item: T) {
-    let msg = item.format();
+    set msg = item.format();
     println(msg);
 }
 
 function main() {
-    let u = User { name: "Ajmal" };
+    set u = User { name: "Ajmal" };
     print_item[User](u);  // OK - User implements Printable
 
-    let p = Post { title: "Hello" };
+    set p = Post { title: "Hello" };
     print_item[Post](p);  // ERROR - Post does NOT implement Printable
 }

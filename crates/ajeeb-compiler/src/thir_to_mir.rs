@@ -121,7 +121,7 @@ impl MirBuilder {
 
     fn lower_stmt(&mut self, stmt: &HirStmt, locals: &mut Vec<(String, HirType)>) {
         match stmt {
-            HirStmt::Let { name, ty, value } => {
+            HirStmt::Set { name, ty, value } => {
                 locals.push((name.clone(), ty.clone()));
                 let operand = self.lower_expr(value);
                 self.push_stmt(MirStmt::Assign {

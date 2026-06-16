@@ -3,7 +3,7 @@ function identity[T](x: T): T {
 }
 
 function main(): int {
-    let a = identity[Int](10);
-    let b = identity[String]("hello");
+    set a = identity[Int](10);
+    set b = identity[String]("hello");
     return 0;
 }

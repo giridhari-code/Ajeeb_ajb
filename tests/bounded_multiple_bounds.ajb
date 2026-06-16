@@ -34,16 +34,16 @@ impl Serializable for User {
 
 // Three bounds on T
 fn process[T: Display + Printable + Serializable](item: T) {
-    let a = item.show();
-    let b = item.format();
-    let c = item.serialize();
+    set a = item.show();
+    set b = item.format();
+    set c = item.serialize();
     println(a);
     println(b);
     println(c);
 }
 
 function main() {
-    let u = User { name: "Ajmal" };
+    set u = User { name: "Ajmal" };
     process[User](u);
     println("multiple bounds OK");
 }

@@ -3,6 +3,6 @@ enum Pair {
 }
 
 function main(): int {
-    let p = Pair.Pair(42, "hello");
+    set p = Pair.Pair(42, "hello");
     return 0;
 }

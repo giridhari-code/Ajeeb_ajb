@@ -181,7 +181,7 @@ impl Formatter {
             Stmt::EnumDef { name, type_params, type_param_bounds, variants, pub_, .. } => {
                 self.format_enum_def(name, type_params, type_param_bounds, variants, *pub_)
             }
-            Stmt::Let { name, type_ann, value, .. } => {
+            Stmt::Set { name, type_ann, value, .. } => {
                 self.format_let("let", name, type_ann, value)
             }
             Stmt::Const { name, type_ann, value, .. } => {
@@ -585,8 +585,8 @@ impl Formatter {
         self.emit_indent();
         self.emit("for (");
         // Init
-        if let Stmt::Let { name, type_ann, value, .. } = init {
-            self.emit("let ");
+        if let Stmt::Set { name, type_ann, value, .. } = init {
+            self.emit("set ");
             self.emit(name);
             if let Some(ty) = type_ann {
                 self.emit(": ");
@@ -893,7 +893,7 @@ impl Formatter {
 
 fn stmt_pos(stmt: &Stmt) -> (usize, usize) {
     match stmt {
-        Stmt::Let { line, col, .. } => (*line, *col),
+        Stmt::Set { line, col, .. } => (*line, *col),
         Stmt::Const { line, col, .. } => (*line, *col),
         Stmt::If { line, col, .. } => (*line, *col),
         Stmt::While { line, col, .. } => (*line, *col),

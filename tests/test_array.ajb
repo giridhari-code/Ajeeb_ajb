@@ -1,5 +1,5 @@
 function main(): int {
-    let arr: int[] = [10, 20, 30];
+    set arr: int[] = [10, 20, 30];
     arr[1] = 99;
     println(itoa(arr[0]));
     println(itoa(arr[1]));

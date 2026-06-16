@@ -132,7 +132,7 @@ impl Parser {
 
     fn token_debug(&self, t: &Token) -> &'static str {
         match t {
-            Token::Let => "let",
+            Token::Set => "set",
             Token::Const => "const",
             Token::If => "if",
             Token::Else => "else",
@@ -299,7 +299,7 @@ impl Parser {
             _ => {
                 let pub_ = self.parse_pub();
                 match self.peek() {
-                    Token::Let => self.parse_let_decl(pub_),
+                    Token::Set => self.parse_set_decl(pub_),
                     Token::Const => self.parse_const_decl(pub_),
                     Token::If => self.parse_if_stmt(),
                     Token::While => self.parse_while_stmt(),
@@ -367,7 +367,7 @@ impl Parser {
             None
         };
         self.expect(&Token::Semicolon)?;
-        Ok(Stmt::Import(ImportDecl { path, alias, line, col }))
+        Ok(Stmt::Import(ImportDecl { path, alias, c_import: false, line, col }))
     }
 
     fn parse_at_import(&mut self) -> Result<Stmt, CompileError> {
@@ -375,15 +375,31 @@ impl Parser {
         let line = self.line();
         let col = self.col();
         let mut path = Vec::new();
-        loop {
-            match self.advance() {
-                Token::Identifier(name) => path.push(name),
-                _ => return Err(self.err("'@import' ke baad path chahiye (e.g. @import std.io)")),
+        let mut c_import = false;
+        // Check if next token is a string literal (C library import)
+        if let Token::StringLiteral(lib_path) = self.peek().clone() {
+            self.advance();
+            // Split path into path components for consistency
+            for part in lib_path.split('/') {
+                if !part.is_empty() {
+                    path.push(part.to_string());
+                }
             }
-            if self.peek() == &Token::Dot {
-                self.advance();
-            } else {
-                break;
+            if path.is_empty() {
+                path.push(lib_path);
+            }
+            c_import = true;
+        } else {
+            loop {
+                match self.advance() {
+                    Token::Identifier(name) => path.push(name),
+                    _ => return Err(self.err("'@import' ke baad path chahiye (e.g. @import std.io ya @import \"lib.so\")")),
+                }
+                if self.peek() == &Token::Dot {
+                    self.advance();
+                } else {
+                    break;
+                }
             }
         }
         let alias = if self.peek() == &Token::Identifier("as".to_string()) {
@@ -395,20 +411,19 @@ impl Parser {
         } else {
             None
         };
-        let _ = self.peek(); // check if semicolon present (optional)
         if self.peek() == &Token::Semicolon {
             self.advance();
         }
-        Ok(Stmt::Import(ImportDecl { path, alias, line, col }))
+        Ok(Stmt::Import(ImportDecl { path, alias, c_import, line, col }))
     }
 
-    fn parse_let_decl(&mut self, pub_: bool) -> Result<Stmt, CompileError> {
+    fn parse_set_decl(&mut self, pub_: bool) -> Result<Stmt, CompileError> {
         self.advance();
         let line = self.line();
         let col = self.col();
         let name = match self.advance() {
             Token::Identifier(n) => n,
-            _ => return Err(self.err("'let' ke baad variable ka naam chahiye.")),
+            _ => return Err(self.err("'set' ke baad variable ka naam chahiye.")),
         };
         let type_ann = self.parse_type()?;
         if let Some(ref t) = type_ann {
@@ -417,7 +432,7 @@ impl Parser {
         self.expect(&Token::Assign)?;
         let value = self.parse_expression()?;
         self.expect(&Token::Semicolon)?;
-        Ok(Stmt::Let { name, type_ann, value, pub_, line, col })
+        Ok(Stmt::Set { name, type_ann, value, pub_, line, col })
     }
 
     fn parse_const_decl(&mut self, pub_: bool) -> Result<Stmt, CompileError> {
@@ -488,8 +503,8 @@ impl Parser {
         let line = self.line();
         let col = self.col();
         self.expect(&Token::LParen)?;
-        let init = if self.peek() == &Token::Let {
-            self.parse_let_decl(false)?
+        let init = if self.peek() == &Token::Set {
+            self.parse_set_decl(false)?
         } else if self.peek() == &Token::Semicolon {
             self.advance();
             Stmt::Expr(Expr::Number(0, 0, 0), 0, 0)

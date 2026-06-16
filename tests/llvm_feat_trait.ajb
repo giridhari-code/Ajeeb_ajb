@@ -14,7 +14,7 @@ impl Printable for User {
 }
 
 function main(): int {
-    let u = User { name: "Ajmal" };
+    set u = User { name: "Ajmal" };
     println(u.format());
     return 0;
 }

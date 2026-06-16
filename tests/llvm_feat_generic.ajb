@@ -8,10 +8,10 @@ struct Box[T] {
 }
 
 function main(): int {
-    let v = identity[int](42);
+    set v = identity[int](42);
     println(itoa(v));
 
-    let b = Box[string] { value: "hello" };
+    set b = Box[string] { value: "hello" };
     println(b.value);
     return 0;
 }

@@ -5,7 +5,7 @@ function handleUsers(req: int, res: int): void {
 }
 
 function handleCreate(req: int, res: int): void {
-    let body: string = takshakReqBody(req);
+    set body: string = takshakReqBody(req);
     takshakResStatus(res, 201);
     takshakResJson(res, "{ \"created\": true, \"data\": " + body + " }");
 }

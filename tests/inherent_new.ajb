@@ -9,7 +9,7 @@ impl User {
 }
 
 function main() {
-    let u = User::new("Ajmal");
+    set u = User::new("Ajmal");
     println(u.name);
     println("PASS: inherent_new");
 }

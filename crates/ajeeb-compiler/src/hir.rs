@@ -65,7 +65,7 @@ pub struct HirFn {
 
 #[derive(Debug, Clone)]
 pub enum HirStmt {
-    Let {
+    Set {
         name: String,
         ty: HirType,
         value: HirExpr,

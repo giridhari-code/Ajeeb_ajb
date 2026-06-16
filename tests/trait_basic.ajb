@@ -14,8 +14,8 @@ impl Display for User {
 }
 
 function main() {
-    let u = User { name: "Ajmal", age: 25 };
-    let msg = u.show();
+    set u = User { name: "Ajmal", age: 25 };
+    set msg = u.show();
     println(msg);
     assert_eq(msg, "Ajmal");
 }

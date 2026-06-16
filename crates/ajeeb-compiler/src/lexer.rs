@@ -163,7 +163,7 @@ impl Lexer {
             }
         }
         match s.as_str() {
-            "let" => Token::Let,
+            "set" => Token::Set,
             "const" => Token::Const,
             "if" => Token::If,
             "else" => Token::Else,

@@ -42,13 +42,13 @@ class Context {
 // ── Context Methods ────────────────────────────────────────────────
 // Return a 200 JSON response
 function Context_ok(s: Array, data: Array): Array {
-    let body = web_json_stringify(data);
+    set body = web_json_stringify(data);
     return [200, ["Content-Type: application/json"], body];
 }
 
 // Return a JSON response with custom status code
 function Context_json(s: Array, data: Array, code: Int): Array {
-    let body = web_json_stringify(data);
+    set body = web_json_stringify(data);
     return [code, ["Content-Type: application/json"], body];
 }
 
@@ -74,32 +74,32 @@ class App {
 
 // ── Route Registration Methods ─────────────────────────────────────
 function App_get(s: Array, path: String, handler: String) {
-    let n = arr_len(s.routes);
+    set n = arr_len(s.routes);
     s.routes[n] = Route { method: "GET", path: path, handler: handler };
 }
 
 function App_post(s: Array, path: String, handler: String) {
-    let n = arr_len(s.routes);
+    set n = arr_len(s.routes);
     s.routes[n] = Route { method: "POST", path: path, handler: handler };
 }
 
 function App_put(s: Array, path: String, handler: String) {
-    let n = arr_len(s.routes);
+    set n = arr_len(s.routes);
     s.routes[n] = Route { method: "PUT", path: path, handler: handler };
 }
 
 function App_delete(s: Array, path: String, handler: String) {
-    let n = arr_len(s.routes);
+    set n = arr_len(s.routes);
     s.routes[n] = Route { method: "DELETE", path: path, handler: handler };
 }
 
 function App_use(s: Array, middleware_fn: String) {
-    let n = arr_len(s.middleware);
+    set n = arr_len(s.middleware);
     s.middleware[n] = middleware_fn;
 }
 
 function App_static(s: Array, url_prefix: String, dir_path: String) {
-    let n = arr_len(s.static_dirs);
+    set n = arr_len(s.static_dirs);
     s.static_dirs[n] = StaticDir { url_prefix: url_prefix, dir_path: dir_path };
 }
 
@@ -112,7 +112,7 @@ function App_on_error(s: Array, handler: String) {
 // ══════════════════════════════════════════════════════════════════════
 // Create a new web application instance
 function web_new(): ClassInstance {
-    let app = new App;
+    set app = new App;
     app.routes = [];
     app.middleware = [];
     app.error_handler = "";
@@ -122,7 +122,7 @@ function web_new(): ClassInstance {
 
 // Register a route on an app
 function web_route(app: Array, method: String, path: String, handler: String) {
-    let n = arr_len(app.routes);
+    set n = arr_len(app.routes);
     app.routes[n] = Route { method: method, path: path, handler: handler };
 }
 
@@ -133,29 +133,29 @@ function web_group(app: Array, prefix: String): RouteGroup {
 
 // Register a route on a route group
 function web_group_route(group: RouteGroup, method: String, path: String, handler: String) {
-    let full_path = group.prefix + path;
+    set full_path = group.prefix + path;
     web_route(group.app, method, full_path, handler);
 }
 
 // Start the HTTP server
 function web_listen(app: Array, port: Int) {
     log_info("Starting Ajeeb Web on port " + itoa(port));
-    let listen_fd = tcp_listen(port);
+    set listen_fd = tcp_listen(port);
     if (listen_fd == 0) {
         log_error("Failed to bind to port " + itoa(port));
         return;
     }
     log_info(    // 0.0.0.0:" + itoa(port));
 "Server listening on http://0.0.0.0:" + itoa(port));
-    let running = true;
+    set running = true;
     while (running) {
-        let client_fd = tcp_accept(listen_fd);
+        set client_fd = tcp_accept(listen_fd);
         if (client_fd <= 0) {
             continue;
         }
-        let raw = tcp_read(client_fd, 16384);
+        set raw = tcp_read(client_fd, 16384);
         if (len(raw) > 0) {
-            let response = web_handle_request(app, raw);
+            set response = web_handle_request(app, raw);
             tcp_write(client_fd, response);
         }
         tcp_close(client_fd);
@@ -168,37 +168,37 @@ function web_listen(app: Array, port: Int) {
 // Request Handling
 // ══════════════════════════════════════════════════════════════════════
 function web_handle_request(app: Array, raw: String): String {
-    let method = "";
-    let path = "";
-    let body = "";
-    let first_lf =     // Parse request line
+    set method = "";
+    set path = "";
+    set body = "";
+    set first_lf =     // Parse request line
 indexOf(raw, "\n");
     if (first_lf > 0) {
-        let request_line = substring(raw, 0, first_lf);
-        let parts = split(request_line, " ");
+        set request_line = substring(raw, 0, first_lf);
+        set parts = split(request_line, " ");
         if (arr_len(parts) >= 3) {
             method = parts[0];
             path = parts[1];
         }
     }
-    let header_end =     // Find body after headers
+    set header_end =     // Find body after headers
 indexOf(raw, "\n\n");
     if (header_end > 0) {
-        let body_start = header_end + 2;
+        set body_start = header_end + 2;
         if (body_start < len(raw)) {
             body = substring(raw, body_start, len(raw));
         }
     }
-    let ctx =     // Create context
+    set ctx =     // Create context
 new Context;
     ctx.status_code = 200;
     ctx.headers = [];
-    let mware_result =     // Execute middleware chain
+    set mware_result =     // Execute middleware chain
 web_run_middleware(app, method, path, body, ctx);
     if (arr_len(mware_result) >= 3) {
-        let status = mware_result[0];
-        let headers = mware_result[1];
-        let resp_body = mware_result[2];
+        set status = mware_result[0];
+        set headers = mware_result[1];
+        set resp_body = mware_result[2];
         return web_build_http_response(status, headers, resp_body);
     }
     return     // No middleware short-circuited — try route
@@ -206,21 +206,21 @@ web_dispatch_route(app, method, path, body, ctx);
 }
 
 function web_dispatch_route(app: Array, method: String, path: String, body: String, ctx: Array): String {
-    let i = 0;
-    let n = arr_len(app.routes);
+    set i = 0;
+    set n = arr_len(app.routes);
     while (i < n) {
-        let route = app.routes[i];
+        set route = app.routes[i];
         if (route.method == method && route.path == path) {
             log_debug("Matched: " + method + " " + path + " -> " + route.handler);
-            let guarded = web_safe_handler(app, route.handler, method, path, body, ctx);
-            let status = guarded[0];
-            let headers = guarded[1];
-            let resp_body = guarded[2];
+            set guarded = web_safe_handler(app, route.handler, method, path, body, ctx);
+            set status = guarded[0];
+            set headers = guarded[1];
+            set resp_body = guarded[2];
             return web_build_http_response(status, headers, resp_body);
         }
         i = i + 1;
     }
-    let static_result =     // Check static files
+    set static_result =     // Check static files
 web_try_static(app, method, path);
     if (arr_len(static_result) > 0) {
         return web_build_http_response(200, ["Content-Type: application/octet-stream"], static_result[0]);
@@ -234,14 +234,14 @@ web_try_static(app, method, path);
 // Middleware
 // ══════════════════════════════════════════════════════════════════════
 function web_run_middleware(app: Array, method: String, path: String, body: String, ctx: Array): Array {
-    let i = 0;
-    let n = arr_len(app.middleware);
+    set i = 0;
+    set n = arr_len(app.middleware);
     while (i < n) {
-        let mware_name = app.middleware[i];
-        let result = call_fn(mware_name, method, path, body, ctx);
+        set mware_name = app.middleware[i];
+        set result = call_fn(mware_name, method, path, body, ctx);
         if (        // If middleware returned a response array, short-circuit
 arr_len(result) >= 3) {
-            let s = result[0];
+            set s = result[0];
             if (s > 0 && s != 200 && s != 0) {
                 return result;
             }
@@ -255,10 +255,10 @@ arr_len(result) >= 3) {
 // Safe Handler with Error Guard
 // ══════════════════════════════════════════════════════════════════════
 function web_safe_handler(app: Array, handler_name: String, method: String, path: String, body: String, ctx: Array): Array {
-    let result = call_fn(handler_name, method, path, body, ctx);
-    let status = result[0];
-    let headers = result[1];
-    let resp_body = result[2];
+    set result = call_fn(handler_name, method, path, body, ctx);
+    set status = result[0];
+    set headers = result[1];
+    set resp_body = result[2];
     if (    // If handler returned an error-like response, try error handler
 status >= 400 && app.error_handler != "") {
         log_debug("Calling error handler: " + app.error_handler);
@@ -271,10 +271,10 @@ status >= 400 && app.error_handler != "") {
 // HTTP Response Building
 // ══════════════════════════════════════════════════════════════════════
 function web_build_http_response(status: Int, headers: Array, body: String): String {
-    let status_text = web_status_text(status);
-    let resp = "HTTP/1.1 " + itoa(status) + " " + status_text + "\n";
-    let i = 0;
-    let n = arr_len(headers);
+    set status_text = web_status_text(status);
+    set resp = "HTTP/1.1 " + itoa(status) + " " + status_text + "\n";
+    set i = 0;
+    set n = arr_len(headers);
     while (i < n) {
         resp = resp + headers[i] + "\n";
         i = i + 1;
@@ -342,10 +342,10 @@ function web_status_text(code: Int): String {
 // JSON Helpers (pure Ajeeb — no std::json dependency)
 // ══════════════════════════════════════════════════════════════════════
 function web_json_stringify(val: Array): String {
-    let first =     // Check if it's a tagged object/array by looking at val[0]
+    set first =     // Check if it's a tagged object/array by looking at val[0]
 val[0];
     if (first == "obj" || first == "arr") {
-        let tag = first;
+        set tag = first;
         if (tag == "obj") {
             return web_json_stringify_obj(val);
         }
@@ -356,10 +356,10 @@ val[0];
 }
 
 function web_json_stringify_obj(obj: Array): String {
-    let s = "{";
-    let first = true;
-    let i = 1;
-    let n = arr_len(obj);
+    set s = "{";
+    set first = true;
+    set i = 1;
+    set n = arr_len(obj);
     while (i < n) {
         if (first) {
             first = false;
@@ -367,7 +367,7 @@ function web_json_stringify_obj(obj: Array): String {
             s = s + ",";
         }
         s = s + "\"" + obj[i] + "\":";
-        let v = obj[i + 1];
+        set v = obj[i + 1];
         s = s + web_json_val(v);
         i = i + 2;
     }
@@ -376,10 +376,10 @@ function web_json_stringify_obj(obj: Array): String {
 }
 
 function web_json_stringify_arr(arr: Array): String {
-    let s = "[";
-    let first = true;
-    let i = 1;
-    let n = arr_len(arr);
+    set s = "[";
+    set first = true;
+    set i = 1;
+    set n = arr_len(arr);
     while (i < n) {
         if (first) {
             first = false;
@@ -394,7 +394,7 @@ function web_json_stringify_arr(arr: Array): String {
 }
 
 function web_json_val(v: Array): String {
-    let first = v[0];
+    set first = v[0];
     if (first == "obj") {
         return web_json_stringify_obj(v);
     }
@@ -405,12 +405,12 @@ function web_json_val(v: Array): String {
 }
 
 function web_is_numeric(v: Array): Int {
-    let s = itoa(v);
-    let n = len(s);
+    set s = itoa(v);
+    set n = len(s);
     if (n == 0) {
         return 0;
     }
-    let i = 0;
+    set i = 0;
     if (s[0] == "-") {
         i = 1;
     }
@@ -418,7 +418,7 @@ function web_is_numeric(v: Array): Int {
         return 0;
     }
     while (i < n) {
-        let c = s[i];
+        set c = s[i];
         if (c < "0" || c > "9") {
             return 0;
         }
@@ -469,18 +469,18 @@ function web_try_static(app: Array, method: String, path: String): Array {
     if (method != "GET") {
         return [];
     }
-    let i = 0;
-    let n = arr_len(app.static_dirs);
+    set i = 0;
+    set n = arr_len(app.static_dirs);
     while (i < n) {
-        let sd = app.static_dirs[i];
-        let prefix_len = len(sd.url_prefix);
+        set sd = app.static_dirs[i];
+        set prefix_len = len(sd.url_prefix);
         if (starts_with(path, sd.url_prefix)) {
-            let rel_path = substring(path, prefix_len, len(path));
+            set rel_path = substring(path, prefix_len, len(path));
             if (rel_path == "") {
                 rel_path = "/index.html";
             }
-            let full_path = sd.dir_path + rel_path;
-            let content = readFile(full_path);
+            set full_path = sd.dir_path + rel_path;
+            set content = readFile(full_path);
             if (len(content) > 0) {
                 return [content];
             }
@@ -491,11 +491,11 @@ function web_try_static(app: Array, method: String, path: String): Array {
 }
 
 function starts_with(s: String, prefix: String): Int {
-    let p_len = len(prefix);
+    set p_len = len(prefix);
     if (p_len > len(s)) {
         return 0;
     }
-    let i = 0;
+    set i = 0;
     while (i < p_len) {
         if (s[i] != prefix[i]) {
             return 0;
@@ -510,7 +510,7 @@ function starts_with(s: String, prefix: String): Int {
 // ══════════════════════════════════════════════════════════════════════
 function web_load_config(path: String): Array {
     log_info("Loading config from: " + path);
-    let content = readFile(path);
+    set content = readFile(path);
     if (len(content) == 0) {
         log_warn("Config file not found or empty: " + path);
         return ["obj"];
@@ -520,8 +520,8 @@ function web_load_config(path: String): Array {
 }
 
 function web_config_get(config: Array, key: String): String {
-    let i = 1;
-    let n = arr_len(config);
+    set i = 1;
+    set n = arr_len(config);
     while (i < n) {
         if (config[i] == key) {
             return config[i + 1];
@@ -548,36 +548,36 @@ class DIContainer {
 // ServiceDef[]
 // ["name", val, "name", val, ...]
 function di_container(): ClassInstance {
-    let c = new DIContainer;
+    set c = new DIContainer;
     c.services = [];
     c.instances = [];
     return c;
 }
 
 function di_register(container: Array, name: String, factory_fn: String) {
-    let n = arr_len(container.services);
+    set n = arr_len(container.services);
     container.services[n] = ServiceDef { name: name, factory: factory_fn };
     log_debug("DI registered: " + name + " -> " + factory_fn);
 }
 
 function di_resolve(container: Array, name: String): Array {
-    let i =     // Check if already instantiated
+    set i =     // Check if already instantiated
 0;
-    let n = arr_len(container.instances);
+    set n = arr_len(container.instances);
     while (i < n) {
         if (container.instances[i] == name) {
             return container.instances[i + 1];
         }
         i = i + 2;
     }
-    let j =     // Find factory and instantiate
+    set j =     // Find factory and instantiate
 0;
-    let m = arr_len(container.services);
+    set m = arr_len(container.services);
     while (j < m) {
-        let svc = container.services[j];
+        set svc = container.services[j];
         if (svc.name == name) {
-            let instance = call_fn(svc.factory, container);
-            let inst_n = arr_len(container.instances);
+            set instance = call_fn(svc.factory, container);
+            set inst_n = arr_len(container.instances);
             container.instances[inst_n] = name;
             container.instances[inst_n + 1] = instance;
             return instance;
@@ -592,7 +592,7 @@ function di_resolve(container: Array, name: String): Array {
 // Testing Utilities
 // ══════════════════════════════════════════════════════════════════════
 function web_test(app: Array, method: String, path: String, body: String): String {
-    let raw = method + " " + path + " HTTP/1.1\nHost: test\n\n" + body;
+    set raw = method + " " + path + " HTTP/1.1\nHost: test\n\n" + body;
     return web_handle_request(app, raw);
 }
 
@@ -601,19 +601,19 @@ function web_test_response(status: Int, headers: Array, body: String): Array {
 }
 
 function web_assert_status(resp: String, expected: Int) {
-    let status_line = substring(resp, 9, 12);
-    let status_code = itoa(expected);
-    let check = starts_with(resp, "HTTP/1.1 " + status_code + " ");
+    set status_line = substring(resp, 9, 12);
+    set status_code = itoa(expected);
+    set check = starts_with(resp, "HTTP/1.1 " + status_code + " ");
     if (check == 0) {
         log_error("Expected status " + status_code + " but got: " + substring(resp, 0, 15));
     }
 }
 
 function web_assert_body_contains(resp: String, needle: String) {
-    let body_start = indexOf(resp, "\n\n");
+    set body_start = indexOf(resp, "\n\n");
     if (body_start > 0) {
-        let body = substring(resp, body_start + 2, len(resp));
-        let found = indexOf(body, needle);
+        set body = substring(resp, body_start + 2, len(resp));
+        set found = indexOf(body, needle);
         if (found < 0) {
             log_error("Body does not contain: " + needle);
         }

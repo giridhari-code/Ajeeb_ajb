@@ -609,7 +609,7 @@ fn read_pattern(cursor: &mut std::io::Cursor<&[u8]>) -> Option<Pattern> {
 
 pub fn write_stmt(data: &mut Vec<u8>, stmt: &Stmt) {
     match stmt {
-        Stmt::Let { name, type_ann, value, pub_, .. } => {
+        Stmt::Set { name, type_ann, value, pub_, .. } => {
             write_u64_le(data, 0);
             write_string(data, name);
             if let Some(ta) = type_ann {
@@ -837,7 +837,7 @@ fn read_stmt(cursor: &mut std::io::Cursor<&[u8]>) -> Option<Stmt> {
             let type_ann = if has_type { Some(read_type_annot(cursor)?) } else { None };
             let value = read_expr(cursor)?;
             let pub_ = read_u64_le(cursor)? != 0;
-            Stmt::Let { name, type_ann, value, pub_, line: 0, col: 0 }
+            Stmt::Set { name, type_ann, value, pub_, line: 0, col: 0 }
         }
         1 => {
             let name = read_string(cursor)?;
@@ -938,7 +938,7 @@ fn read_stmt(cursor: &mut std::io::Cursor<&[u8]>) -> Option<Stmt> {
             for _ in 0..path_len { path.push(read_string(cursor)?); }
             let has_alias = read_u64_le(cursor)? != 0;
             let alias = if has_alias { Some(read_string(cursor)?) } else { None };
-            Stmt::Import(crate::ast::ImportDecl { path, alias, line: 0, col: 0 })
+            Stmt::Import(crate::ast::ImportDecl { path, alias, c_import: false, line: 0, col: 0 })
         }
         12 => {
             let name = read_string(cursor)?;

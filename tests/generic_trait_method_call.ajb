@@ -13,8 +13,8 @@ impl Stringifiable[Int] for Printer {
 }
 
 function main() {
-    let p = Printer { name: "test" };
-    let s = p.to_string(42);
+    set p = Printer { name: "test" };
+    set s = p.to_string(42);
     assert_eq(s, "number");
     println("PASS: generic_trait_method_call");
 }

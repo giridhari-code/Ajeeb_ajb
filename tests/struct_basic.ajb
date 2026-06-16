@@ -4,7 +4,7 @@ struct User {
 }
 
 function main(): int {
-    let user = User { name: "Ajeeb", age: 1 };
+    set user = User { name: "Ajeeb", age: 1 };
     print(user.name);
     return 0;
 }

@@ -1,5 +1,5 @@
 function main(): int {
-    for (let i: int = 0; i < 10; i = i + 1) {
+    for (set i: int = 0; i < 10; i = i + 1) {
         if (i == 3) { continue; }
         if (i == 6) { break; }
         println(itoa(i));

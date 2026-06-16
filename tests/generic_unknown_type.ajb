@@ -3,7 +3,7 @@ struct Box[T] {
 }
 
 function main(): int {
-    let a = Box { value: true };
-    let b: Box[Int] = a;
+    set a = Box { value: true };
+    set b: Box[Int] = a;
     return 0;
 }

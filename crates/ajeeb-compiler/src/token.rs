@@ -1,6 +1,6 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
-    Let,
+    Set,
     Const,
     If,
     Else,

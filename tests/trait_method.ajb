@@ -33,18 +33,18 @@ impl Display for Bot {
 }
 
 function main() {
-    let u = User { name: "Ajmal" };
-    let b = Bot { name: "RustBot" };
+    set u = User { name: "Ajmal" };
+    set b = Bot { name: "RustBot" };
 
-    let s1 = u.show();
+    set s1 = u.show();
     println(s1);
     assert_eq(s1, "Ajmal");
 
-    let s2 = u.greet();
+    set s2 = u.greet();
     println(s2);
     assert_eq(s2, "Hello, I am Ajmal");
 
-    let s3 = b.show();
+    set s3 = b.show();
     println(s3);
     assert_eq(s3, "Bot:RustBot");
 }

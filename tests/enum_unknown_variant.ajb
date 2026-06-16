@@ -4,6 +4,6 @@ enum Color {
 }
 
 function main(): int {
-    let c = Color.Invalid;
+    set c = Color.Invalid;
     return 0;
 }

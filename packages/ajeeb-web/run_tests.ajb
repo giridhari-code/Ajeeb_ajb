@@ -42,16 +42,16 @@ function factory_svc(container: Array): Array {
 
 // ── Tests ─────────────────────────────────────────────────────────
 function test_web_new() {
-    let app = web_new();
-    let r = arr_len(app.routes);
+    set app = web_new();
+    set r = arr_len(app.routes);
     assert_eq(r, 0);
-    let m = arr_len(app.middleware);
+    set m = arr_len(app.middleware);
     assert_eq(m, 0);
     println("  PASS web_new");
 }
 
 function test_web_route() {
-    let app = web_new();
+    set app = web_new();
     web_route(app, "GET", "/a", "handle_home");
     web_route(app, "POST", "/b", "handle_create_user");
     assert_eq(arr_len(app.routes), 2);
@@ -62,7 +62,7 @@ function test_web_route() {
 }
 
 function test_app_methods() {
-    let app = web_new();
+    set app = web_new();
     app.get("/get", "handle_home");
     app.post("/post", "handle_home");
     app.put("/put", "handle_home");
@@ -80,8 +80,8 @@ function test_app_methods() {
 }
 
 function test_route_group() {
-    let app = web_new();
-    let grp = web_group(app, "/api/v1");
+    set app = web_new();
+    set grp = web_group(app, "/api/v1");
     web_group_route(grp, "GET", "/items", "handle_home");
     web_group_route(grp, "GET", "/users", "handle_users");
     assert_eq(arr_len(app.routes), 2);
@@ -91,7 +91,7 @@ function test_route_group() {
 }
 
 function test_middleware_registration() {
-    let app = web_new();
+    set app = web_new();
     app.use("pass_through");
     app.use("pass_through");
     assert_eq(arr_len(app.middleware), 2);
@@ -101,7 +101,7 @@ function test_middleware_registration() {
 }
 
 function test_static_registration() {
-    let app = web_new();
+    set app = web_new();
     app.static("/static", "./public");
     assert_eq(arr_len(app.static_dirs), 1);
     assert_eq(app.static_dirs[0].url_prefix, "/static");
@@ -110,7 +110,7 @@ function test_static_registration() {
 }
 
 function test_error_handler() {
-    let app = web_new();
+    set app = web_new();
     // web_new initializes to ""; direct field assign works in same scope
     app.error_handler = "my_error_handler";
     assert_eq(app.error_handler, "my_error_handler");
@@ -118,30 +118,30 @@ function test_error_handler() {
 }
 
 function test_json_stringify() {
-    let obj = ["obj", "name", "Alice", "age", "30"];
-    let json = web_json_stringify(obj);
-    let chk1 = indexOf(json, "name");
-    let chk2 = indexOf(json, "Alice");
-    let chk3 = indexOf(json, "30");
+    set obj = ["obj", "name", "Alice", "age", "30"];
+    set json = web_json_stringify(obj);
+    set chk1 = indexOf(json, "name");
+    set chk2 = indexOf(json, "Alice");
+    set chk3 = indexOf(json, "30");
     assert_neq(chk1, -1);
     assert_neq(chk2, -1);
     assert_neq(chk3, -1);
-    let empty = ["obj"];
+    set empty = ["obj"];
     assert_eq(web_json_stringify(empty), "{}");
-    let arr = ["arr", "a", "b"];
-    let json_arr = web_json_stringify(arr);
-    let chk4 = indexOf(json_arr, "[");
+    set arr = ["arr", "a", "b"];
+    set json_arr = web_json_stringify(arr);
+    set chk4 = indexOf(json_arr, "[");
     assert_neq(chk4, -1);
     println("  PASS json_stringify");
 }
 
 function test_build_response() {
-    let resp = web_build_http_response(200, ["Content-Type: application/json", "X-Test: 1"], "ok");
-    let c1 = indexOf(resp, "HTTP/1.1 200 OK");
-    let c2 = indexOf(resp, "Content-Type: application/json");
-    let c3 = indexOf(resp, "X-Test: 1");
-    let c4 = indexOf(resp, "Content-Length:");
-    let c5 = indexOf(resp, "ok");
+    set resp = web_build_http_response(200, ["Content-Type: application/json", "X-Test: 1"], "ok");
+    set c1 = indexOf(resp, "HTTP/1.1 200 OK");
+    set c2 = indexOf(resp, "Content-Type: application/json");
+    set c3 = indexOf(resp, "X-Test: 1");
+    set c4 = indexOf(resp, "Content-Length:");
+    set c5 = indexOf(resp, "ok");
     assert_neq(c1, -1);
     assert_neq(c2, -1);
     assert_neq(c3, -1);
@@ -151,75 +151,75 @@ function test_build_response() {
 }
 
 function test_handle_request() {
-    let app = web_new();
+    set app = web_new();
     web_route(app, "GET", "/home", "handle_home");
     web_route(app, "POST", "/users", "handle_create_user");
-    let raw1 = "GET /home HTTP/1.1\nHost: test\n\n";
-    let resp1 = web_handle_request(app, raw1);
-    let h1 = indexOf(resp1, "Home");
+    set raw1 = "GET /home HTTP/1.1\nHost: test\n\n";
+    set resp1 = web_handle_request(app, raw1);
+    set h1 = indexOf(resp1, "Home");
     assert_neq(h1, -1);
-    let raw2 = "POST /users HTTP/1.1\nHost: test\n\n{\"name\":\"Bob\"}";
-    let resp2 = web_handle_request(app, raw2);
-    let h2 = indexOf(resp2, "created");
+    set raw2 = "POST /users HTTP/1.1\nHost: test\n\n{\"name\":\"Bob\"}";
+    set resp2 = web_handle_request(app, raw2);
+    set h2 = indexOf(resp2, "created");
     assert_neq(h2, -1);
     println("  PASS handle_request");
 }
 
 function test_handle_not_found() {
-    let app = web_new();
+    set app = web_new();
     web_route(app, "GET", "/exists", "handle_home");
-    let raw = "GET /no-such-path HTTP/1.1\n\n";
-    let resp = web_handle_request(app, raw);
-    let h1 = indexOf(resp, "404");
+    set raw = "GET /no-such-path HTTP/1.1\n\n";
+    set resp = web_handle_request(app, raw);
+    set h1 = indexOf(resp, "404");
     assert_neq(h1, -1);
-    let h2 = indexOf(resp, "Not Found");
+    set h2 = indexOf(resp, "Not Found");
     assert_neq(h2, -1);
     println("  PASS handle_not_found");
 }
 
 function test_response_helpers() {
-    let ok = web_ok("{\"ok\":true}");
+    set ok = web_ok("{\"ok\":true}");
     assert_eq(ok[0], 200);
     assert_eq(ok[1][0], "Content-Type: application/json");
-    let nf = web_not_found("{\"e\":\"nf\"}");
+    set nf = web_not_found("{\"e\":\"nf\"}");
     assert_eq(nf[0], 404);
-    let err = web_server_error("{\"e\":\"err\"}");
+    set err = web_server_error("{\"e\":\"err\"}");
     assert_eq(err[0], 500);
-    let br = web_bad_request("{\"e\":\"bad\"}");
+    set br = web_bad_request("{\"e\":\"bad\"}");
     assert_eq(br[0], 400);
-    let cr = web_created("{\"id\":1}");
+    set cr = web_created("{\"id\":1}");
     assert_eq(cr[0], 201);
     println("  PASS response_helpers");
 }
 
 function test_di() {
-    let c = di_container();
+    set c = di_container();
     assert_eq(arr_len(c.services), 0);
     di_register(c, "db", "factory_svc");
     di_register(c, "cache", "factory_svc");
     assert_eq(arr_len(c.services), 2);
-    let svc = di_resolve(c, "db");
-    let host = svc[4];
+    set svc = di_resolve(c, "db");
+    set host = svc[4];
     assert_eq(host, "localhost");
-    let svc2 = di_resolve(c, "db");
+    set svc2 = di_resolve(c, "db");
     assert_eq(arr_len(svc2), arr_len(svc));
     println("  PASS DI");
 }
 
 function test_context_methods() {
-    let ctx = new Context;
+    set ctx = new Context;
     ctx.status_code = 200;
     ctx.headers = [];
-    let ok = ctx.ok(["obj", "msg", "test"]);
+    set ok = ctx.ok(["obj", "msg", "test"]);
     assert_eq(ok[0], 200);
     assert_eq(ok[1][0], "Content-Type: application/json");
-    let json = ctx.json(["obj", "r", "d"], 201);
+    set json = ctx.json(["obj", "r", "d"], 201);
     assert_eq(json[0], 201);
-    let text = ctx.text("plain");
+    set text = ctx.text("plain");
     assert_eq(text[0], 200);
     assert_eq(text[1][0], "Content-Type: text/plain");
     assert_eq(text[2], "plain");
-    let html = ctx.html("<h1>Title</h1>");
+    set html = ctx.html("<h1>Title</h1>");
     assert_eq(html[0], 200);
     assert_eq(html[1][0], "Content-Type: text/html");
     assert_eq(html[2], "<h1>Title</h1>");
@@ -227,16 +227,16 @@ function test_context_methods() {
 }
 
 function test_web_test_utility() {
-    let app = web_new();
+    set app = web_new();
     web_route(app, "GET", "/test", "handle_home");
-    let resp = web_test(app, "GET", "/test", "");
-    let h = indexOf(resp, "Home");
+    set resp = web_test(app, "GET", "/test", "");
+    set h = indexOf(resp, "Home");
     assert_neq(h, -1);
     println("  PASS web_test");
 }
 
 function test_web_test_response() {
-    let r = web_test_response(201, ["X-ID: 42"], "{\"id\":42}");
+    set r = web_test_response(201, ["X-ID: 42"], "{\"id\":42}");
     assert_eq(r[0], 201);
     assert_eq(r[1][0], "X-ID: 42");
     assert_eq(r[2], "{\"id\":42}");
@@ -244,39 +244,39 @@ function test_web_test_response() {
 }
 
 function test_json_helpers() {
-    let s = web_json_str("key", "val");
+    set s = web_json_str("key", "val");
     assert_eq(s, "{\"key\":\"val\"}");
-    let o = web_json_obj("a", "1", "b", "2");
-    let ca = indexOf(o, "a");
+    set o = web_json_obj("a", "1", "b", "2");
+    set ca = indexOf(o, "a");
     assert_neq(ca, -1);
-    let e = web_json_error("Not Found", 404);
-    let ce = indexOf(e, "Not Found");
+    set e = web_json_error("Not Found", 404);
+    set ce = indexOf(e, "Not Found");
     assert_neq(ce, -1);
-    let c4 = indexOf(e, "404");
+    set c4 = indexOf(e, "404");
     assert_neq(c4, -1);
     println("  PASS json_helpers");
 }
 
 function test_full_integration() {
-    let app = web_new();
+    set app = web_new();
     app.use("pass_through");
     app.get("/", "handle_home");
     app.get("/users", "handle_users");
     app.post("/users", "handle_create_user");
     app.on_error("my_error_handler");
     app.static("/static", "./public");
-    let r1 =     // Test routes via web_test
+    set r1 =     // Test routes via web_test
 web_test(app, "GET", "/", "");
-    let h1 = indexOf(r1, "Home");
+    set h1 = indexOf(r1, "Home");
     assert_neq(h1, -1);
-    let r2 = web_test(app, "GET", "/users", "");
-    let h2 = indexOf(r2, "Alice");
+    set r2 = web_test(app, "GET", "/users", "");
+    set h2 = indexOf(r2, "Alice");
     assert_neq(h2, -1);
-    let r3 = web_test(app, "POST", "/users", "{\"name\":\"C\"}");
-    let h3 = indexOf(r3, "created");
+    set r3 = web_test(app, "POST", "/users", "{\"name\":\"C\"}");
+    set h3 = indexOf(r3, "created");
     assert_neq(h3, -1);
-    let r4 = web_test(app, "GET", "/nonexistent", "");
-    let h4 = indexOf(r4, "404");
+    set r4 = web_test(app, "GET", "/nonexistent", "");
+    set h4 = indexOf(r4, "404");
     assert_neq(h4, -1);
     println("  PASS full_integration");
 }

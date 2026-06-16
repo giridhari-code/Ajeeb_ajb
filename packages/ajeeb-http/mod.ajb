@@ -37,8 +37,8 @@ pub function http_new(): HttpServer {
 /// Register a route with method, path pattern, and handler function name.
 /// Handler signature: fn_handle(method, path, body) -> [status, headers, body_str]
 pub function http_route(server: HttpServer, method: String, path: String, handler: String) {
-    let n = arr_len(server.routes);
-    let route = Route {
+    set n = arr_len(server.routes);
+    set route = Route {
         method: method,
         path: path,
         handler: handler
@@ -51,14 +51,14 @@ pub function http_route(server: HttpServer, method: String, path: String, handle
 pub function http_listen(server: HttpServer, port: Int) {
     server.port = port;
     server.running = true;
-    let listen_fd = tcp_listen(port);
+    set listen_fd = tcp_listen(port);
     if (listen_fd == 0) {
         log_error("Failed to listen on port " + itoa(port));
         return;
     }
     log_info("Server listening on port " + itoa(port));
     while (server.running) {
-        let client_fd = tcp_accept(listen_fd);
+        set client_fd = tcp_accept(listen_fd);
         if (client_fd > 0) {
             http_handle_client(server, client_fd);
             tcp_close(client_fd);
@@ -75,48 +75,48 @@ pub function http_stop(server: HttpServer) {
 // ── Request Handling ──────────────────────────────────────────────
 
 function http_handle_client(server: HttpServer, client_fd: Int) {
-    let raw = tcp_read(client_fd, 8192);
+    set raw = tcp_read(client_fd, 8192);
     if (len(raw) == 0) {
         return;
     }
-    let req = http_parse_request(raw);
+    set req = http_parse_request(raw);
     if (req.method == "") {
         http_send(client_fd, [400, ["Content-Type: text/plain"], "Bad Request"]);
         return;
     }
-    let response = http_dispatch(server, req);
+    set response = http_dispatch(server, req);
     http_send(client_fd, response);
 }
 
 /// Parse raw HTTP request string into an HttpRequest struct.
 pub function http_parse_request(raw: String): HttpRequest {
-    let header_end = indexOf(raw, "\n\n");
-    let header_section = "";
-    let body = "";
+    set header_end = indexOf(raw, "\n\n");
+    set header_section = "";
+    set body = "";
     if (header_end > 0) {
         header_section = substring(raw, 0, header_end);
-        let body_start = header_end + 4;
+        set body_start = header_end + 4;
         if (body_start < len(raw)) {
             body = substring(raw, body_start, len(raw));
         }
     } else {
         header_section = raw;
     }
-    let lines = split(header_section, "\n");
-    let method = "";
-    let path = "";
-    let headers = [];
-    let i = 0;
-    let n = arr_len(lines);
+    set lines = split(header_section, "\n");
+    set method = "";
+    set path = "";
+    set headers = [];
+    set i = 0;
+    set n = arr_len(lines);
     if (n > 0) {
-        let request_line = lines[0];
-        let parts = split(request_line, " ");
+        set request_line = lines[0];
+        set parts = split(request_line, " ");
         if (arr_len(parts) >= 2) {
             method = parts[0];
             path = parts[1];
         }
     }
-    let j = 1;
+    set j = 1;
     while (j < n) {
         headers[j - 1] = lines[j];
         j = j + 1;
@@ -132,10 +132,10 @@ pub function http_parse_request(raw: String): HttpRequest {
 // ── Routing ───────────────────────────────────────────────────────
 
 function http_dispatch(server: HttpServer, req: HttpRequest): Array {
-    let i = 0;
-    let n = arr_len(server.routes);
+    set i = 0;
+    set n = arr_len(server.routes);
     while (i < n) {
-        let route = server.routes[i];
+        set route = server.routes[i];
         if (route.method == req.method && route.path == req.path) {
             log_debug("Matched route: " + route.method + " " + route.path + " -> " + route.handler);
             return http_call_handler(route.handler, req);
@@ -154,13 +154,13 @@ function http_call_handler(name: String, req: HttpRequest): Array {
 
 /// Build and send an HTTP response over a client socket.
 pub function http_send(client_fd: Int, response: Array) {
-    let status = response[0];
-    let headers = response[1];
-    let body = response[2];
-    let status_text = http_status_text(status);
-    let resp = "HTTP/1.1 " + itoa(status) + " " + status_text + "\n";
-    let i = 0;
-    let n = arr_len(headers);
+    set status = response[0];
+    set headers = response[1];
+    set body = response[2];
+    set status_text = http_status_text(status);
+    set resp = "HTTP/1.1 " + itoa(status) + " " + status_text + "\n";
+    set i = 0;
+    set n = arr_len(headers);
     while (i < n) {
         resp = resp + headers[i] + "\n";
         i = i + 1;

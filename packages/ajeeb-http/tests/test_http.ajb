@@ -29,8 +29,8 @@ function http_new(): HttpServer {
 }
 
 function http_route(server: HttpServer, method: String, path: String, handler: String) {
-    let n = arr_len(server.routes);
-    let route = Route {
+    set n = arr_len(server.routes);
+    set route = Route {
         method: method,
         path: path,
         handler: handler
@@ -39,31 +39,31 @@ function http_route(server: HttpServer, method: String, path: String, handler: S
 }
 
 function http_parse_request(raw: String): HttpRequest {
-    let header_end = indexOf(raw, "\n\n");
-    let header_section = "";
-    let body = "";
+    set header_end = indexOf(raw, "\n\n");
+    set header_section = "";
+    set body = "";
     if (header_end > 0) {
         header_section = substring(raw, 0, header_end);
-        let body_start = header_end + 2;
+        set body_start = header_end + 2;
         if (body_start < len(raw)) {
             body = substring(raw, body_start, len(raw));
         }
     } else {
         header_section = raw;
     }
-    let lines = split(header_section, "\n");
-    let method = "";
-    let path = "";
-    let headers = [];
-    let n = arr_len(lines);
+    set lines = split(header_section, "\n");
+    set method = "";
+    set path = "";
+    set headers = [];
+    set n = arr_len(lines);
     if (n > 0) {
-        let parts = split(lines[0], " ");
+        set parts = split(lines[0], " ");
         if (arr_len(parts) >= 2) {
             method = parts[0];
             path = parts[1];
         }
     }
-    let j = 1;
+    set j = 1;
     while (j < n) {
         headers[j - 1] = lines[j];
         j = j + 1;
@@ -97,7 +97,7 @@ function http_status_text(code: Int): String {
 }
 
 function test_http_new() {
-    let srv = http_new();
+    set srv = http_new();
     assert_eq(srv.port, 0);
     assert_eq(arr_len(srv.routes), 0);
     assert_eq(srv.running, false);
@@ -105,7 +105,7 @@ function test_http_new() {
 }
 
 function test_http_route() {
-    let srv = http_new();
+    set srv = http_new();
     http_route(srv, "GET", "/hello", "handle_hello");
     http_route(srv, "POST", "/data", "handle_data");
     assert_eq(arr_len(srv.routes), 2);
@@ -117,8 +117,8 @@ function test_http_route() {
 }
 
 function test_parse_get_request() {
-    let raw = "GET /api/users HTTP/1.1\nHost: example.com\nAccept: */*\n\n";
-    let req = http_parse_request(raw);
+    set raw = "GET /api/users HTTP/1.1\nHost: example.com\nAccept: */*\n\n";
+    set req = http_parse_request(raw);
     assert_eq(req.method, "GET");
     assert_eq(req.path, "/api/users");
     assert_eq(arr_len(req.headers), 2);
@@ -128,8 +128,8 @@ function test_parse_get_request() {
 }
 
 function test_parse_post_request() {
-    let raw = "POST /data HTTP/1.1\nHost: example.com\nContent-Type: application/json\n\n{\"key\":\"value\"}";
-    let req = http_parse_request(raw);
+    set raw = "POST /data HTTP/1.1\nHost: example.com\nContent-Type: application/json\n\n{\"key\":\"value\"}";
+    set req = http_parse_request(raw);
     assert_eq(req.method, "POST");
     assert_eq(req.path, "/data");
     assert_eq(arr_len(req.headers), 2);
@@ -139,16 +139,16 @@ function test_parse_post_request() {
 }
 
 function test_parse_empty_body() {
-    let raw = "GET / HTTP/1.1\n\n";
-    let req = http_parse_request(raw);
+    set raw = "GET / HTTP/1.1\n\n";
+    set req = http_parse_request(raw);
     assert_eq(req.method, "GET");
     assert_eq(req.body, "");
     println("  PASS parse_empty_body");
 }
 
 function test_parse_no_headers() {
-    let raw = "GET /test HTTP/1.1\n\nbody";
-    let req = http_parse_request(raw);
+    set raw = "GET /test HTTP/1.1\n\nbody";
+    set req = http_parse_request(raw);
     assert_eq(req.method, "GET");
     assert_eq(req.path, "/test");
     assert_eq(arr_len(req.headers), 0);

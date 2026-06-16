@@ -5,5 +5,5 @@ enum Option[T] {
 }
 
 function main() {
-    let v = Option.Some(42);
+    set v = Option.Some(42);
 }

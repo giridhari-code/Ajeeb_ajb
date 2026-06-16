@@ -3,22 +3,22 @@
 
 function main(): int {
     // Test 1: Let/Const declarations
-    let x: int = 10;
+    set x: int = 10;
     const y: int = 20;
     
     // Test 2: Binary expressions
-    let sum = x + y;
-    let diff = x - y;
-    let prod = x * y;
-    let quot = x / y;
-    let eq = x == y;
-    let neq = x != y;
-    let lt = x < y;
-    let gt = x > y;
-    let le = x <= y;
-    let ge = x >= y;
-    let and = x == y && x < y;
-    let or = x != y || x > y;
+    set sum = x + y;
+    set diff = x - y;
+    set prod = x * y;
+    set quot = x / y;
+    set eq = x == y;
+    set neq = x != y;
+    set lt = x < y;
+    set gt = x > y;
+    set le = x <= y;
+    set ge = x >= y;
+    set and = x == y && x < y;
+    set or = x != y || x > y;
     
     // Test 3: If/Else
     if (x > 5) {
@@ -28,15 +28,15 @@ function main(): int {
     }
     
     // Test 4: While loops
-    let i = 0;
+    set i = 0;
     while (i < 3) {
         println("while loop iteration ", i);
         i = i + 1;
     }
     
     // Test 5: For loops
-    let sum_for = 0;
-    for (let j = 0; j < 3; j = j + 1) {
+    set sum_for = 0;
+    for (set j = 0; j < 3; j = j + 1) {
         sum_for = sum_for + j;
     }
     
@@ -46,21 +46,21 @@ function main(): int {
     }
     
     // Test 7: String literals
-    let str1 = "Hello";
-    let str2 = "World";
-    let str3 = str1 + " " + str2;
+    set str1 = "Hello";
+    set str2 = "World";
+    set str3 = str1 + " " + str2;
     println("Concatenated string ", str3);
     
     // Test 8: Function calls
-    let result = len(str3);
+    set result = len(str3);
     println("String length ", result);
     
     // Test 9: itoa builtin
-    let num_str = itoa(42);
+    set num_str = itoa(42);
     println("Number as string ", num_str);
     
     // Test 10: Complex expression
-    let complex = (x + y) * (x - y) / (x + y);
+    set complex = (x + y) * (x - y) / (x + y);
     println("Complex expression result ", complex);
     
     // Test 11: Nested if
@@ -73,8 +73,8 @@ function main(): int {
     }
     
     // Test 12: Unary operations
-    let neg_x = -x;
-    let not_x = !x;
+    set neg_x = -x;
+    set not_x = !x;
     println("Negated x ", neg_x);
     println("Not x ", not_x);
     

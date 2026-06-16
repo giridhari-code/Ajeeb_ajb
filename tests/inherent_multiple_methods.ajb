@@ -19,11 +19,11 @@ impl Point {
 }
 
 function main() {
-    let p = Point::new(3, 4);
-    let d = p.distance_squared();
+    set p = Point::new(3, 4);
+    set d = p.distance_squared();
     assert_eq(d, 25);
     p.translate(1, 2);
-    let d2 = p.distance_squared();
+    set d2 = p.distance_squared();
     assert_eq(d2, 50);
     println("PASS: inherent_multiple_methods");
 }

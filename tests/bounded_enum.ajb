@@ -26,8 +26,8 @@ enum Result[T] {
 
 function main() {
     // OK — User implements Display
-    let x = Option[User].Some(User { name: "Ajmal" });
+    set x = Option[User].Some(User { name: "Ajmal" });
 
     // OK — Result has no bounds
-    let y = Result[int].Ok(42);
+    set y = Result[int].Ok(42);
 }

@@ -15,12 +15,12 @@ pub function time_ticks(): Int {
 
 /// Format a number of seconds as HH:MM:SS string.
 pub function time_format(seconds: Int): String {
-    let h = seconds / 3600;
-    let m = (seconds - h * 3600) / 60;
-    let s = seconds - h * 3600 - m * 60;
-    let h_str = itoa(h);
-    let m_str = itoa(m);
-    let s_str = itoa(s);
+    set h = seconds / 3600;
+    set m = (seconds - h * 3600) / 60;
+    set s = seconds - h * 3600 - m * 60;
+    set h_str = itoa(h);
+    set m_str = itoa(m);
+    set s_str = itoa(s);
     if (len(h_str) == 1) { h_str = "0" + h_str; }
     if (len(m_str) == 1) { m_str = "0" + m_str; }
     if (len(s_str) == 1) { s_str = "0" + s_str; }

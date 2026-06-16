@@ -3,14 +3,14 @@
 
 // Simulate a user endpoint
 function handle_get_user(method: String, path: String, body: String): Array {
-    let user = json_obj("id", "42", "name", "Alice", "email", "alice@example.com", "role", "admin");
+    set user = json_obj("id", "42", "name", "Alice", "email", "alice@example.com", "role", "admin");
     return json_response_ok(user);
 }
 
 function handle_create_user(method: String, path: String, body: String): Array {
-    let parsed = json_parse_body(body);
+    set parsed = json_parse_body(body);
     // parsed = ["obj", key1, val1, key2, val2, ...]
-    let user = json_obj("status", "created", "id", "43", "method", method, "path", path);
+    set user = json_obj("status", "created", "id", "43", "method", method, "path", path);
     return json_response(201, ["Content-Type: application/json"], json_stringify(user));
 }
 
@@ -20,19 +20,19 @@ function handle_error(method: String, path: String, body: String): Array {
 
 function main() {
     // Simulate a request flow
-    let get_resp = handle_get_user("GET", "/users/42", "");
+    set get_resp = handle_get_user("GET", "/users/42", "");
     println("GET /users/42 => " + itoa(get_resp[0]) + " " + get_resp[2]);
 
-    let create_resp = handle_create_user("POST", "/users", "{\"name\":\"Bob\"}");
+    set create_resp = handle_create_user("POST", "/users", "{\"name\":\"Bob\"}");
     println("POST /users => " + itoa(create_resp[0]) + " " + create_resp[2]);
 
-    let err_resp = handle_error("GET", /nonexistent, "");
+    set err_resp = handle_error("GET", /nonexistent, "");
     println("GET /nonexistent => " + itoa(err_resp[0]) + " " + err_resp[2]);
 
     // Demonstrate helpers
-    let pair = json_pair("msg", "Hello, World!");
+    set pair = json_pair("msg", "Hello, World!");
     println("json_pair: " + json_stringify(pair));
 
-    let results = json_results([json_pair("item", "1")], 1);
+    set results = json_results([json_pair("item", "1")], 1);
     println("json_results: " + json_stringify(results));
 }

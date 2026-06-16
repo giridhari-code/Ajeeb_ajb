@@ -7,6 +7,6 @@ impl User {
 }
 
 function main() {
-    let u = User { name: "Ajmal" };
+    set u = User { name: "Ajmal" };
     u.missing();
 }

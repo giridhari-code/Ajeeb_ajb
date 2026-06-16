@@ -18,7 +18,7 @@ function print_item[T: Display](item: T) {
 }
 
 function main(): int {
-    let p = Printer { prefix: "Hello World" };
+    set p = Printer { prefix: "Hello World" };
     print_item[Printer](p);
     return 0;
 }

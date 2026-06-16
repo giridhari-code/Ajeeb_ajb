@@ -25,16 +25,16 @@ impl Display for User {
 // T has two bounds: Printable and Display
 // int does NOT implement either
 fn print_both[T: Printable + Display](item: T) {
-    let a = item.print();
-    let b = item.show();
+    set a = item.print();
+    set b = item.show();
     println(a);
     println(b);
 }
 
 function main() {
-    let u = User { name: "Ajmal" };
+    set u = User { name: "Ajmal" };
     print_both[User](u);  // OK
 
-    let x = 42;
+    set x = 42;
     print_both[int](x);  // ERROR - int does NOT implement Printable
 }

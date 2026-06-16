@@ -18,7 +18,7 @@ impl[A, B] Pair[A, B] {
 }
 
 function main() {
-    let p = Pair[Int, String]::new(42, "hello");
+    set p = Pair[Int, String]::new(42, "hello");
     assert_eq(p.get_first(), 42);
     assert_eq(p.get_second(), "hello");
 

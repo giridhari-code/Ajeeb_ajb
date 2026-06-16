@@ -24,7 +24,7 @@ impl Summary for Article {
 }
 
 function main() {
-    let a = Article { title: "Ajeeb", body: "Compiler" };
+    set a = Article { title: "Ajeeb", body: "Compiler" };
     println(a.show());
     println(a.summarize());
     assert_eq(a.show(), "Ajeeb");

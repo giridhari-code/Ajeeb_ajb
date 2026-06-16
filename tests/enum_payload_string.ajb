@@ -4,6 +4,6 @@ enum Result {
 }
 
 function main(): int {
-    let e = Result.Err("failed");
+    set e = Result.Err("failed");
     return 0;
 }

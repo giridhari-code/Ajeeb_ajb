@@ -187,7 +187,7 @@ impl HirLowering {
 
     fn lower_stmt(&mut self, s: &Stmt) -> HirStmt {
         match s {
-            Stmt::Let { name, type_ann, value, .. } => {
+            Stmt::Set { name, type_ann, value, .. } => {
                 let hir_val = self.lower_expr(value);
                 let ty = if let Some(ann) = type_ann {
                     self.resolve_type(ann)
@@ -195,7 +195,7 @@ impl HirLowering {
                     hir_val.ty().clone()
                 };
                 self.type_env.insert(name.clone(), ty.clone());
-                HirStmt::Let {
+                HirStmt::Set {
                     name: name.clone(),
                     ty,
                     value: hir_val,
@@ -209,7 +209,7 @@ impl HirLowering {
                     hir_val.ty().clone()
                 };
                 self.type_env.insert(name.clone(), ty.clone());
-                HirStmt::Let {
+                HirStmt::Set {
                     name: name.clone(),
                     ty,
                     value: hir_val,

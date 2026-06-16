@@ -4,7 +4,7 @@ enum Result {
 }
 
 function main(): int {
-    let r = Result.Ok(42);
-    let e = Result.Err("failed");
+    set r = Result.Ok(42);
+    set e = Result.Err("failed");
     return 0;
 }

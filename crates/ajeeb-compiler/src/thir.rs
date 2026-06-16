@@ -83,7 +83,7 @@ impl ThirChecker {
 
     fn check_stmt(&mut self, stmt: &HirStmt, expected_return: &HirType) {
         match stmt {
-            HirStmt::Let { name, ty, value } => {
+            HirStmt::Set { name, ty, value } => {
                 self.check_expr(value);
                 if !ty.is_unknown() && !value.ty().is_unknown() && !ty.is_compatible_with(value.ty()) {
                     self.errors.push(format!(

@@ -3,7 +3,7 @@ struct User {
 }
 
 function main(): int {
-    let user = User { name: "Ajeeb" };
+    set user = User { name: "Ajeeb" };
     print(user.invalid_field);
     return 0;
 }

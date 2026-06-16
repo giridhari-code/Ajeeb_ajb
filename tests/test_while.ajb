@@ -1,5 +1,5 @@
 function main(): int {
-    let i: int = 0;
+    set i: int = 0;
     while (i < 3) {
         println(itoa(i));
         i = i + 1;

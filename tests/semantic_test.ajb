@@ -4,26 +4,26 @@
 // These tests should produce semantic errors but still execute.
 // The expected error count is tracked.
 
-let error_count: int = 0;
+set error_count: int = 0;
 
 // === Test 1: Undefined variable ===
 function test_undefined_var(): void {
     // This will trigger: "Undefined variable 'undefined_var'"
-    // let x: int = undefined_var;  // uncomment to test
+    // set x: int = undefined_var;  // uncomment to test
     println("PASS: undefined variable detection ready");
 }
 
 // === Test 2: Type annotation enforcement ===
 function test_type_annotation(): void {
     // Valid: int = int
-    let a: int = 42;
+    set a: int = 42;
 
     // The following would trigger type annotation error:
-    // let b: int = "hello";  // Type mismatch: int annotated but String assigned
+    // set b: int = "hello";  // Type mismatch: int annotated but String assigned
 
     // String/Int interchange is OK (same runtime rep)
-    let c: string = itoa(42);
-    let d: int = len("hello");
+    set c: string = itoa(42);
+    set d: int = len("hello");
 
     println("PASS: type annotation enforcement ready");
 }
@@ -40,21 +40,21 @@ function takes_two(a: int, b: int): int {
 
 function test_arg_count(): void {
     // Valid
-    let x: int = takes_two(1, 2);
+    set x: int = takes_two(1, 2);
 
     // The following would trigger argument count error:
-    // let y: int = takes_two(1);     // Wrong: expects 2, got 1
+    // set y: int = takes_two(1);     // Wrong: expects 2, got 1
 
     println("PASS: arg count enforcement ready");
 }
 
 // === Test 5: Binary op type checking ===
 function test_binary_op(): void {
-    let a: int = 1 + 2;          // Valid: int + int = int
-    let b: int = a * 5;          // Valid: int * int = int
+    set a: int = 1 + 2;          // Valid: int + int = int
+    set b: int = a * 5;          // Valid: int * int = int
 
     // String + String is valid concat
-    let c: string = "hello " + "world";
+    set c: string = "hello " + "world";
 
     // Int + String is valid (String/Int interchangeable)
     // But would be flagged as potentially suspicious

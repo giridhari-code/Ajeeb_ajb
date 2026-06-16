@@ -4,10 +4,10 @@ struct Box[T] {
 }
 
 function main() {
-    let b = Box[Int] { value: 42 };
+    set b = Box[Int] { value: 42 };
     assert_eq(b.value, 42);
 
-    let s = Box[String] { value: "hello" };
+    set s = Box[String] { value: "hello" };
     assert_eq(s.value, "hello");
 
     println("PASS: generic_struct_valid");

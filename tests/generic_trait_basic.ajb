@@ -13,7 +13,7 @@ impl Display[Int] for Printer {
 }
 
 function main() {
-    let p = Printer { name: "test" };
+    set p = Printer { name: "test" };
     p.print(42);
     println("PASS: generic_trait_basic");
 }

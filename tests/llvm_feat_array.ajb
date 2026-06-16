@@ -6,16 +6,16 @@ function factorial(n: int): int {
 
 function main(): int {
     // Arrays
-    let arr = [10, 20, 30, 40, 50];
+    set arr = [10, 20, 30, 40, 50];
     println(itoa(arr[0]));
     println(itoa(arr[2]));
     arr[1] = 99;
     println(itoa(arr[1]));
 
     // Strings
-    let s1 = "Hello";
-    let s2 = "World";
-    let s3 = s1 + " " + s2;
+    set s1 = "Hello";
+    set s2 = "World";
+    set s3 = s1 + " " + s2;
     println(s3);
 
     // Recursion

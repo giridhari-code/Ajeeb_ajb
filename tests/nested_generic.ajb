@@ -8,7 +8,7 @@ enum Option[T] {
 }
 
 function main(): int {
-    let b = Box[Int] { value: 42 };
-    let x = Option[Int].Some(10);
+    set b = Box[Int] { value: 42 };
+    set x = Option[Int].Some(10);
     return 0;
 }

@@ -1,5 +1,5 @@
 function main(): int {
-    let s: string = "  Hello World  ";
+    set s: string = "  Hello World  ";
     println(trim(s));
     println(toUpperCase("hello"));
     println(toLowerCase("AJEEB"));

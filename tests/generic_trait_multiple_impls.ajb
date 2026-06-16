@@ -23,9 +23,9 @@ impl Display[Int] for Logger {
 }
 
 function main() {
-    let p = Printer { name: "test" };
+    set p = Printer { name: "test" };
     p.print(42);
-    let l = Logger { level: 1 };
+    set l = Logger { level: 1 };
     l.print(99);
     println("PASS: generic_trait_multiple_impls");
 }

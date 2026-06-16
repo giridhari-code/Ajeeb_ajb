@@ -15,25 +15,25 @@ enum Option[T] {
 }
 
 function test_generic_fn() {
-    let a = identity[Int](42);
+    set a = identity[Int](42);
     assert_eq(a, 42);
-    let b = identity[String]("hello");
+    set b = identity[String]("hello");
     assert_eq(b, "hello");
-    let c = identity[Bool](true);
+    set c = identity[Bool](true);
     assert_eq(c, true);
     println("  PASS generic function");
 }
 
 function test_generic_struct() {
-    let b: Box[Int] = Box[Int] { value: 99 };
+    set b: Box[Int] = Box[Int] { value: 99 };
     assert_eq(b.value, 99);
     println("  PASS generic struct");
 }
 
 function test_generic_enum() {
-    let v = Option[Int].Some(42);
+    set v = Option[Int].Some(42);
     assert_eq(v, Option[Int].Some(42));
-    let result = match v {
+    set result = match v {
         Option::Some(n) => n,
         Option::None => 0,
     };

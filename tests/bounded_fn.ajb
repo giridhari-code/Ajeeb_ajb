@@ -43,20 +43,20 @@ fn full_info[T: Display + Printable](item: T) -> string {
 }
 
 function main() {
-    let u = User { name: "Ajmal" };
-    let p = Post { title: "Hello" };
+    set u = User { name: "Ajmal" };
+    set p = Post { title: "Hello" };
 
     // Single bound — User and Post both implement Display
-    let r1 = show_item[User](u);
-    let r2 = show_item[Post](p);
+    set r1 = show_item[User](u);
+    set r2 = show_item[Post](p);
     println(r1);
     println(r2);
     assert_eq(r1, "Ajmal");
     assert_eq(r2, "Hello");
 
     // Multiple bounds — only User implements both Display + Printable
-    let u2 = User { name: "Ajmal" };
-    let r3 = full_info[User](u2);
+    set u2 = User { name: "Ajmal" };
+    set r3 = full_info[User](u2);
     println(r3);
     assert_eq(r3, "Ajmal | Ajmal");
 }

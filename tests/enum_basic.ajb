@@ -5,6 +5,6 @@ enum Color {
 }
 
 function main(): int {
-    let c = Color.Red;
+    set c = Color.Red;
     return 0;
 }

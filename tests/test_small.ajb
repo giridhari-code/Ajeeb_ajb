@@ -11,6 +11,6 @@ class MyClass {
 }
 
 function main(): int {
-    let x: int = 42;
+    set x: int = 42;
     return x;
 }

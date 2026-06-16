@@ -15,8 +15,8 @@ impl Greeter for Person {
 }
 
 function main(): Int {
-    let p = Person { name: "Alice", age: 30 };
-    let msg = p.greet();
+    set p = Person { name: "Alice", age: 30 };
+    set msg = p.greet();
     println(msg);
     assert_eq(msg, "Alice");
     return 0;

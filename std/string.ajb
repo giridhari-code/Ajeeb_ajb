@@ -9,10 +9,10 @@ pub function string_split(s: String, delim: String): Array {
 /// Join string array elements into a string separated by delimiter.
 /// Elements must be strings (convert ints via string_from_int first).
 pub function string_join_str(arr: String[], delim: String): String {
-    let result = "";
-    let first = true;
-    let i = 0;
-    let n = arr_len(arr);
+    set result = "";
+    set first = true;
+    set i = 0;
+    set n = arr_len(arr);
     while (i < n) {
         if (first) {
             first = false;

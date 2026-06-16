@@ -48,7 +48,7 @@ function factory_db(container: Array): Array {
 // ══════════════════════════════════════════════════════════════════
 function main() {
     println("Ajeeb Web Framework Example");
-    let app =     // Create app
+    set app =     // Create app
 web_new();
     // Register routes
     app.get("/", "handle_index");
@@ -56,7 +56,7 @@ web_new();
     app.get("/users", "handle_users");
     app.post("/users", "handle_create_user");
     app.get("/about", "handle_about");
-    let api =     // Route groups
+    set api =     // Route groups
 web_group(app, "/api/v1");
     web_group_route(api, "GET", "/status", "handle_index");
     // Middleware
@@ -65,30 +65,30 @@ web_group(app, "/api/v1");
     app.error_handler = "";
     // Static dirs
     app.static("/static", "./public");
-    let container =     // Dependency injection
+    set container =     // Dependency injection
 di_container();
     di_register(container, "db", "factory_db");
-    let db_svc = di_resolve(container, "db");
+    set db_svc = di_resolve(container, "db");
     println("  DI resolved: db type = " + db_svc[2]);
     // Test requests (without running a server)
     println("");
     println("  Testing GET /");
-    let r1 = web_test(app, "GET", "/", "");
+    set r1 = web_test(app, "GET", "/", "");
     web_assert_status(r1, 200);
     web_assert_body_contains(r1, "Welcome");
     println("  Testing GET /users");
-    let r2 = web_test(app, "GET", "/users", "");
+    set r2 = web_test(app, "GET", "/users", "");
     web_assert_status(r2, 200);
     web_assert_body_contains(r2, "Alice");
     println("  Testing POST /users");
-    let r3 = web_test(app, "POST", "/users", "{\"name\":\"Charlie\"}");
+    set r3 = web_test(app, "POST", "/users", "{\"name\":\"Charlie\"}");
     web_assert_status(r3, 201);
     web_assert_body_contains(r3, "Charlie");
     println("  Testing GET /api/v1/status");
-    let r4 = web_test(app, "GET", "/api/v1/status", "");
+    set r4 = web_test(app, "GET", "/api/v1/status", "");
     web_assert_status(r4, 200);
     println("  Testing 404");
-    let r5 = web_test(app, "GET", "/notfound", "");
+    set r5 = web_test(app, "GET", "/notfound", "");
     web_assert_status(r5, 404);
     println("");
     println("All example tests passed!");

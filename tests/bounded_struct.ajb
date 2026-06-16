@@ -24,9 +24,9 @@ struct Wrapper[T] {
 
 function main() {
     // OK — Wrapper has no bounds
-    let w = Wrapper[int] { value: 42 };
+    set w = Wrapper[int] { value: 42 };
     assert_eq(w.value, 42);
 
     // OK — User implements Display
-    let c = Container[User] { value: User { name: "Ajmal" } };
+    set c = Container[User] { value: User { name: "Ajmal" } };
 }

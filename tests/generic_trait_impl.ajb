@@ -23,9 +23,9 @@ impl Display[String] for Writer {
 }
 
 function main() {
-    let p = Printer { name: "test" };
+    set p = Printer { name: "test" };
     p.print(42);
-    let w = Writer { id: 1 };
+    set w = Writer { id: 1 };
     w.print("hello");
     println("PASS: generic_trait_impl");
 }

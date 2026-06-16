@@ -11,17 +11,17 @@ enum Option {
 }
 
 function main(): int {
-    let c = Color::Red;
-    let opt = Option::Some(42);
+    set c = Color::Red;
+    set opt = Option::Some(42);
 
-    let cmsg = match c {
+    set cmsg = match c {
         Color::Red => "Red",
         Color::Green => "Green",
         Color::Blue => "Blue",
     };
     println(cmsg);
 
-    let omsg = match opt {
+    set omsg = match opt {
         Option::Some(v) => itoa(v),
         Option::None => "None",
     };

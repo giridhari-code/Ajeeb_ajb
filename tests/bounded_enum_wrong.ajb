@@ -8,5 +8,5 @@ enum Option[T: Display] {
 }
 
 function main() {
-    let z = Option[int].Some(42);
+    set z = Option[int].Some(42);
 }

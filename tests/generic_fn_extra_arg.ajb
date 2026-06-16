@@ -4,5 +4,5 @@ function identity[T](x: T): T {
 }
 
 function main() {
-    let a = identity[Int, String](42);
+    set a = identity[Int, String](42);
 }

@@ -1,5 +1,5 @@
 function inner(): Int {
-    let x = 5 / 0;  // division by zero
+    set x = 5 / 0;  // division by zero
     return x;
 }
 
@@ -12,7 +12,7 @@ function outer(): Int {
 }
 
 function main(): Int {
-    let result = outer();
+    set result = outer();
     println("Result: " + itoa(result));
     return 0;
 }

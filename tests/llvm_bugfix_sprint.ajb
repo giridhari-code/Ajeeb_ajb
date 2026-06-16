@@ -6,17 +6,17 @@
 
 // --- BUG-LLVM-CRASH-1: println/print with integer args ---
 function test_crash1(): void {
-    let i: int = 42;
-    let j: int = 100;
+    set i: int = 42;
+    set j: int = 100;
     println("count: ", i, " total: ", j);
     println("CRASH-1 PASS: multi-arg println with ints");
 }
 
 // --- BUG-LLVM-CRASH-2: Division by zero ---
 function test_crash2(): void {
-    let a: int = 10;
-    let b: int = 0;
-    let result: int = a / b;
+    set a: int = 10;
+    set b: int = 0;
+    set result: int = a / b;
     if (result == 0) {
         println("CRASH-2 PASS: 10/0 = ", result, " (no crash)");
     } else {
@@ -53,7 +53,7 @@ impl SayHello for Greeter {
 }
 
 function test_dispatch(): void {
-    let g = Greeter { name: "Ajeeb" };
+    set g = Greeter { name: "Ajeeb" };
     g.greet();
 }
 

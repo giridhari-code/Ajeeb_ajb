@@ -5,8 +5,8 @@ enum Color {
 }
 
 function main(): int {
-    let c1 = Color.Red;
-    let c2 = Color.Green;
-    let c3 = Color.Blue;
+    set c1 = Color.Red;
+    set c2 = Color.Green;
+    set c3 = Color.Blue;
     return 0;
 }

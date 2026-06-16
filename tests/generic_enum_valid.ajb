@@ -5,10 +5,10 @@ enum Option[T] {
 }
 
 function main() {
-    let a = Option[Int].Some(10);
-    let b = Option[String].Some("hi");
+    set a = Option[Int].Some(10);
+    set b = Option[String].Some("hi");
 
-    let result = match a {
+    set result = match a {
         Option::Some(n) => n,
         Option::None => 0,
     };

@@ -9,6 +9,6 @@ fn get_display[T: Display](item: T) -> string {
 
 // String has no Display impl
 function main() {
-    let msg = get_display[string]("hello");
+    set msg = get_display[string]("hello");
     println(msg);
 }

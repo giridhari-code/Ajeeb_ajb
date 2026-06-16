@@ -8,20 +8,20 @@ function len(s: string): int { return 0; }
 
 // Test source with "function" keyword at some position
 function testCollectFns(): void {
-    let buf: string = getOutbuf();
-    let src: string = "function foo(): void {}";
-    let srcInt: int = 0;  // placeholder
+    set buf: string = getOutbuf();
+    set src: string = "function foo(): void {}";
+    set srcInt: int = 0;  // placeholder
 
     // Manually test matchKwd at position 0
     // The first word is "function"
     wrPos(buf, 0);
     skipWS(srcInt, buf);
-    let pos: int = rdPos(buf);
+    set pos: int = rdPos(buf);
     wrStr(buf, "pos=");
     wrInt(buf, pos);
     wrStr(buf, "\n");
 
-    let isFunc: int = matchKwd(srcInt, buf, "function");
+    set isFunc: int = matchKwd(srcInt, buf, "function");
     wrStr(buf, "matchKwd(function)=");
     wrInt(buf, isFunc);
     wrStr(buf, "\n");
@@ -29,9 +29,9 @@ function testCollectFns(): void {
 
 function skipWS(src: int, buf: string): void {}
 function matchKwd(src: int, buf: string, kwd: string): int {
-    let pos: int = rdPos(buf);
-    let klen: int = len(kwd);
-    let i: int = 0;
+    set pos: int = rdPos(buf);
+    set klen: int = len(kwd);
+    set i: int = 0;
     while (i < klen) {
         if (chr(src, pos + i) != charCode(kwd, i)) { return 0; }
         i = i + 1;

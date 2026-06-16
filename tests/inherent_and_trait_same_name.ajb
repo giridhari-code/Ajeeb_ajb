@@ -21,7 +21,7 @@ impl Greeter for User {
 }
 
 function main() {
-    let u = User { name: "Ajmal" };
+    set u = User { name: "Ajmal" };
     u.greet();
     println("PASS: inherent_and_trait_same_name");
 }

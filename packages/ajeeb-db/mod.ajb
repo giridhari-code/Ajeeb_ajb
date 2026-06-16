@@ -5,9 +5,9 @@
 // will add PostgreSQL support.
 //
 // Usage:
-//   let db = db_open("myapp.db");
+//   set db = db_open("myapp.db");
 //   db_exec(db, "CREATE TABLE IF NOT EXISTS users (id INTEGER, name TEXT)");
-//   let rows = db_query(db, "SELECT * FROM users");
+//   set rows = db_query(db, "SELECT * FROM users");
 //   db_close(db);
 
 struct DbConfig {
@@ -29,7 +29,7 @@ struct DbResult {
 /// In interpreter mode, returns a stub handle for API compatibility.
 pub function db_open(path: String): Int {
     log_info("Opening database: " + path);
-    let handle = sqlite_open(path);
+    set handle = sqlite_open(path);
     if (handle == 0) {
         log_error("Failed to open database: " + path);
     }
@@ -48,7 +48,7 @@ pub function db_close(handle: Int) {
 /// Returns a DbResult struct.
 pub function db_exec(handle: Int, sql: String): DbResult {
     log_debug("Executing SQL: " + sql);
-    let rc = sqlite_exec(handle, sql);
+    set rc = sqlite_exec(handle, sql);
     if (rc == 0) {
         return DbResult {
             success: true,
@@ -57,7 +57,7 @@ pub function db_exec(handle: Int, sql: String): DbResult {
             affected: 0
         };
     }
-    let err = sqlite_last_error(handle);
+    set err = sqlite_last_error(handle);
     log_error("SQL error: " + err);
     return DbResult {
         success: false,
@@ -93,11 +93,11 @@ pub function db_select(table: String, where_clause: String): String {
 /// Build an INSERT query from a table name and JSON-like object.
 pub function db_insert(table: String, obj: Array): String {
     // obj is ["obj", key1, val1, key2, val2, ...]
-    let cols = "";
-    let vals = "";
-    let first = true;
-    let i = 1;
-    let n = arr_len(obj);
+    set cols = "";
+    set vals = "";
+    set first = true;
+    set i = 1;
+    set n = arr_len(obj);
     while (i < n) {
         if (first) { first = false; }
         else {

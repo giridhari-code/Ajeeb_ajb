@@ -5,7 +5,7 @@ enum Option[T] {
 
 impl[T] Option[T] {
     fn is_some(self) -> bool {
-        let result = match self {
+        set result = match self {
             Option::Some(_) => true,
             Option::None => false,
         };
@@ -13,7 +13,7 @@ impl[T] Option[T] {
     }
 
     fn is_none(self) -> bool {
-        let result = match self {
+        set result = match self {
             Option::Some(_) => false,
             Option::None => true,
         };
@@ -22,11 +22,11 @@ impl[T] Option[T] {
 }
 
 function main() {
-    let some_val = Option[Int].Some(42);
+    set some_val = Option[Int].Some(42);
     assert_eq(some_val.is_some(), true);
     assert_eq(some_val.is_none(), false);
 
-    let none_val = Option[Int].None;
+    set none_val = Option[Int].None;
     assert_eq(none_val.is_some(), false);
     assert_eq(none_val.is_none(), true);
 

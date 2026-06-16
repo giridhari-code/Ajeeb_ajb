@@ -8,7 +8,7 @@ function handle_home(method: String, path: String, body: String): Array {
 }
 
 function handle_api_users(method: String, path: String, body: String): Array {
-    let users = [
+    set users = [
         json_obj("id", "1", "name", "Alice", "email", "alice@example.com"),
         json_obj("id", "2", "name", "Bob", "email", "bob@example.com"),
         json_obj("id", "3", "name", "Charlie", "email", "charlie@example.com"),
@@ -18,9 +18,9 @@ function handle_api_users(method: String, path: String, body: String): Array {
 
 function handle_create_user(method: String, path: String, body: String): Array {
     log_info("Creating user: " + body);
-    let parsed = json_parse_body(body);
-    let id = "4";
-    let resp = json_obj("status", "created", "id", id, "method", method, "path", path);
+    set parsed = json_parse_body(body);
+    set id = "4";
+    set resp = json_obj("status", "created", "id", id, "method", method, "path", path);
     return [201, ["Content-Type: application/json"], json_stringify(resp)];
 }
 
@@ -28,7 +28,7 @@ function main() {
     log_set_level("info");
     log_info("Starting HTTP server example...");
 
-    let app = http_new();
+    set app = http_new();
     http_route(app, "GET", "/", "handle_home");
     http_route(app, "GET", "/api/users", "handle_api_users");
     http_route(app, "POST", "/api/users", "handle_create_user");
@@ -36,8 +36,8 @@ function main() {
     log_info("Routes registered: " + itoa(arr_len(app.routes)));
 
     // Test request parsing
-    let raw_req = "GET /api/users HTTP/1.1\nHost: localhost:8080\n\n";
-    let req = http_parse_request(raw_req);
+    set raw_req = "GET /api/users HTTP/1.1\nHost: localhost:8080\n\n";
+    set req = http_parse_request(raw_req);
     println("");
     println("Parsed request:");
     println("  Method: " + req.method);
@@ -45,7 +45,7 @@ function main() {
     println("  Headers: " + itoa(arr_len(req.headers)));
 
     // Test response building
-    let resp = handle_home("GET", "/", "");
+    set resp = handle_home("GET", "/", "");
     println("");
     println("Home response: " + itoa(resp[0]) + " " + resp[2]);
 

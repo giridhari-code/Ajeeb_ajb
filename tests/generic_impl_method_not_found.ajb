@@ -9,6 +9,6 @@ impl[T] Box[T] {
 }
 
 function main() {
-    let b = Box[Int]::new(42);
+    set b = Box[Int]::new(42);
     b.missing();
 }

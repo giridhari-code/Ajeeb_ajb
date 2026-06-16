@@ -17,10 +17,10 @@ impl Counter {
 }
 
 function main() {
-    let c = Counter::new(10);
+    set c = Counter::new(10);
     c.increment();
     c.increment();
-    let v = c.get();
+    set v = c.get();
     assert_eq(v, 12);
     println("PASS: inherent_method_call");
 }
