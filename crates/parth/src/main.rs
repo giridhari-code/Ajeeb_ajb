@@ -387,12 +387,18 @@ fn cmd_run_file(args: &[String]) {
     }
 
     let root = find_ajeeb_root();
+    let stem = Path::new(file_path)
+        .file_stem()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let bin_path = format!("build/{}", stem);
+
+    fs::create_dir_all("build").ok();
 
     // Step 1 — Choose compiler: self-hosted or cargo
     let native = root.join("build/ajeeb_native");
     let output_c = "build/output.c";
-
-    fs::create_dir_all("build").ok();
 
     if native.exists() {
         // Self-hosted path: compile to C, GCC, then run
@@ -406,11 +412,6 @@ fn cmd_run_file(args: &[String]) {
             std::process::exit(1);
         }
 
-        let stem = Path::new(file_path)
-            .file_stem()
-            .unwrap()
-            .to_string_lossy();
-        let bin_path = format!("build/{}", stem);
         let runtime = root.join("runtime/ajeeb_runtime.c");
 
         println!("🔨 Linking → {}", bin_path);
@@ -430,24 +431,34 @@ fn cmd_run_file(args: &[String]) {
             eprintln!("❌ GCC failed");
             std::process::exit(1);
         }
-
-        println!("🚀 Running {}...\n", bin_path);
-        let run_status = Command::new(&bin_path)
-            .args(&args[1..])
-            .status()
-            .expect("Failed to run binary");
-
-        std::process::exit(run_status.code().unwrap_or(0));
     } else {
-        // Fallback: run through Rust interpreter directly
+        // Use Rust compiler with auto-detected backend
         let status = Command::new("cargo")
-            .args(["run", "-p", "ajeeb-compiler",
-                   "--bin", "ajeeb_compiler",
-                   "--", file_path])
+            .args([
+                "run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
+                "--", file_path, "--skip-run",
+            ])
             .current_dir(&root)
             .status()
             .expect("Failed to run compiler");
-        std::process::exit(status.code().unwrap_or(1));
+        if !status.success() {
+            eprintln!("❌ Compilation failed");
+            std::process::exit(1);
+        }
+    }
+
+    // Step 2 — Auto-execute the compiled binary
+    if Path::new(&bin_path).exists() {
+        println!("🚀 Running {}...\n", bin_path);
+        let extra_args: Vec<&str> = args[1..].iter().map(|s| s.as_str()).collect();
+        let run_status = Command::new(&bin_path)
+            .args(&extra_args)
+            .status()
+            .expect("Failed to run binary");
+        std::process::exit(run_status.code().unwrap_or(0));
+    } else {
+        eprintln!("❌ Binary not found at {}", bin_path);
+        std::process::exit(1);
     }
 }
 

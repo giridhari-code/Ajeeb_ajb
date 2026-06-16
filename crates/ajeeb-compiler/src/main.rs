@@ -26,6 +26,26 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use token::Token;
 
+fn detect_backend() -> &'static str {
+    if Command::new("llc")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return "llvm";
+    }
+    if Command::new("gcc")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return "gcc";
+    }
+    "interpreter"
+}
+
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -33,20 +53,48 @@ fn main() -> io::Result<()> {
         return Ok(());
     }
 
+    // --- Parse arguments ---
     let file_path = &args[1];
-    let use_llvm = args.iter().any(|a| a == "--llvm");
-    let positional: Vec<&String> = args[1..].iter().filter(|a| !a.starts_with("--")).collect();
-    let output_path = if positional.len() >= 2 { positional[1].as_str() } else { "build/output.ll" };
+    let positional: Vec<&String> = args[1..]
+        .iter()
+        .filter(|a| !a.starts_with("--"))
+        .collect();
+    let output_path = if positional.len() >= 2 {
+        positional[1].as_str()
+    } else {
+        "build/output.ll"
+    };
 
-    // Auto-discover parth.das (check cwd, then parent)
+    let force_llvm = args.iter().any(|a| a == "--llvm");
+    let force_gcc = args.iter().any(|a| a == "--gcc");
+    let skip_run = args.iter().any(|a| a == "--skip-run");
+    let skip_compile = args.iter().any(|a| a == "--skip-compile");
+    let force_run = args.iter().any(|a| a == "--run");
+
+    // --- Detect backend ---
+    let backend = if force_llvm {
+        "llvm"
+    } else if force_gcc {
+        "gcc"
+    } else {
+        detect_backend()
+    };
+
+    // --- Print package info ---
     for dir in [Path::new("."), Path::new("..")] {
         let das_path = dir.join("parth.das");
         if let Ok(mut das_file) = File::open(&das_path) {
             let mut das_src = String::new();
             das_file.read_to_string(&mut das_src)?;
             let config = DasConfig::parse(&das_src);
-            let name = config.get("package", "name").cloned().unwrap_or_default();
-            let version = config.get("package", "version").cloned().unwrap_or_default();
+            let name = config
+                .get("package", "name")
+                .cloned()
+                .unwrap_or_default();
+            let version = config
+                .get("package", "version")
+                .cloned()
+                .unwrap_or_default();
             if !name.is_empty() && name != "project" {
                 println!("📦 parth: '{}' v{}", name, version);
             }
@@ -54,7 +102,21 @@ fn main() -> io::Result<()> {
         }
     }
 
-    // 0. CACHE CHECK — skip lex/parse/module-loading if cached AST is still fresh
+    match backend {
+        "llvm" => println!("⚡ Backend: LLVM (llc + as + ld)"),
+        "gcc" => println!("🔧 Backend: GCC (C codegen)"),
+        _ => println!("🐢 Backend: Interpreter only"),
+    }
+
+    // --- Binary name from input file ---
+    let bin_name = Path::new(file_path)
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let bin_path = format!("build/{}", bin_name);
+
+    // 0. CACHE CHECK
     let entry_path = Path::new(file_path);
     let mut module_cache = ModuleCache::new(PathBuf::from("build/cache"));
     module_cache.add_source(entry_path);
@@ -63,7 +125,6 @@ fn main() -> io::Result<()> {
         println!("✓ Cache hit: {} statements loaded from cache", cached_stmts.len());
         cached_stmts
     } else {
-        // Cache miss — run full pipeline
         let mut file = File::open(file_path)?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)?;
@@ -88,7 +149,7 @@ fn main() -> io::Result<()> {
             }
         }
 
-        println!("✓ Lexer: {} tokens mil gaye", tokens.len());
+        println!("✓ Lexer: {} tokens", tokens.len());
 
         // 2. PARSE
         let mut parser = Parser::with_positions(tokens, token_lines, token_cols);
@@ -100,9 +161,9 @@ fn main() -> io::Result<()> {
             }
         };
 
-        println!("✓ Parser: {} statements parse ho gaye", ast.len());
+        println!("✓ Parser: {} statements", ast.len());
 
-        // 2b. MODULE LOADING — resolve imports
+        // 2b. MODULE LOADING
         let mut loader = ModuleLoader::new();
         let entry_dir = entry_path.parent().unwrap_or(Path::new("."));
         loader.add_import_path(entry_dir.to_path_buf());
@@ -124,16 +185,28 @@ fn main() -> io::Result<()> {
             }
         }
 
-        let module_name = entry_path.file_stem().and_then(|s| s.to_str()).unwrap_or("main");
+        let module_name = entry_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("main");
         let entry_module = module::Module {
             name: module_name.to_string(),
             file_path: entry_path.to_path_buf(),
-            imports: ast.iter().filter_map(|s| {
-                if let Stmt::Import(i) = s { Some(i.clone()) } else { None }
-            }).collect(),
+            imports: ast
+                .iter()
+                .filter_map(|s| {
+                    if let Stmt::Import(i) = s {
+                        Some(i.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
             stmts: ast,
         };
-        loader.modules.insert(module_name.to_string(), entry_module);
+        loader
+            .modules
+            .insert(module_name.to_string(), entry_module);
 
         if let Err(e) = loader.resolve_imports() {
             println!("❌ Module resolution error: {}", e);
@@ -141,9 +214,12 @@ fn main() -> io::Result<()> {
         }
 
         let resolved_stmts = loader.collect_all_stmts();
-        println!("✓ Module loader: {} modules, {} total statements", loader.modules.len(), resolved_stmts.len());
+        println!(
+            "✓ Modules: {} loaded, {} statements",
+            loader.modules.len(),
+            resolved_stmts.len()
+        );
 
-        // After successful module loading, cache the result with all source mtimes
         for module in loader.modules.values() {
             module_cache.add_source(&module.file_path);
         }
@@ -160,11 +236,13 @@ fn main() -> io::Result<()> {
             println!("{}", err);
         }
         println!("\n😤 Semantic analysis failed! Code mein type ya scope ki problem hai.");
+        return Ok(());
     }
+    println!("✓ Semantic: OK");
 
-    // 4. DIRECT EXECUTION (skip with --skip-run)
-    let skip_run = args.iter().any(|a| a == "--skip-run");
-    if !skip_run {
+    // 4. INTERPRETER — only run if backend is interpreter, or --run is passed
+    let run_interpreter = backend == "interpreter" || force_run;
+    if run_interpreter && !skip_run {
         println!("\n🚀 --- Ajeeb Direct Run Started ---");
         let mut evaluator = Evaluator::new();
         let mut program_args = vec![args[0].clone()];
@@ -176,84 +254,136 @@ fn main() -> io::Result<()> {
         evaluator.set_program_args(program_args);
         evaluator.evaluate_program(&all_stmts);
         println!("--- Ajeeb Execution Ended ---\n🎉 Execution Completed Successfully!");
-    } else {
-        println!("\n⏭️  Skipping direct execution (--skip-run)");
     }
 
-    // 5. LLVM IR CODEGEN (Phase 2 native compilation)
-    let mut llvm_ok = false;
-    let mut gcc_ok = false;
+    // 5. CODEGEN
+    if skip_compile {
+        println!("\n⏭️  Skipping codegen (--skip-compile)");
+        return Ok(());
+    }
 
-    if use_llvm && Command::new("llc").arg("--version").status().is_ok() {
+    std::fs::create_dir_all("build").ok();
+    let mut compiled_ok = false;
+
+    if backend == "llvm" {
+        // --- LLVM PIPELINE ---
         let mut codegen = llvm::Codegen::new();
         match codegen.compile(&all_stmts) {
             Ok(_) => {
-                std::fs::create_dir_all("build").ok();
-                codegen.write_ir_to_file(output_path).ok();
-                println!("\n🔨 Compiling {} → build/ajeeb_llvm (via llc + as + ld) ...", output_path);
-                let status = Command::new("llc")
-                    .args(["-O2", output_path, "-o", "build/output.s"])
+                // Determine where to write .ll
+                let ll_path = if output_path.ends_with(".ll") {
+                    output_path.to_string()
+                } else {
+                    "build/output.ll".to_string()
+                };
+                codegen.write_ir_to_file(&ll_path).ok();
+
+                println!("\n🔨 Compiling {} → {}", file_path, bin_path);
+
+                // Step 1: llc — LLVM IR → Assembly
+                let llc_ok = Command::new("llc")
+                    .args(["-O2", &ll_path, "-o", "build/output.s"])
                     .status()
-                    .and_then(|s| if s.success() {
-                        Command::new("as")
-                            .args(["build/output.s", "-o", "build/output.o"])
-                            .status()
-                            .and_then(|s2| if s2.success() {
-                                Command::new("gcc")
-                                    .args(["build/output.o", "runtime/ajeeb_runtime.c", "-o", "build/ajeeb_llvm", "-lm", "-ldl", "-Wl,--allow-multiple-definition"])
-                                    .status()
-                            } else {
-                                Ok(s2)
-                            })
-                    } else {
-                        Ok(s)
-                    });
-                match status {
-                    Ok(s) if s.success() => { println!("✅ LLVM Compilation OK → ./build/ajeeb_llvm"); llvm_ok = true; }
-                    Ok(s) => println!("❌ LLVM Compilation failed (exit: {})", s),
-                    Err(e) => println!("❌ Could not run clang: {}", e),
+                    .map(|s| s.success())
+                    .unwrap_or(false);
+
+                if !llc_ok {
+                    println!("❌ llc failed");
+                    return Ok(());
+                }
+
+                // Step 2: as — Assembly → Object
+                let as_ok = Command::new("as")
+                    .args(["build/output.s", "-o", "build/output.o"])
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false);
+
+                if !as_ok {
+                    println!("❌ as failed");
+                    return Ok(());
+                }
+
+                // Step 3: compile runtime.c to object (if not cached)
+                if !Path::new("build/runtime.o").exists() {
+                    let runtime_ok = Command::new("gcc")
+                        .args([
+                            "-c",
+                            "runtime/ajeeb_runtime.c",
+                            "-o",
+                            "build/runtime.o",
+                            "-Wno-int-to-pointer-cast",
+                        ])
+                        .status()
+                        .map(|s| s.success())
+                        .unwrap_or(false);
+
+                    if !runtime_ok {
+                        println!("❌ Runtime compilation failed");
+                        return Ok(());
+                    }
+                }
+
+                // Step 4: link objects → binary (cc handles CRT startup + libc)
+                let link_status = Command::new("cc")
+                    .args([
+                        "build/output.o",
+                        "build/runtime.o",
+                        "-o",
+                        &bin_path,
+                        "-lm",
+                        "-ldl",
+                    ])
+                    .status();
+
+                match link_status {
+                    Ok(s) if s.success() => {
+                        println!("✅ Ready: ./{}", bin_path);
+                        compiled_ok = true;
+                    }
+                    Ok(s) => println!("❌ ld failed (exit: {})", s),
+                    Err(e) => println!("❌ ld error: {}", e),
                 }
             }
             Err(e) => println!("⚠️  LLVM codegen skipped: {}", e),
         }
-    } else if use_llvm {
-        println!("ℹ️  llc not found — skipping LLVM codegen");
-        println!("   Install LLVM to enable native compilation");
-    }
-
-    // 6. LEGACY C CODEGEN: if build/output.c was generated, compile it with runtime
-    if Path::new("build/output.c").exists() {
-        println!("\n🔨 Compiling build/output.c → build/ajeeb_native (via gcc) ...");
-        let status = Command::new("gcc")
-            .args([
-                "build/output.c",
-                "runtime/ajeeb_runtime.c",
-                "-o",
-                "build/ajeeb_native",
-                "-Wall",
-                "-Wno-int-to-pointer-cast",
-                "-Wno-pointer-to-int-cast",
-                "-ldl",
-            ])
-            .status();
-        match status {
-            Ok(s) if s.success() => { println!("✅ GCC Compilation OK → ./build/ajeeb_native"); gcc_ok = true; }
-            Ok(s) => println!("❌ GCC Compilation failed (exit: {})", s),
-            Err(e) => println!("❌ Could not run gcc: {}", e),
+    } else if backend == "gcc" {
+        // --- GCC FALLBACK: C codegen pipeline ---
+        // Use the C codegen path if available
+        let output_c = "build/output.c";
+        if Path::new(output_c).exists() {
+            println!("\n🔨 Compiling {} → {}", file_path, bin_path);
+            let gcc_status = Command::new("gcc")
+                .args([
+                    output_c,
+                    "runtime/ajeeb_runtime.c",
+                    "-o",
+                    &bin_path,
+                    "-Wall",
+                    "-Wno-int-to-pointer-cast",
+                    "-Wno-pointer-to-int-cast",
+                    "-ldl",
+                ])
+                .status();
+            match gcc_status {
+                Ok(s) if s.success() => {
+                    println!("✅ Ready: ./{}", bin_path);
+                    compiled_ok = true;
+                }
+                Ok(s) => println!("❌ GCC failed (exit: {})", s),
+                Err(e) => println!("❌ gcc error: {}", e),
+            }
+        } else {
+            println!("ℹ️  No C output found. Use --llvm or build with self-hosted compiler.");
         }
     }
 
-    // 7. BUILD SUMMARY
-    println!("\n═══════════════════════════════");
-    println!("📦 Build Summary:");
-    if llvm_ok {
-        println!("  ⚡ Native (LLVM): build/ajeeb_llvm");
+    // 6. BUILD SUMMARY
+    if compiled_ok {
+        println!("\n═══════════════════════════════");
+        println!("📦 Build: ./{}", bin_path);
+        println!("═══════════════════════════════");
     }
-    if gcc_ok {
-        println!("  🔧 Native (GCC):  build/ajeeb_native");
-    }
-    println!("  🐢 Interpreter:   cargo run -p ajeeb-compiler --bin ajeeb_compiler");
-    println!("═══════════════════════════════");
 
     Ok(())
 }
