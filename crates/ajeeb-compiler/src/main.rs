@@ -1,5 +1,7 @@
 mod ast;
 mod cache;
+mod hir;
+mod hir_lower;
 mod llvm;
 mod das_parser;
 mod error;
@@ -9,16 +11,19 @@ mod lexer;
 mod module;
 mod parser;
 mod semantic;
+mod thir;
 mod token;
 
 use ast::Stmt;
 use cache::ModuleCache;
 use das_parser::DasConfig;
 use eval::Evaluator;
+use hir_lower::HirLowering;
 use lexer::Lexer;
 use module::ModuleLoader;
 use parser::Parser;
 use semantic::SemanticAnalyzer;
+use thir::ThirChecker;
 use std::env;
 use std::fs::File;
 use std::io::{self, Read};
@@ -240,7 +245,28 @@ fn main() -> io::Result<()> {
     }
     println!("✓ Semantic: OK");
 
-    // 4. INTERPRETER — only run if backend is interpreter, or --run is passed
+    // 4. HIR LOWERING (AST → HIR)
+    let mut lowering = HirLowering::new();
+    let hir = lowering.lower_program(&all_stmts);
+    println!(
+        "✓ HIR: {} functions, {} types lowered",
+        hir.functions.len(),
+        hir.structs.len() + hir.enums.len()
+    );
+
+    // 5. THIR CHECK (Type verification)
+    let mut thir_checker = ThirChecker::new();
+    let type_errors = thir_checker.check(&hir);
+    if !type_errors.is_empty() {
+        for e in &type_errors {
+            println!("{}", e);
+        }
+        println!("❌ Type checking failed!");
+        return Ok(());
+    }
+    println!("✓ THIR: Type checking passed");
+
+    // 6. INTERPRETER — only run if backend is interpreter, or --run is passed
     let run_interpreter = backend == "interpreter" || force_run;
     if run_interpreter && !skip_run {
         println!("\n🚀 --- Ajeeb Direct Run Started ---");
@@ -256,7 +282,7 @@ fn main() -> io::Result<()> {
         println!("--- Ajeeb Execution Ended ---\n🎉 Execution Completed Successfully!");
     }
 
-    // 5. CODEGEN
+    // 7. CODEGEN
     if skip_compile {
         println!("\n⏭️  Skipping codegen (--skip-compile)");
         return Ok(());
@@ -278,7 +304,7 @@ fn main() -> io::Result<()> {
                 };
                 codegen.write_ir_to_file(&ll_path).ok();
 
-                println!("\n🔨 Compiling {} → {}", file_path, bin_path);
+                println!("\n🔨 Codegen: {} → {}", file_path, bin_path);
 
                 // Step 1: llc — LLVM IR → Assembly
                 let llc_ok = Command::new("llc")
@@ -378,7 +404,7 @@ fn main() -> io::Result<()> {
         }
     }
 
-    // 6. BUILD SUMMARY
+    // 8. BUILD SUMMARY
     if compiled_ok {
         println!("\n═══════════════════════════════");
         println!("📦 Build: ./{}", bin_path);
