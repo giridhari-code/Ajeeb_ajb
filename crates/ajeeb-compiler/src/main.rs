@@ -8,10 +8,12 @@ mod error;
 mod eval;
 mod interop;
 mod lexer;
+mod mir;
 mod module;
 mod parser;
 mod semantic;
 mod thir;
+mod thir_to_mir;
 mod token;
 
 use ast::Stmt;
@@ -24,6 +26,8 @@ use module::ModuleLoader;
 use parser::Parser;
 use semantic::SemanticAnalyzer;
 use thir::ThirChecker;
+use thir_to_mir::MirBuilder;
+use mir::optimize_mir;
 use std::env;
 use std::fs::File;
 use std::io::{self, Read};
@@ -266,6 +270,17 @@ fn main() -> io::Result<()> {
     }
     println!("✓ THIR: Type checking passed");
 
+    // 5b. MIR LOWERING (THIR → MIR)
+    let mut mir_builder = MirBuilder::new();
+    let mut mir = mir_builder.build_program(&hir);
+    optimize_mir(&mut mir);
+    let total_blocks: usize = mir.functions.iter().map(|f| f.blocks.len()).sum();
+    println!(
+        "✓ MIR: {} functions, {} basic blocks, optimized",
+        mir.functions.len(),
+        total_blocks
+    );
+
     // 6. INTERPRETER — only run if backend is interpreter, or --run is passed
     let run_interpreter = backend == "interpreter" || force_run;
     if run_interpreter && !skip_run {
@@ -292,9 +307,9 @@ fn main() -> io::Result<()> {
     let mut compiled_ok = false;
 
     if backend == "llvm" {
-        // --- LLVM PIPELINE ---
+        // --- LLVM PIPELINE (MIR-based) ---
         let mut codegen = llvm::Codegen::new();
-        match codegen.compile(&all_stmts) {
+        match codegen.compile_mir(&mir) {
             Ok(_) => {
                 // Determine where to write .ll
                 let ll_path = if output_path.ends_with(".ll") {
