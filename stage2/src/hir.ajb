@@ -1,0 +1,229 @@
+// hir.ajb — HIR node type constants + helpers
+// Stage 2 self-hosting compiler
+//
+// NOTE: No 'const' — LLVM codegen bug. Use literal integers everywhere.
+// HIR tags: 0=Program 1=Fn 2=Block 3=Set 4=Assign 5=If 6=While 7=For
+//           8=Return 9=Break 10=Continue 11=Call 12=Binop 13=Unop
+//           14=Ident 15=Int 16=Str 17=Bool 18=Array 19=Index 20=Field 21=Class
+// Types: 0=unknown 1=int 2=string 3=bool 4=float 5=void 6=array 7=class
+// Binop: 1=+ 2=- 3=* 4=/ 5== 6=!= 7=< 8=> 9=<= 10=>= 11=&& 12=||
+// Unop: 1=! 2=-
+
+// Slot-based access (slot N = byte offset N*8)
+function hw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
+function hr(buf: string, slot: int): int { return getInt(buf, slot * 8); }
+
+function hinit(buf: string): void { hw(buf, 511, 512); }
+function halloc(buf: string, slots: int): int {
+    set head: int = hr(buf, 511);
+    hw(buf, 511, head + slots);
+    return head;
+}
+
+function htyName(t: int): string {
+    if (t == 0) { return "unknown"; }
+    if (t == 1) { return "int"; }
+    if (t == 2) { return "string"; }
+    if (t == 3) { return "bool"; }
+    if (t == 4) { return "float"; }
+    if (t == 5) { return "void"; }
+    if (t == 6) { return "array"; }
+    if (t == 7) { return "class"; }
+    return "unknown";
+}
+
+// --- HIR node builders ---
+function hProgram(buf: string, count: int): int {
+    set off: int = halloc(buf, 2 + count);
+    hw(buf, off, 0);   // HIR_PROGRAM
+    hw(buf, off + 1, count);
+    return off;
+}
+
+function hFn(buf: string, no: int, nl: int, rt: int, pc: int): int {
+    // [tag=1, no, nl, rt, pc, p0_no, p0_nl, p0_ty, ..., body]
+    set off: int = halloc(buf, 6 + pc * 3);
+    hw(buf, off, 1);   // HIR_FN
+    hw(buf, off + 1, no);
+    hw(buf, off + 2, nl);
+    hw(buf, off + 3, rt);
+    hw(buf, off + 4, pc);
+    return off;
+}
+
+function hBlock(buf: string, count: int): int {
+    set off: int = halloc(buf, 2 + count);
+    hw(buf, off, 2);   // HIR_BLOCK
+    hw(buf, off + 1, count);
+    return off;
+}
+
+function hSet(buf: string, no: int, nl: int, ty: int, val: int): int {
+    set off: int = halloc(buf, 5);
+    hw(buf, off, 3);   // HIR_SET
+    hw(buf, off + 1, no);
+    hw(buf, off + 2, nl);
+    hw(buf, off + 3, ty);
+    hw(buf, off + 4, val);
+    return off;
+}
+
+function hAssign(buf: string, no: int, nl: int, ty: int, val: int): int {
+    set off: int = halloc(buf, 5);
+    hw(buf, off, 4);   // HIR_ASSIGN
+    hw(buf, off + 1, no);
+    hw(buf, off + 2, nl);
+    hw(buf, off + 3, ty);
+    hw(buf, off + 4, val);
+    return off;
+}
+
+function hIf(buf: string, c: int, t: int, e: int): int {
+    set off: int = halloc(buf, 4);
+    hw(buf, off, 5);   // HIR_IF
+    hw(buf, off + 1, c);
+    hw(buf, off + 2, t);
+    hw(buf, off + 3, e);
+    return off;
+}
+
+function hWhile(buf: string, c: int, b: int): int {
+    set off: int = halloc(buf, 3);
+    hw(buf, off, 6);   // HIR_WHILE
+    hw(buf, off + 1, c);
+    hw(buf, off + 2, b);
+    return off;
+}
+
+function hReturn(buf: string, v: int, ty: int): int {
+    set off: int = halloc(buf, 3);
+    hw(buf, off, 8);   // HIR_RETURN
+    hw(buf, off + 1, v);
+    hw(buf, off + 2, ty);
+    return off;
+}
+
+function hBreak(buf: string): int {
+    set off: int = halloc(buf, 1);
+    hw(buf, off, 9);   // HIR_BREAK
+    return off;
+}
+
+function hContinue(buf: string): int {
+    set off: int = halloc(buf, 1);
+    hw(buf, off, 10);  // HIR_CONTINUE
+    return off;
+}
+
+function hCall(buf: string, no: int, nl: int, argc: int, rt: int): int {
+    set off: int = halloc(buf, 5 + argc);
+    hw(buf, off, 11);  // HIR_CALL
+    hw(buf, off + 1, no);
+    hw(buf, off + 2, nl);
+    hw(buf, off + 3, argc);
+    hw(buf, off + 4, rt);
+    return off;
+}
+
+function hBinop(buf: string, l: int, op: int, r: int, ty: int): int {
+    set off: int = halloc(buf, 5);
+    hw(buf, off, 12);  // HIR_BINOP
+    hw(buf, off + 1, l);
+    hw(buf, off + 2, op);
+    hw(buf, off + 3, r);
+    hw(buf, off + 4, ty);
+    return off;
+}
+
+function hUnop(buf: string, op: int, o: int, ty: int): int {
+    set off: int = halloc(buf, 4);
+    hw(buf, off, 13);  // HIR_UNOP
+    hw(buf, off + 1, op);
+    hw(buf, off + 2, o);
+    hw(buf, off + 3, ty);
+    return off;
+}
+
+function hIdent(buf: string, so: int, sl: int, ty: int): int {
+    set off: int = halloc(buf, 4);
+    hw(buf, off, 14);  // HIR_IDENT
+    hw(buf, off + 1, so);
+    hw(buf, off + 2, sl);
+    hw(buf, off + 3, ty);
+    return off;
+}
+
+function hInt(buf: string, v: int): int {
+    set off: int = halloc(buf, 3);
+    hw(buf, off, 15);  // HIR_INT
+    hw(buf, off + 1, v);
+    hw(buf, off + 2, 1);  // TY_INT
+    return off;
+}
+
+function hStr(buf: string, so: int, sl: int): int {
+    set off: int = halloc(buf, 4);
+    hw(buf, off, 16);  // HIR_STR
+    hw(buf, off + 1, so);
+    hw(buf, off + 2, sl);
+    hw(buf, off + 3, 2);  // TY_STRING
+    return off;
+}
+
+function hBool(buf: string, v: int): int {
+    set off: int = halloc(buf, 3);
+    hw(buf, off, 17);  // HIR_BOOL
+    hw(buf, off + 1, v);
+    hw(buf, off + 2, 3);  // TY_BOOL
+    return off;
+}
+
+// ============================================================
+// Test
+// ============================================================
+function main(): int {
+    set buf: string = getStateBuf();
+    hinit(buf);
+
+    // Build: function add(a: int, b: int): int { return a + b; }
+    set aIdent: int = hIdent(buf, 4, 1, 1); // "a" at src[4], TY_INT
+    set bIdent: int = hIdent(buf, 6, 1, 1); // "b" at src[6], TY_INT
+    set addExpr: int = hBinop(buf, aIdent, 1, bIdent, 1); // 1=OP_ADD
+    set retStmt: int = hReturn(buf, addExpr, 1); // TY_INT
+    set fnBody: int = hBlock(buf, 1);
+    hw(buf, fnBody + 2, retStmt);
+    set fnDef: int = hFn(buf, 0, 3, 1, 2); // "add" at src[0..3], ret=TY_INT, 2 params
+    hw(buf, fnDef + 5, 0); hw(buf, fnDef + 6, 1); hw(buf, fnDef + 7, 1); // a: int
+    hw(buf, fnDef + 8, 6); hw(buf, fnDef + 9, 1); hw(buf, fnDef + 10, 1); // b: int
+    hw(buf, fnDef + 11, fnBody);
+
+    // Build: main() { set x: int = add(1, 2); return 0; }
+    set callExpr: int = hCall(buf, 0, 3, 2, 1); // "add", argc=2, rt=TY_INT
+    hw(buf, callExpr + 5, hInt(buf, 1));
+    hw(buf, callExpr + 6, hInt(buf, 2));
+    set setStmt: int = hSet(buf, 12, 1, 1, callExpr); // "x" at src[12], TY_INT
+    set ret0: int = hReturn(buf, hInt(buf, 0), 1); // TY_INT
+    set mainBody: int = hBlock(buf, 2);
+    hw(buf, mainBody + 2, setStmt);
+    hw(buf, mainBody + 3, ret0);
+    set mainFn: int = hFn(buf, 8, 4, 1, 0); // "main" at src[8..12], ret=TY_INT, 0 params
+    hw(buf, mainFn + 5, mainBody);
+
+    set prog: int = hProgram(buf, 2);
+    hw(buf, prog + 2, fnDef);
+    hw(buf, prog + 3, mainFn);
+
+    // Verify
+    println("=== hir.ajb test ===");
+    set ok: int = 1;
+    if (hr(buf, fnDef) != 1) { println("fnDef tag FAIL"); ok = 0; }
+    if (hr(buf, fnDef + 3) != 1) { println("fnDef ret type FAIL"); ok = 0; }
+    if (hr(buf, fnDef + 4) != 2) { println("fnDef param count FAIL"); ok = 0; }
+    if (hr(buf, addExpr) != 12) { println("binop tag FAIL"); ok = 0; }
+    if (hr(buf, prog) != 0) { println("prog tag FAIL"); ok = 0; }
+    if (hr(buf, mainFn + 1) != 8) { println("main name offset FAIL"); ok = 0; }
+    if (hr(buf, setStmt + 3) != 1) { println("set type FAIL"); ok = 0; }
+    if (ok == 1) { println("ALL PASS"); }
+    else { println("FAIL"); }
+    return 0;
+}

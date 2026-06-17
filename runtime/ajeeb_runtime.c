@@ -567,6 +567,7 @@ intptr_t len(intptr_t s) {
 
 void strSet(intptr_t s, intptr_t i, intptr_t c) {
     ((char*)s)[i] = (char)c;
+    ((char*)s)[i + 1] = '\0';
 }
 
 intptr_t getStateBuf(void) {
@@ -574,6 +575,7 @@ intptr_t getStateBuf(void) {
 }
 
 intptr_t getOutbuf(void) {
+    __ajeeb_outbuf[0] = '\0';
     return (intptr_t)__ajeeb_outbuf;
 }
 

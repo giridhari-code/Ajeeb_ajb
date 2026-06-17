@@ -192,9 +192,7 @@ impl MirBuilder {
         for s in then {
             self.lower_stmt(s, locals);
         }
-        if !self.is_terminated() {
-            self.finish_block(Terminator::Goto(0)); // merge placeholder
-        }
+        self.finish_block(Terminator::Goto(0)); // merge placeholder
 
         // Else block (if present)
         let else_block = if !else_.is_empty() {
@@ -202,9 +200,7 @@ impl MirBuilder {
             for s in else_ {
                 self.lower_stmt(s, locals);
             }
-            if !self.is_terminated() {
-                self.finish_block(Terminator::Goto(0)); // merge placeholder
-            }
+            self.finish_block(Terminator::Goto(0)); // merge placeholder
             eb
         } else {
             0
