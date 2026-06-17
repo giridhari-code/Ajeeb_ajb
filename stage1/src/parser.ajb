@@ -672,6 +672,14 @@ function parseBlock(src: int, buf: string, out: string): void {
     writeAppend(out, "}");
 }
 
+function parseBody(src: int, buf: string, out: string): void {
+    if (matchTok(buf, 37) == 1) {
+        parseBlock(src, buf, out);
+    } else {
+        parseStmt(src, buf, out);
+    }
+}
+
 function parseStmt(src: int, buf: string, out: string): void {
     set tt: int = pTokType(buf);
 
@@ -767,7 +775,7 @@ function parseStmt(src: int, buf: string, out: string): void {
         expect(src, buf, 35, "Yaha '(' hona chahiye");
         parseExpr(src, buf, out);
         expect(src, buf, 36, "Yaha ')' hona chahiye");
-        parseBlock(src, buf, out);
+        parseBody(src, buf, out);
         while (matchTok(buf, 7) == 1) {
             advance(src, buf);
             writeAppend(out, " else ");
@@ -777,10 +785,10 @@ function parseStmt(src: int, buf: string, out: string): void {
                 expect(src, buf, 35, "Yaha '(' hona chahiye");
                 parseExpr(src, buf, out);
                 expect(src, buf, 36, "Yaha ')' hona chahiye");
-                parseBlock(src, buf, out);
+                parseBody(src, buf, out);
                 writeAppend(out, ")");
             } else {
-                parseBlock(src, buf, out);
+                parseBody(src, buf, out);
             }
         }
         writeAppend(out, ")");
@@ -794,7 +802,7 @@ function parseStmt(src: int, buf: string, out: string): void {
         expect(src, buf, 35, "Yaha '(' hona chahiye");
         parseExpr(src, buf, out);
         expect(src, buf, 36, "Yaha ')' hona chahiye");
-        parseBlock(src, buf, out);
+        parseBody(src, buf, out);
         writeAppend(out, ")");
         return;
     }
@@ -823,7 +831,7 @@ function parseStmt(src: int, buf: string, out: string): void {
         expect(src, buf, 30, "Yaha ';' hona chahiye");
         if (pTokType(buf) != 36) { parseExpr(src, buf, out); }
         expect(src, buf, 36, "Yaha ')' hona chahiye");
-        parseBlock(src, buf, out);
+        parseBody(src, buf, out);
         writeAppend(out, ")");
         return;
     }
