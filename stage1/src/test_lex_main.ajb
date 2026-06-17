@@ -1,0 +1,266 @@
+function isDigit(c: int): int { if (c >= 48) { if (c <= 57) { return 1; } } return 0; }
+function isAlpha(c: int): int {
+    if (c >= 65) { if (c <= 90) { return 1; } }
+    if (c >= 97) { if (c <= 122) { return 1; } }
+    if (c == 95) { return 1; }
+    return 0;
+}
+function isAlphaNum(c: int): int { if (isDigit(c) == 1) { return 1; } if (isAlpha(c) == 1) { return 1; } return 0; }
+function isSpace(c: int): int { if (c == 32 || c == 9 || c == 10 || c == 13) { return 1; } return 0; }
+function chr(src: int, i: int): int { return charCode(src, i); }
+function rdB(buf: string, off: int): int { return getInt(buf, off); }
+function wrB(buf: string, off: int, v: int): void { setInt(buf, off, v); }
+function rdPos(buf: string): int { return rdB(buf, 0); }
+function wrPos(buf: string, v: int): void { wrB(buf, 0, v); }
+function savePos(buf: string): void { wrB(buf, 8, rdPos(buf)); }
+function restorePos(buf: string): void { wrPos(buf, rdB(buf, 8)); }
+
+function skipStep(src: int, buf: string): int {
+    set pos: int = rdPos(buf);
+    set c: int = chr(src, pos);
+    if (c == 32) { wrPos(buf, pos + 1); return 1; }
+    if (c == 9) { wrPos(buf, pos + 1); return 1; }
+    if (c == 10) { wrPos(buf, pos + 1); return 1; }
+    if (c == 13) { wrPos(buf, pos + 1); return 1; }
+    if (c == 47) { if (chr(src, pos + 1) == 47) {
+        set p: int = pos + 2;
+        while (chr(src, p) != 10) { if (chr(src, p) == 0) { break; } p = p + 1; }
+        wrPos(buf, p);
+        return 1;
+    } }
+    if (c == 47) { if (chr(src, pos + 1) == 42) {
+        set p: int = pos + 2;
+        set dg: int = 1;
+        while (dg == 1) {
+            if (chr(src, p) == 0) { dg = 0; }
+            else if (chr(src, p) == 42) { if (chr(src, p + 1) == 47) { dg = 0; } }
+            else { p = p + 1; }
+        }
+        wrPos(buf, p + 2);
+        return 1;
+    } }
+    return 0;
+}
+function skipWS(src: int, buf: string): void {
+    while (skipStep(src, buf) == 1) { }
+}
+
+function matchKwd(src: int, buf: string, kwd: string): int {
+    set pos: int = rdPos(buf);
+    set klen: int = len(kwd);
+    set i: int = 0;
+    set ok: int = 1;
+    while (i < klen) {
+        if (chr(src, pos + i) != charCode(kwd, i)) { ok = 0; i = klen; }
+        i = i + 1;
+    }
+    if (ok == 1) { if (isAlphaNum(chr(src, pos + klen)) == 1) { ok = 0; } }
+    return ok;
+}
+
+function readIdent(src: int, buf: string): int {
+    set pos: int = rdPos(buf);
+    set start: int = pos;
+    while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+    wrPos(buf, pos);
+    return start;
+}
+
+function readNumber(src: int, buf: string): int {
+    set pos: int = rdPos(buf);
+    set start: int = pos;
+    while (isDigit(chr(src, pos)) == 1) { pos = pos + 1; }
+    wrPos(buf, pos);
+    set n: int = 0;
+    set i: int = start;
+    while (i < pos) { n = n * 10 + (chr(src, i) - 48); i = i + 1; }
+    return n;
+}
+
+function readString(src: int, buf: string): int {
+    set pos: int = rdPos(buf);
+    set start: int = pos + 1;
+    pos = pos + 1;
+    while (chr(src, pos) != 34) { if (chr(src, pos) == 0) { break; }
+        if (chr(src, pos) == 92) { pos = pos + 1; }
+        pos = pos + 1;
+    }
+    pos = pos + 1;
+    wrPos(buf, pos);
+    return start;
+}
+
+function setTok(buf: string, typ: int, val: int, soff: int, slen: int): void {
+    wrB(buf, 48, typ); wrB(buf, 56, val); wrB(buf, 64, soff); wrB(buf, 72, slen);
+}
+function tokType(buf: string): int { return rdB(buf, 48); }
+function tokVal(buf: string): int { return rdB(buf, 56); }
+function tokStrOff(buf: string): int { return rdB(buf, 64); }
+function tokStrLen(buf: string): int { return rdB(buf, 72); }
+
+function tryKwd(src: int, buf: string, start: int, kwd: string, tokId: int): int {
+    savePos(buf); wrPos(buf, start);
+    if (matchKwd(src, buf, kwd) == 1) { setTok(buf, tokId, 0, 0, 0); restorePos(buf); return 1; }
+    restorePos(buf);
+    return 0;
+}
+
+function nextTok(src: int, buf: string): void {
+    skipWS(src, buf);
+    set pos: int = rdPos(buf);
+    set c: int = chr(src, pos);
+    if (c == 0) { setTok(buf, 0, 0, 0, 0); return; }
+    if (c == 64) { if (chr(src, pos + 1) == 105) { if (chr(src, pos + 2) == 109) {
+        wrPos(buf, pos + 7); setTok(buf, 57, 0, 0, 0); return;
+    } } }
+    if (isAlpha(c) == 1 || c == 95) {
+        set start: int = pos;
+        readIdent(src, buf);
+        set slen: int = rdPos(buf) - start;
+        if (tryKwd(src, buf, start, "set", 4) == 1) { return; }
+        if (tryKwd(src, buf, start, "const", 5) == 1) { return; }
+        if (tryKwd(src, buf, start, "if", 6) == 1) { return; }
+        if (tryKwd(src, buf, start, "else", 7) == 1) { return; }
+        if (tryKwd(src, buf, start, "while", 8) == 1) { return; }
+        if (tryKwd(src, buf, start, "function", 9) == 1) { return; }
+        if (tryKwd(src, buf, start, "fn", 9) == 1) { return; }
+        if (tryKwd(src, buf, start, "return", 10) == 1) { return; }
+        if (tryKwd(src, buf, start, "true", 11) == 1) { return; }
+        if (tryKwd(src, buf, start, "false", 12) == 1) { return; }
+        if (tryKwd(src, buf, start, "int", 13) == 1) { return; }
+        if (tryKwd(src, buf, start, "string", 14) == 1) { return; }
+        if (tryKwd(src, buf, start, "bool", 15) == 1) { return; }
+        if (tryKwd(src, buf, start, "void", 16) == 1) { return; }
+        if (tryKwd(src, buf, start, "float", 59) == 1) { return; }
+        if (tryKwd(src, buf, start, "class", 42) == 1) { return; }
+        if (tryKwd(src, buf, start, "self", 43) == 1) { return; }
+        if (tryKwd(src, buf, start, "new", 44) == 1) { return; }
+        if (tryKwd(src, buf, start, "break", 45) == 1) { return; }
+        if (tryKwd(src, buf, start, "continue", 46) == 1) { return; }
+        if (tryKwd(src, buf, start, "for", 47) == 1) { return; }
+        if (tryKwd(src, buf, start, "struct", 49) == 1) { return; }
+        if (tryKwd(src, buf, start, "enum", 50) == 1) { return; }
+        if (tryKwd(src, buf, start, "match", 51) == 1) { return; }
+        if (tryKwd(src, buf, start, "trait", 54) == 1) { return; }
+        if (tryKwd(src, buf, start, "impl", 55) == 1) { return; }
+        if (tryKwd(src, buf, start, "import", 56) == 1) { return; }
+        if (tryKwd(src, buf, start, "pub", 58) == 1) { return; }
+        restorePos(buf);
+        setTok(buf, 1, 0, start, slen); return;
+    }
+    if (isDigit(c) == 1) {
+        set val: int = readNumber(src, buf);
+        set p2: int = rdPos(buf);
+        if (chr(src, p2) == 46) { if (isDigit(chr(src, p2 + 1)) == 1) {
+            wrPos(buf, p2 + 1);
+            while (isDigit(chr(src, rdPos(buf))) == 1) { wrPos(buf, rdPos(buf) + 1); }
+            setTok(buf, 59, val, 0, 0); return;
+        } }
+        setTok(buf, 2, val, 0, 0); return;
+    }
+    // String literal
+    if (c == 34) {
+        set soff: int = readString(src, buf);
+        setTok(buf, 3, 0, soff, rdPos(buf) - soff - 1);
+        return;
+    }
+    // Single-character operators and punctuation
+    if (c == 43) { setTok(buf, 17, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 45) { setTok(buf, 18, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 42) { setTok(buf, 19, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 47) { setTok(buf, 20, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 59) { setTok(buf, 30, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 44) { setTok(buf, 32, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 46) { setTok(buf, 34, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 40) { setTok(buf, 35, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 41) { setTok(buf, 36, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 123) { setTok(buf, 37, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 125) { setTok(buf, 38, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 91) { setTok(buf, 39, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 93) { setTok(buf, 40, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 61) {
+        if (chr(src, pos + 1) == 61) { wrPos(buf, pos + 2); setTok(buf, 21, 0, 0, 0); return; }
+        setTok(buf, 41, 0, 0, 0); wrPos(buf, pos + 1); return;
+    }
+    if (c == 33) {
+        if (chr(src, pos + 1) == 61) { wrPos(buf, pos + 2); setTok(buf, 22, 0, 0, 0); return; }
+        setTok(buf, 29, 0, 0, 0); wrPos(buf, pos + 1); return;
+    }
+    if (c == 60) {
+        if (chr(src, pos + 1) == 61) { wrPos(buf, pos + 2); setTok(buf, 25, 0, 0, 0); return; }
+        setTok(buf, 23, 0, 0, 0); wrPos(buf, pos + 1); return;
+    }
+    if (c == 62) {
+        if (chr(src, pos + 1) == 61) { wrPos(buf, pos + 2); setTok(buf, 26, 0, 0, 0); return; }
+        setTok(buf, 24, 0, 0, 0); wrPos(buf, pos + 1); return;
+    }
+    if (c == 38) {
+        if (chr(src, pos + 1) == 38) { wrPos(buf, pos + 2); setTok(buf, 27, 0, 0, 0); return; }
+    }
+    if (c == 124) {
+        if (chr(src, pos + 1) == 124) { wrPos(buf, pos + 2); setTok(buf, 28, 0, 0, 0); return; }
+    }
+    if (c == 58) {
+        if (chr(src, pos + 1) == 58) { wrPos(buf, pos + 2); setTok(buf, 48, 0, 0, 0); return; }
+        setTok(buf, 31, 0, 0, 0); wrPos(buf, pos + 1); return;
+    }
+    if (c == 95) { setTok(buf, 53, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 64) { setTok(buf, 57, 0, 0, 0); wrPos(buf, pos + 1); return; }
+    if (c == 35) { wrPos(buf, pos + 1); nextTok(src, buf); return; } // skip #
+    setTok(buf, 0, c, 0, 0);
+}
+
+function advance(src: int, buf: string): void {
+    set old: int = rdB(buf, 80);
+    if (old == 10) { pSetLine(buf, pLine(buf) + 1); }
+    nextTok(src, buf);
+    wrB(buf, 80, tokType(buf));
+    wrB(buf, 88, tokVal(buf));
+    wrB(buf, 96, tokStrOff(buf));
+    wrB(buf, 104, tokStrLen(buf));
+}
+
+function identStr(src: int, soff: int, slen: int): string {
+    set out: string = getOutbuf();
+    set i: int = 0;
+    while (i < slen) {
+        strSet(out, i, chr(src, soff + i));
+        i = i + 1;
+    }
+    strSet(out, slen, 0);
+    return out;
+}
+
+function pTokType(buf: string): int { return rdB(buf, 80); }
+function pTokVal(buf: string): int { return rdB(buf, 88); }
+function pTokStrOff(buf: string): int { return rdB(buf, 96); }
+function pTokStrLen(buf: string): int { return rdB(buf, 104); }
+function pLine(buf: string): int { return rdB(buf, 112); }
+function pSetLine(buf: string, v: int): void { wrB(buf, 112, v); }
+function pError(buf: string): int { return rdB(buf, 120); }
+function pSetError(buf: string, v: int): void { wrB(buf, 120, v); }
+function pIdent(src: int, buf: string): string { return identStr(src, pTokStrOff(buf), pTokStrLen(buf)); }
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set i: int = 0;
+    while (i < 128) { setInt(buf, i * 8, 0); i = i + 1; }
+
+    set inPath: string = readArg(1);
+    set src: string = readFile(inPath);
+    set out: string = "build/parsed.txt";
+    writeFile(out, "");
+
+    writeAppend(out, "Testing advance on: " + inPath + "\n");
+    
+    // First advance
+    advance(src, buf);
+    writeAppend(out, "After advance: pTokType=" + itoa(pTokType(buf)) + " pTokVal=" + itoa(pTokVal(buf)) + "\n");
+    writeAppend(out, "  pTokStrOff=" + itoa(pTokStrOff(buf)) + " pTokStrLen=" + itoa(pTokStrLen(buf)) + "\n");
+    
+    // Second advance
+    advance(src, buf);
+    writeAppend(out, "After 2nd advance: pTokType=" + itoa(pTokType(buf)) + "\n");
+    
+    return 0;
+}

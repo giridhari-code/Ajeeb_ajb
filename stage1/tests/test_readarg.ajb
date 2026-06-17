@@ -1,0 +1,1 @@
+function main(): int { set s: string = readArg(1); writeAppend("build/debug_arg.txt", s); return 0; }

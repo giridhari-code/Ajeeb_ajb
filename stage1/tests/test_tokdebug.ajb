@@ -1,0 +1,32 @@
+function isDigit(c: int): int { if (c >= 48 && c <= 57) { return 1; } return 0; }
+function isAlpha(c: int): int {
+    if (c >= 65 && c <= 90) { return 1; }
+    if (c >= 97 && c <= 122) { return 1; }
+    if (c == 95) { return 1; }
+    return 0;
+}
+function isAlphaNum(c: int): int { if (isDigit(c) == 1) { return 1; } if (isAlpha(c) == 1) { return 1; } return 0; }
+function chr(src: int, i: int): int { return charCode(src, i); }
+
+function main(): int {
+    set src: string = readFile("tests/test_simple.ajb");
+    set out: string = "build/debug_tokdebug.txt";
+    writeFile(out, "");
+    set pos: int = 55;
+    set c: int = chr(src, pos);
+    writeAppend(out, "At 55: code=");
+    writeAppend(out, itoa(c));
+    writeAppend(out, " isAlpha=");
+    writeAppend(out, itoa(isAlpha(c)));
+    writeAppend(out, " isDigit=");
+    writeAppend(out, itoa(isDigit(c)));
+    writeAppend(out, "\n");
+    set start: int = pos;
+    while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+    writeAppend(out, "Ident from ");
+    writeAppend(out, itoa(start));
+    writeAppend(out, " to ");
+    writeAppend(out, itoa(pos));
+    writeAppend(out, "\n");
+    return 0;
+}

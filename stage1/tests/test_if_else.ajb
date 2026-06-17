@@ -1,0 +1,14 @@
+function main(): int {
+    set x: int = 0;
+    set go: int = 1;
+    while (go == 1) {
+        if (x == 3) { go = 0; }
+        else { x = x + 1; }
+    }
+    set out: string = "build/debug_if_else.txt";
+    writeFile(out, "");
+    writeAppend(out, "x=");
+    writeAppend(out, itoa(x));
+    writeAppend(out, "\n");
+    return 0;
+}

@@ -1,0 +1,21 @@
+function main(): int {
+    set buf: string = getStateBuf();
+    set i: int = 0;
+    while (i < 128) { setInt(buf, i * 8, 0); i = i + 1; }
+    set src: string = readFile("tests/test_simple.ajb");
+    set pos: int = 0;
+    set c: int = charCode(src, pos);
+    set out: string = "build/debug_nocomment.txt";
+    writeFile(out, "");
+    set j: int = 0;
+    while (j < 20) {
+        writeAppend(out, itoa(j));
+        writeAppend(out, ": code=");
+        writeAppend(out, itoa(c));
+        writeAppend(out, "\n");
+        pos = pos + 1;
+        c = charCode(src, pos);
+        j = j + 1;
+    }
+    return 0;
+}

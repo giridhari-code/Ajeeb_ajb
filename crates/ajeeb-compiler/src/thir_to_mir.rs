@@ -102,12 +102,16 @@ impl MirBuilder {
             self.lower_stmt(stmt, &mut locals);
         }
 
-        // Terminate final block if not already terminated
-        if !self.current_stmts.is_empty() || self.current_blocks.is_empty() {
-            let has_return = self.current_stmts.iter().any(|s| matches!(s, MirStmt::Call { dest: None, func, .. } if func == "__return__"));
-            if !has_return {
-                self.finish_block(Terminator::Return(None));
-            }
+        // Flush any pending stmts into a final block.
+        // Always terminate — even if current_stmts is empty, the last
+        // while/for/if may have called start_block() leaving an unterminated
+        // exit block. Without this, the codegen emits `unreachable` which
+        // tells LLVM the loop-exit is dead, producing an infinite loop.
+        self.finish_block(Terminator::Return(None));
+
+        // Ensure the function has at least one block.
+        if self.current_blocks.is_empty() {
+            self.finish_block(Terminator::Return(None));
         }
 
         MirFn {
@@ -193,21 +197,24 @@ impl MirBuilder {
         }
 
         // Else block (if present)
-        if !else_.is_empty() {
-            let _ = self.start_block();
+        let else_block = if !else_.is_empty() {
+            let eb = self.start_block();
             for s in else_ {
                 self.lower_stmt(s, locals);
             }
             if !self.is_terminated() {
                 self.finish_block(Terminator::Goto(0)); // merge placeholder
             }
-        }
+            eb
+        } else {
+            0
+        };
 
         // Merge block
         let merge_block = self.start_block();
 
         // Patch SwitchInt targets
-        let else_or_merge = if else_.is_empty() { merge_block } else { then_block + 1 };
+        let else_or_merge = if else_.is_empty() { merge_block } else { else_block };
         if let Terminator::SwitchInt { ref mut targets, ref mut default, .. } = self.current_blocks[switch_idx].terminator {
             targets[0].1 = then_block;
             *default = else_or_merge;
@@ -251,9 +258,13 @@ impl MirBuilder {
         for s in body {
             self.lower_stmt(s, locals);
         }
-        if !self.is_terminated() {
-            self.finish_block(Terminator::Goto(header_block));
-        }
+        // Always emit loop-back edge. When body ends with if-without-else,
+        // lower_if creates a merge block via start_block() which empties
+        // current_stmts, causing is_terminated() to return true and skipping
+        // the loop-back. Unconditionally emitting it is safe: if the body
+        // already ended with return/break, the new block is unreachable
+        // but harmless.
+        self.finish_block(Terminator::Goto(header_block));
         self.loop_stack.pop();
 
         // Patch break targets to exit_block
@@ -315,9 +326,8 @@ impl MirBuilder {
         for s in body {
             self.lower_stmt(s, locals);
         }
-        if !self.is_terminated() {
-            self.finish_block(Terminator::Goto(0)); // update_block patched later
-        }
+        // Always emit goto to update_block (patched later). Same reasoning as lower_while.
+        self.finish_block(Terminator::Goto(0)); // update_block patched later
         self.loop_stack.pop();
 
         // Update block

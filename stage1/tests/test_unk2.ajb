@@ -1,0 +1,17 @@
+function main(): int {
+    set src: string = readFile("tests/test_simple.ajb");
+    set out: string = "build/debug_unk2.txt";
+    writeFile(out, "");
+    set pos: int = 49;
+    set j: int = 0;
+    while (j < 15) {
+        set c: int = charCode(src, pos);
+        writeAppend(out, itoa(pos));
+        writeAppend(out, ": code=");
+        writeAppend(out, itoa(c));
+        writeAppend(out, "\n");
+        pos = pos + 1;
+        j = j + 1;
+    }
+    return 0;
+}

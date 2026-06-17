@@ -1,0 +1,14 @@
+function main(): int {
+    set x: int = 0;
+    while (x < 5) {
+        if (x == 0) {
+            if (x == 0) { x = 1; }
+        }
+    }
+    set out: string = "build/debug_nestedseq.txt";
+    writeFile(out, "");
+    writeAppend(out, "x=");
+    writeAppend(out, itoa(x));
+    writeAppend(out, "\n");
+    return 0;
+}

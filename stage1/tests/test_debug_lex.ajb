@@ -1,0 +1,40 @@
+function isDigit(c: int): int { if (c >= 48 && c <= 57) { return 1; } return 0; }
+function isAlpha(c: int): int {
+    if (c >= 65 && c <= 90) { return 1; }
+    if (c >= 97 && c <= 122) { return 1; }
+    if (c == 95) { return 1; }
+    return 0;
+}
+function isAlphaNum(c: int): int { if (isDigit(c) == 1) { return 1; } if (isAlpha(c) == 1) { return 1; } return 0; }
+function isSpace(c: int): int { if (c == 32 || c == 9 || c == 10 || c == 13) { return 1; } return 0; }
+function chr(src: int, i: int): int { return charCode(src, i); }
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set inPath: string = readArg(1);
+    set src: string = readFile(inPath);
+    set out: string = "build/debug_lex.txt";
+    writeFile(out, "");
+    writeAppend(out, "src_len=" + itoa(len(src)) + "\n");
+
+    set pos: int = 0;
+    set c: int = chr(src, pos);
+    writeAppend(out, "c0=" + itoa(c) + "\n");
+
+    while (isSpace(c) == 1) { pos = pos + 1; c = chr(src, pos); }
+    writeAppend(out, "after_ws pos=" + itoa(pos) + " c=" + itoa(c) + "\n");
+
+    set start: int = pos;
+    while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+    set slen: int = pos - start;
+    writeAppend(out, "ident start=" + itoa(start) + " slen=" + itoa(slen) + "\n");
+
+    set j: int = 0;
+    while (j < slen) {
+        writeAppend(out, itoa(charCode(src, start + j)));
+        writeAppend(out, " ");
+        j = j + 1;
+    }
+    writeAppend(out, "\n");
+    return 0;
+}

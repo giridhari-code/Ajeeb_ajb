@@ -139,9 +139,50 @@ fn eval_const_binop(op: MirBinOp, l: &MirConst, r: &MirConst) -> Option<MirConst
 fn dead_block_elim(f: &mut MirFn) {
     if f.blocks.is_empty() { return; }
 
-    let block_count = f.blocks.len();
+    // Ensure all terminator targets are valid by creating unreachable blocks
+    // for any out-of-range references. This handles dangling merge blocks from
+    // lower_if (if-without-else at end of function).
+    loop {
+        let block_count = f.blocks.len();
+        let mut max_target: Option<usize> = None;
+        for block in &f.blocks {
+            match &block.terminator {
+                Terminator::Goto(target) => {
+                    if *target >= block_count {
+                        max_target = Some(max_target.map_or(*target, |m| m.max(*target)));
+                    }
+                }
+                Terminator::SwitchInt { targets, default, .. } => {
+                    for (_, t) in targets {
+                        if *t >= block_count {
+                            max_target = Some(max_target.map_or(*t, |m| m.max(*t)));
+                        }
+                    }
+                    if *default >= block_count {
+                        max_target = Some(max_target.map_or(*default, |m| m.max(*default)));
+                    }
+                }
+                _ => {}
+            }
+        }
+        match max_target {
+            Some(t) => {
+                // Create unreachable blocks up to and including target
+                while f.blocks.len() <= t {
+                    let id = f.blocks.len();
+                    f.blocks.push(BasicBlock {
+                        id,
+                        statements: vec![],
+                        terminator: Terminator::Unreachable,
+                    });
+                }
+            }
+            None => break,
+        }
+    }
 
-    // First, clamp all terminator targets to valid ranges
+    // Now clamp all terminator targets to valid ranges (backup for any edge cases)
+    let block_count = f.blocks.len();
     for block in &mut f.blocks {
         match &mut block.terminator {
             Terminator::Goto(target) => {

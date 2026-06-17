@@ -369,7 +369,7 @@ impl Codegen {
                             write!(self.body, "  {} = call i64 @{}({})\n", reg, name, args_str).unwrap();
                             if matches!(name.as_str(),
                                 "str_concat" | "itoa" | "substring" | "toUpperCase" | "toLowerCase"
-                                | "trim" | "readFile" | "readArg" | "replace" | "chr"
+                                | "trim" | "readFile" | "readArg" | "replace"
                             ) {
                                 self.string_regs.insert(reg.clone());
                             } else if self.fn_return_types.get(name.as_str()).map_or(false, |rt| matches!(rt, TypeAnnot::String)) {

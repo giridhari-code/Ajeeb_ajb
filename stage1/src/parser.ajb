@@ -1,0 +1,982 @@
+// Stage 1 Parser — Full recursive descent parser for Ajeeb
+// Matches the grammar of crates/ajeeb-compiler/src/parser.rs
+// All error messages in Hinglish
+
+// --- Shared lexer state (uses same buf layout as lexer.ajb) ---
+function isDigit(c: int): int { if (c >= 48) { if (c <= 57) { return 1; } } return 0; }
+function isAlpha(c: int): int {
+    if (c >= 65) { if (c <= 90) { return 1; } }
+    if (c >= 97) { if (c <= 122) { return 1; } }
+    if (c == 95) { return 1; }
+    return 0;
+}
+function isAlphaNum(c: int): int { if (isDigit(c) == 1) { return 1; } if (isAlpha(c) == 1) { return 1; } return 0; }
+function isSpace(c: int): int { if (c == 32 || c == 9 || c == 10 || c == 13) { return 1; } return 0; }
+function chr(src: int, i: int): int { return charCode(src, i); }
+function rdB(buf: string, off: int): int { return getInt(buf, off); }
+function wrB(buf: string, off: int, v: int): void { setInt(buf, off, v); }
+function rdPos(buf: string): int { return rdB(buf, 0); }
+function wrPos(buf: string, v: int): void { wrB(buf, 0, v); }
+function savePos(buf: string): void { wrB(buf, 8, rdPos(buf)); }
+function restorePos(buf: string): void { wrPos(buf, rdB(buf, 8)); }
+
+function skipStep(src: int, buf: string): int {
+    set pos: int = rdPos(buf);
+    set c: int = chr(src, pos);
+    if (c == 32) { wrPos(buf, pos + 1); return 1; }
+    if (c == 9) { wrPos(buf, pos + 1); return 1; }
+    if (c == 10) { wrPos(buf, pos + 1); return 1; }
+    if (c == 13) { wrPos(buf, pos + 1); return 1; }
+    if (c == 47) { if (chr(src, pos + 1) == 47) {
+        set p: int = pos + 2;
+        while (chr(src, p) != 10) { if (chr(src, p) == 0) { break; } p = p + 1; }
+        wrPos(buf, p);
+        return 1;
+    } }
+    if (c == 47) { if (chr(src, pos + 1) == 42) {
+        set p: int = pos + 2;
+        set dg: int = 1;
+        while (dg == 1) {
+            if (chr(src, p) == 0) { dg = 0; }
+            else if (chr(src, p) == 42) { if (chr(src, p + 1) == 47) { dg = 0; } }
+            else { p = p + 1; }
+        }
+        wrPos(buf, p + 2);
+        return 1;
+    } }
+    return 0;
+}
+
+function skipWS(src: int, buf: string): void {
+    while (skipStep(src, buf) == 1) { }
+}
+
+function matchKwd(src: int, buf: string, kwd: string): int {
+    set pos: int = rdPos(buf);
+    set klen: int = len(kwd);
+    set i: int = 0;
+    set ok: int = 1;
+    while (i < klen) {
+        if (chr(src, pos + i) != charCode(kwd, i)) { ok = 0; i = klen; }
+        i = i + 1;
+    }
+    if (ok == 1) { if (isAlphaNum(chr(src, pos + klen)) == 1) { ok = 0; } }
+    return ok;
+}
+
+function readIdent(src: int, buf: string): int {
+    set pos: int = rdPos(buf);
+    set start: int = pos;
+    while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+    wrPos(buf, pos);
+    return start;
+}
+
+function readNumber(src: int, buf: string): int {
+    set pos: int = rdPos(buf);
+    set start: int = pos;
+    while (isDigit(chr(src, pos)) == 1) { pos = pos + 1; }
+    wrPos(buf, pos);
+    set n: int = 0;
+    set i: int = start;
+    while (i < pos) { n = n * 10 + (chr(src, i) - 48); i = i + 1; }
+    return n;
+}
+
+function readString(src: int, buf: string): int {
+    set pos: int = rdPos(buf);
+    set start: int = pos + 1;
+    pos = pos + 1;
+    while (chr(src, pos) != 34) { if (chr(src, pos) == 0) { break; }
+        if (chr(src, pos) == 92) { pos = pos + 1; }
+        pos = pos + 1;
+    }
+    pos = pos + 1;
+    wrPos(buf, pos);
+    return start;
+}
+
+function setTok(buf: string, typ: int, val: int, soff: int, slen: int): void {
+    wrB(buf, 48, typ); wrB(buf, 56, val); wrB(buf, 64, soff); wrB(buf, 72, slen);
+}
+function tokType(buf: string): int { return rdB(buf, 48); }
+function tokVal(buf: string): int { return rdB(buf, 56); }
+function tokStrOff(buf: string): int { return rdB(buf, 64); }
+function tokStrLen(buf: string): int { return rdB(buf, 72); }
+
+function tryKwd(src: int, buf: string, start: int, kwd: string, tokId: int): int {
+    savePos(buf); wrPos(buf, start);
+    if (matchKwd(src, buf, kwd) == 1) { setTok(buf, tokId, 0, 0, 0); restorePos(buf); return 1; }
+    restorePos(buf);
+    return 0;
+}
+
+function nextTok(src: int, buf: string): void {
+    skipWS(src, buf);
+    set pos: int = rdPos(buf);
+    set c: int = chr(src, pos);
+    if (c == 0) { setTok(buf, 0, 0, 0, 0); return; }
+    if (c == 64) { if (chr(src, pos + 1) == 105) { if (chr(src, pos + 2) == 109) {
+        wrPos(buf, pos + 7); setTok(buf, 57, 0, 0, 0); return;
+    } } }
+    if (isAlpha(c) == 1 || c == 95) {
+        set start: int = pos;
+        readIdent(src, buf);
+        set slen: int = rdPos(buf) - start;
+        if (tryKwd(src, buf, start, "set", 4) == 1) { return; }
+        if (tryKwd(src, buf, start, "const", 5) == 1) { return; }
+        if (tryKwd(src, buf, start, "if", 6) == 1) { return; }
+        if (tryKwd(src, buf, start, "else", 7) == 1) { return; }
+        if (tryKwd(src, buf, start, "while", 8) == 1) { return; }
+        if (tryKwd(src, buf, start, "function", 9) == 1) { return; }
+        if (tryKwd(src, buf, start, "fn", 9) == 1) { return; }
+        if (tryKwd(src, buf, start, "return", 10) == 1) { return; }
+        if (tryKwd(src, buf, start, "true", 11) == 1) { return; }
+        if (tryKwd(src, buf, start, "false", 12) == 1) { return; }
+        if (tryKwd(src, buf, start, "int", 13) == 1) { return; }
+        if (tryKwd(src, buf, start, "string", 14) == 1) { return; }
+        if (tryKwd(src, buf, start, "bool", 15) == 1) { return; }
+        if (tryKwd(src, buf, start, "void", 16) == 1) { return; }
+        if (tryKwd(src, buf, start, "float", 59) == 1) { return; }
+        if (tryKwd(src, buf, start, "class", 42) == 1) { return; }
+        if (tryKwd(src, buf, start, "self", 43) == 1) { return; }
+        if (tryKwd(src, buf, start, "new", 44) == 1) { return; }
+        if (tryKwd(src, buf, start, "break", 45) == 1) { return; }
+        if (tryKwd(src, buf, start, "continue", 46) == 1) { return; }
+        if (tryKwd(src, buf, start, "for", 47) == 1) { return; }
+        if (tryKwd(src, buf, start, "struct", 49) == 1) { return; }
+        if (tryKwd(src, buf, start, "enum", 50) == 1) { return; }
+        if (tryKwd(src, buf, start, "match", 51) == 1) { return; }
+        if (tryKwd(src, buf, start, "trait", 54) == 1) { return; }
+        if (tryKwd(src, buf, start, "impl", 55) == 1) { return; }
+        if (tryKwd(src, buf, start, "import", 56) == 1) { return; }
+        if (tryKwd(src, buf, start, "pub", 58) == 1) { return; }
+        restorePos(buf);
+        setTok(buf, 1, 0, start, slen); return;
+    }
+    if (isDigit(c) == 1) {
+        set val: int = readNumber(src, buf);
+        set p2: int = rdPos(buf);
+        if (chr(src, p2) == 46) { if (isDigit(chr(src, p2 + 1)) == 1) {
+            wrPos(buf, p2 + 1);
+            while (isDigit(chr(src, rdPos(buf))) == 1) { wrPos(buf, rdPos(buf) + 1); }
+            setTok(buf, 59, val, 0, 0); return;
+        } }
+        setTok(buf, 2, val, 0, 0); return;
+    }
+    if (c == 34) {
+        set start: int = readString(src, buf);
+        set slen: int = rdPos(buf) - start - 1;
+        setTok(buf, 3, 0, start, slen); return;
+    }
+    pos = pos + 1; wrPos(buf, pos);
+    if (c == 43) { setTok(buf, 17, 0, 0, 0); return; }
+    if (c == 45) { if (chr(src, pos) == 62) { wrPos(buf, pos + 1); setTok(buf, 33, 0, 0, 0); return; } setTok(buf, 18, 0, 0, 0); return; }
+    if (c == 42) { setTok(buf, 19, 0, 0, 0); return; }
+    if (c == 47) { setTok(buf, 20, 0, 0, 0); return; }
+    if (c == 61) {
+        if (chr(src, pos) == 61) { wrPos(buf, pos + 1); setTok(buf, 21, 0, 0, 0); return; }
+        if (chr(src, pos) == 62) { wrPos(buf, pos + 1); setTok(buf, 52, 0, 0, 0); return; }
+        setTok(buf, 41, 0, 0, 0); return;
+    }
+    if (c == 33) { if (chr(src, pos) == 61) { wrPos(buf, pos + 1); setTok(buf, 22, 0, 0, 0); return; } setTok(buf, 29, 0, 0, 0); return; }
+    if (c == 38) { if (chr(src, pos) == 38) { wrPos(buf, pos + 1); setTok(buf, 27, 0, 0, 0); return; } setTok(buf, 0, 0, 0, 0); return; }
+    if (c == 124) { if (chr(src, pos) == 124) { wrPos(buf, pos + 1); setTok(buf, 28, 0, 0, 0); return; } setTok(buf, 0, 0, 0, 0); return; }
+    if (c == 60) { if (chr(src, pos) == 61) { wrPos(buf, pos + 1); setTok(buf, 25, 0, 0, 0); return; } setTok(buf, 23, 0, 0, 0); return; }
+    if (c == 62) { if (chr(src, pos) == 61) { wrPos(buf, pos + 1); setTok(buf, 26, 0, 0, 0); return; } setTok(buf, 24, 0, 0, 0); return; }
+    if (c == 58) { if (chr(src, pos) == 58) { wrPos(buf, pos + 1); setTok(buf, 48, 0, 0, 0); return; } setTok(buf, 31, 0, 0, 0); return; }
+    if (c == 59) { setTok(buf, 30, 0, 0, 0); return; }
+    if (c == 44) { setTok(buf, 32, 0, 0, 0); return; }
+    if (c == 46) { setTok(buf, 34, 0, 0, 0); return; }
+    if (c == 40) { setTok(buf, 35, 0, 0, 0); return; }
+    if (c == 41) { setTok(buf, 36, 0, 0, 0); return; }
+    if (c == 123) { setTok(buf, 37, 0, 0, 0); return; }
+    if (c == 125) { setTok(buf, 38, 0, 0, 0); return; }
+    if (c == 91) { setTok(buf, 39, 0, 0, 0); return; }
+    if (c == 93) { setTok(buf, 40, 0, 0, 0); return; }
+    setTok(buf, -1, c, 0, 0);
+}
+
+function identStr(src: int, soff: int, slen: int): string {
+    set scratch: string = getOutbuf();
+    set i: int = 0;
+    while (i < slen) { strSet(scratch, i, chr(src, soff + i)); i = i + 1; }
+    strSet(scratch, slen, 0);
+    return scratch;
+}
+
+// --- Parser State ---
+// Parser uses buf layout:
+// 80=curTokType, 88=curTokVal, 96=curTokStrOff, 104=curTokStrLen
+// 112=line count, 120=error flag
+function pTokType(buf: string): int { return rdB(buf, 80); }
+function pTokVal(buf: string): int { return rdB(buf, 88); }
+function pTokStrOff(buf: string): int { return rdB(buf, 96); }
+function pTokStrLen(buf: string): int { return rdB(buf, 104); }
+function pLine(buf: string): int { return rdB(buf, 112); }
+function pSetLine(buf: string, v: int): void { wrB(buf, 112, v); }
+function pError(buf: string): int { return rdB(buf, 120); }
+function pSetError(buf: string, v: int): void { wrB(buf, 120, v); }
+
+function pIdent(src: int, buf: string): string { return identStr(src, pTokStrOff(buf), pTokStrLen(buf)); }
+
+function advance(src: int, buf: string): void {
+    set old: int = rdB(buf, 80);
+    if (old == 10) { pSetLine(buf, pLine(buf) + 1); }
+    nextTok(src, buf);
+    wrB(buf, 80, tokType(buf));
+    wrB(buf, 88, tokVal(buf));
+    wrB(buf, 96, tokStrOff(buf));
+    wrB(buf, 104, tokStrLen(buf));
+}
+
+function expect(src: int, buf: string, tokId: int, msg: string): void {
+    if (pTokType(buf) != tokId) {
+        writeAppend("build/errors.txt", "Arre bhai! Line ");
+        writeAppend("build/errors.txt", itoa(pLine(buf)));
+        writeAppend("build/errors.txt", ": ");
+        writeAppend("build/errors.txt", msg);
+        writeAppend("build/errors.txt", "\n");
+        pSetError(buf, 1);
+    }
+    advance(src, buf);
+}
+
+function matchTok(buf: string, tokId: int): int {
+    if (pTokType(buf) == tokId) { return 1; }
+    return 0;
+}
+
+// --- Expression Parser ---
+// Precedence: or < and < equality < comparison < term < factor < unary < primary
+
+function parsePrimary(src: int, buf: string, out: string): void {
+    set tt: int = pTokType(buf);
+    if (tt == 2) {
+        writeAppend(out, "Num(");
+        writeAppend(out, itoa(pTokVal(buf)));
+        writeAppend(out, ")");
+        advance(src, buf);
+        return;
+    }
+    if (tt == 3) {
+        writeAppend(out, "Str(");
+        writeAppend(out, pIdent(src, buf));
+        writeAppend(out, ")");
+        advance(src, buf);
+        return;
+    }
+    if (tt == 11) { writeAppend(out, "Bool(true)"); advance(src, buf); return; }
+    if (tt == 12) { writeAppend(out, "Bool(false)"); advance(src, buf); return; }
+    if (tt == 43) { writeAppend(out, "Self"); advance(src, buf); return; }
+    if (tt == 29) {
+        advance(src, buf);
+        writeAppend(out, "Not(");
+        parsePrimary(src, buf, out);
+        writeAppend(out, ")");
+        return;
+    }
+    if (tt == 18) {
+        advance(src, buf);
+        writeAppend(out, "Minus(");
+        parsePrimary(src, buf, out);
+        writeAppend(out, ")");
+        return;
+    }
+    if (tt == 35) {
+        advance(src, buf);
+        writeAppend(out, "(");
+        parseExpr(src, buf, out);
+        expect(src, buf, 36, "Yaha ')' hona chahiye tha");
+        writeAppend(out, ")");
+        return;
+    }
+    if (tt == 39) {
+        advance(src, buf);
+        writeAppend(out, "Array[");
+        if (pTokType(buf) != 40) {
+            parseExpr(src, buf, out);
+            while (matchTok(buf, 32) == 1) {
+                advance(src, buf);
+                writeAppend(out, ", ");
+                parseExpr(src, buf, out);
+            }
+        }
+        expect(src, buf, 40, "Yaha ']' hona chahiye tha");
+        writeAppend(out, "]");
+        return;
+    }
+    if (tt == 44) {
+        advance(src, buf);
+        writeAppend(out, "New(");
+        writeAppend(out, pIdent(src, buf));
+        expect(src, buf, 1, "Yaha class ka naam hona chahiye");
+        writeAppend(out, ")");
+        return;
+    }
+    if (tt == 1) {
+        set name: string = pIdent(src, buf);
+        advance(src, buf);
+        // Check for :: (associated fn or enum ctor)
+        if (matchTok(buf, 48) == 1) {
+            advance(src, buf);
+            set member: string = pIdent(src, buf);
+            expect(src, buf, 1, "Yaha naam hona chahiye");
+            if (matchTok(buf, 35) == 1) {
+                advance(src, buf);
+                writeAppend(out, "AssocFn(");
+                writeAppend(out, name);
+                writeAppend(out, "::");
+                writeAppend(out, member);
+                writeAppend(out, "(");
+                if (pTokType(buf) != 36) {
+                    parseExpr(src, buf, out);
+                    while (matchTok(buf, 32) == 1) {
+                        advance(src, buf);
+                        writeAppend(out, ", ");
+                        parseExpr(src, buf, out);
+                    }
+                }
+                expect(src, buf, 36, "Yaha ')' hona chahiye tha");
+                writeAppend(out, "))");
+            } else {
+                writeAppend(out, "EnumRef(");
+                writeAppend(out, name);
+                writeAppend(out, ".");
+                writeAppend(out, member);
+                writeAppend(out, ")");
+            }
+            return;
+        }
+        // Check for { struct literal
+        if (matchTok(buf, 37) == 1) {
+            advance(src, buf);
+            writeAppend(out, "StructLit(");
+            writeAppend(out, name);
+            writeAppend(out, "{");
+            if (pTokType(buf) != 38) {
+                writeAppend(out, pIdent(src, buf));
+                expect(src, buf, 31, "Yaha ':' hona chahiye");
+                parseExpr(src, buf, out);
+                while (matchTok(buf, 32) == 1) {
+                    advance(src, buf);
+                    writeAppend(out, ", ");
+                    writeAppend(out, pIdent(src, buf));
+                    expect(src, buf, 31, "Yaha ':' hona chahiye");
+                    parseExpr(src, buf, out);
+                }
+            }
+            expect(src, buf, 38, "Yaha '}' hona chahiye tha");
+            writeAppend(out, "})");
+            return;
+        }
+        // Check for [ generic type args
+        if (matchTok(buf, 39) == 1) {
+            advance(src, buf);
+            writeAppend(out, name);
+            writeAppend(out, "[");
+            parseExpr(src, buf, out);
+            while (matchTok(buf, 32) == 1) {
+                advance(src, buf);
+                writeAppend(out, ", ");
+                parseExpr(src, buf, out);
+            }
+            expect(src, buf, 40, "Yaha ']' hona chahiye tha");
+            writeAppend(out, "]");
+            // Check for postfix: call, field, index
+            while (matchTok(buf, 35) == 1 || matchTok(buf, 34) == 1 || matchTok(buf, 39) == 1) {
+                if (matchTok(buf, 35) == 1) {
+                    advance(src, buf);
+                    writeAppend(out, "(");
+                    if (pTokType(buf) != 36) {
+                        parseExpr(src, buf, out);
+                        while (matchTok(buf, 32) == 1) {
+                            advance(src, buf);
+                            writeAppend(out, ", ");
+                            parseExpr(src, buf, out);
+                        }
+                    }
+                    expect(src, buf, 36, "Yaha ')' hona chahiye tha");
+                    writeAppend(out, ")");
+                } else if (matchTok(buf, 34) == 1) {
+                    advance(src, buf);
+                    writeAppend(out, ".");
+                    writeAppend(out, pIdent(src, buf));
+                    expect(src, buf, 1, "Yaha field/method naam hona chahiye");
+                    if (matchTok(buf, 35) == 1) {
+                        advance(src, buf);
+                        writeAppend(out, "(");
+                        if (pTokType(buf) != 36) {
+                            parseExpr(src, buf, out);
+                            while (matchTok(buf, 32) == 1) {
+                                advance(src, buf);
+                                writeAppend(out, ", ");
+                                parseExpr(src, buf, out);
+                            }
+                        }
+                        expect(src, buf, 36, "Yaha ')' hona chahiye tha");
+                        writeAppend(out, ")");
+                    }
+                } else {
+                    advance(src, buf);
+                    writeAppend(out, "[");
+                    parseExpr(src, buf, out);
+                    expect(src, buf, 40, "Yaha ']' hona chahiye tha");
+                    writeAppend(out, "]");
+                }
+            }
+            return;
+        }
+        // Simple ident or function call
+        if (matchTok(buf, 35) == 1) {
+            advance(src, buf);
+            writeAppend(out, "Call(");
+            writeAppend(out, name);
+            writeAppend(out, "(");
+            if (pTokType(buf) != 36) {
+                parseExpr(src, buf, out);
+                while (matchTok(buf, 32) == 1) {
+                    advance(src, buf);
+                    writeAppend(out, ", ");
+                    parseExpr(src, buf, out);
+                }
+            }
+            expect(src, buf, 36, "Yaha ')' hona chahiye tha");
+            writeAppend(out, "))");
+        } else {
+            writeAppend(out, "Ident(");
+            writeAppend(out, name);
+            writeAppend(out, ")");
+        }
+        // Postfix: .field, [index]
+        while (matchTok(buf, 34) == 1 || matchTok(buf, 39) == 1) {
+            if (matchTok(buf, 34) == 1) {
+                advance(src, buf);
+                writeAppend(out, ".");
+                writeAppend(out, pIdent(src, buf));
+                expect(src, buf, 1, "Yaha field/method naam hona chahiye");
+                if (matchTok(buf, 35) == 1) {
+                    advance(src, buf);
+                    writeAppend(out, "(");
+                    if (pTokType(buf) != 36) {
+                        parseExpr(src, buf, out);
+                        while (matchTok(buf, 32) == 1) {
+                            advance(src, buf);
+                            writeAppend(out, ", ");
+                            parseExpr(src, buf, out);
+                        }
+                    }
+                    expect(src, buf, 36, "Yaha ')' hona chahiye tha");
+                    writeAppend(out, ")");
+                }
+            } else {
+                advance(src, buf);
+                writeAppend(out, "[");
+                parseExpr(src, buf, out);
+                expect(src, buf, 40, "Yaha ']' hona chahiye tha");
+                writeAppend(out, "]");
+            }
+        }
+        return;
+    }
+    // Float literal
+    if (tt == 59) {
+        writeAppend(out, "Float(");
+        writeAppend(out, itoa(pTokVal(buf)));
+        writeAppend(out, ")");
+        advance(src, buf);
+        return;
+    }
+    writeAppend(out, "UNKNOWN_EXPR(tt=");
+    writeAppend(out, itoa(tt));
+    writeAppend(out, ")");
+    advance(src, buf);
+}
+
+function parseComparison(src: int, buf: string, out: string): void {
+    parseTerm(src, buf, out);
+    while (matchTok(buf, 23) == 1 || matchTok(buf, 24) == 1 || matchTok(buf, 25) == 1 || matchTok(buf, 26) == 1) {
+        set op: string = "";
+        if (matchTok(buf, 23) == 1) { op = "<"; }
+        if (matchTok(buf, 24) == 1) { op = ">"; }
+        if (matchTok(buf, 25) == 1) { op = "<="; }
+        if (matchTok(buf, 26) == 1) { op = ">="; }
+        advance(src, buf);
+        writeAppend(out, " BinOp(");
+        writeAppend(out, op);
+        writeAppend(out, " ");
+        parseTerm(src, buf, out);
+        writeAppend(out, ")");
+    }
+}
+
+function parseTerm(src: int, buf: string, out: string): void {
+    parseFactor(src, buf, out);
+    while (matchTok(buf, 17) == 1 || matchTok(buf, 18) == 1) {
+        set op: string = "+";
+        if (matchTok(buf, 18) == 1) { op = "-"; }
+        advance(src, buf);
+        writeAppend(out, " BinOp(");
+        writeAppend(out, op);
+        writeAppend(out, " ");
+        parseFactor(src, buf, out);
+        writeAppend(out, ")");
+    }
+}
+
+function parseFactor(src: int, buf: string, out: string): void {
+    parsePrimary(src, buf, out);
+    while (matchTok(buf, 19) == 1 || matchTok(buf, 20) == 1) {
+        set op: string = "*";
+        if (matchTok(buf, 20) == 1) { op = "/"; }
+        advance(src, buf);
+        writeAppend(out, " BinOp(");
+        writeAppend(out, op);
+        writeAppend(out, " ");
+        parsePrimary(src, buf, out);
+        writeAppend(out, ")");
+    }
+}
+
+function parseEquality(src: int, buf: string, out: string): void {
+    parseComparison(src, buf, out);
+    while (matchTok(buf, 21) == 1 || matchTok(buf, 22) == 1) {
+        set op: string = "";
+        if (matchTok(buf, 21) == 1) { op = "=="; }
+        if (matchTok(buf, 22) == 1) { op = "!="; }
+        advance(src, buf);
+        writeAppend(out, " BinOp(");
+        writeAppend(out, op);
+        writeAppend(out, " ");
+        parseComparison(src, buf, out);
+        writeAppend(out, ")");
+    }
+}
+
+function parseAnd(src: int, buf: string, out: string): void {
+    parseEquality(src, buf, out);
+    while (matchTok(buf, 27) == 1) {
+        advance(src, buf);
+        writeAppend(out, " BinOp(&& ");
+        parseEquality(src, buf, out);
+        writeAppend(out, ")");
+    }
+}
+
+function parseOr(src: int, buf: string, out: string): void {
+    parseAnd(src, buf, out);
+    while (matchTok(buf, 28) == 1) {
+        advance(src, buf);
+        writeAppend(out, " BinOp(|| ");
+        parseAnd(src, buf, out);
+        writeAppend(out, ")");
+    }
+}
+
+function parseExpr(src: int, buf: string, out: string): void {
+    parseOr(src, buf, out);
+    // Assignment: ident = expr
+    if (matchTok(buf, 41) == 1) {
+        advance(src, buf);
+        writeAppend(out, " Assign(");
+        parseExpr(src, buf, out);
+        writeAppend(out, ")");
+    }
+}
+
+// --- Statement Parser ---
+
+function parseType(src: int, buf: string, out: string): void {
+    set tt: int = pTokType(buf);
+    if (tt == 13) { writeAppend(out, "int"); advance(src, buf); return; }
+    if (tt == 59) { writeAppend(out, "float"); advance(src, buf); return; }
+    if (tt == 14) { writeAppend(out, "string"); advance(src, buf); return; }
+    if (tt == 15) { writeAppend(out, "bool"); advance(src, buf); return; }
+    if (tt == 16) { writeAppend(out, "void"); advance(src, buf); return; }
+    if (tt == 1) {
+        writeAppend(out, pIdent(src, buf));
+        advance(src, buf);
+        // Type[Generic] or Type[]
+        while (matchTok(buf, 39) == 1) {
+            advance(src, buf);
+            if (matchTok(buf, 40) == 1) {
+                advance(src, buf);
+                writeAppend(out, "[]");
+            } else {
+                writeAppend(out, "[");
+                parseType(src, buf, out);
+                while (matchTok(buf, 32) == 1) {
+                    advance(src, buf);
+                    writeAppend(out, ", ");
+                    parseType(src, buf, out);
+                }
+                expect(src, buf, 40, "Yaha ']' hona chahiye");
+                writeAppend(out, "]");
+            }
+        }
+        return;
+    }
+    writeAppend(out, "UNKNOWN_TYPE");
+    advance(src, buf);
+}
+
+function parseParams(src: int, buf: string, out: string): void {
+    expect(src, buf, 35, "Yaha '(' hona chahiye");
+    if (pTokType(buf) != 36) {
+        // Check for self
+        if (matchTok(buf, 43) == 1) {
+            writeAppend(out, "self");
+            advance(src, buf);
+            if (matchTok(buf, 31) == 1) {
+                advance(src, buf);
+                writeAppend(out, ": ");
+                parseType(src, buf, out);
+            }
+        } else {
+            writeAppend(out, pIdent(src, buf));
+            expect(src, buf, 1, "Yaha parameter ka naam hona chahiye");
+            expect(src, buf, 31, "Yaha ':' hona chahiye");
+            parseType(src, buf, out);
+        }
+        while (matchTok(buf, 32) == 1) {
+            advance(src, buf);
+            writeAppend(out, ", ");
+            if (matchTok(buf, 43) == 1) {
+                writeAppend(out, "self");
+                advance(src, buf);
+                if (matchTok(buf, 31) == 1) {
+                    advance(src, buf);
+                    writeAppend(out, ": ");
+                    parseType(src, buf, out);
+                }
+            } else {
+                writeAppend(out, pIdent(src, buf));
+                expect(src, buf, 1, "Yaha parameter ka naam hona chahiye");
+                expect(src, buf, 31, "Yaha ':' hona chahiye");
+                parseType(src, buf, out);
+            }
+        }
+    }
+    expect(src, buf, 36, "Yaha ')' hona chahiye");
+}
+
+function parseBlock(src: int, buf: string, out: string): void {
+    expect(src, buf, 37, "Yaha '{' hona chahiye");
+    writeAppend(out, " { ");
+    while (pTokType(buf) != 38) {
+        if (pTokType(buf) == 0) { break; }
+        parseStmt(src, buf, out);
+        writeAppend(out, " ");
+    }
+    expect(src, buf, 38, "Yaha '}' hona chahiye");
+    writeAppend(out, "}");
+}
+
+function parseStmt(src: int, buf: string, out: string): void {
+    set tt: int = pTokType(buf);
+
+    // pub modifier
+    set isPub: int = 0;
+    if (tt == 58) {
+        isPub = 1;
+        advance(src, buf);
+        tt = pTokType(buf);
+    }
+
+    // import
+    if (tt == 56) {
+        advance(src, buf);
+        writeAppend(out, "Import(");
+        writeAppend(out, pIdent(src, buf));
+        advance(src, buf);
+        while (matchTok(buf, 48) == 1) {
+            advance(src, buf);
+            writeAppend(out, "::");
+            writeAppend(out, pIdent(src, buf));
+            advance(src, buf);
+        }
+        expect(src, buf, 30, "Yaha ';' hona chahiye");
+        writeAppend(out, ")");
+        return;
+    }
+
+    // set
+    if (tt == 4) {
+        advance(src, buf);
+        writeAppend(out, "Set(");
+        if (isPub == 1) { writeAppend(out, "pub "); }
+        writeAppend(out, pIdent(src, buf));
+        expect(src, buf, 1, "Yaha variable naam hona chahiye");
+        if (matchTok(buf, 31) == 1) {
+            advance(src, buf);
+            writeAppend(out, ": ");
+            parseType(src, buf, out);
+        }
+        expect(src, buf, 41, "Yaha '=' hona chahiye");
+        writeAppend(out, " = ");
+        parseExpr(src, buf, out);
+        expect(src, buf, 30, "Yaha ';' hona chahiye");
+        writeAppend(out, ")");
+        return;
+    }
+
+    // const
+    if (tt == 5) {
+        advance(src, buf);
+        writeAppend(out, "Const(");
+        if (isPub == 1) { writeAppend(out, "pub "); }
+        writeAppend(out, pIdent(src, buf));
+        expect(src, buf, 1, "Yaha variable naam hona chahiye");
+        if (matchTok(buf, 31) == 1) {
+            advance(src, buf);
+            writeAppend(out, ": ");
+            parseType(src, buf, out);
+        }
+        expect(src, buf, 41, "Yaha '=' hona chahiye");
+        writeAppend(out, " = ");
+        parseExpr(src, buf, out);
+        expect(src, buf, 30, "Yaha ';' hona chahiye");
+        writeAppend(out, ")");
+        return;
+    }
+
+    // function
+    if (tt == 9) {
+        advance(src, buf);
+        writeAppend(out, "FnDef(");
+        if (isPub == 1) { writeAppend(out, "pub "); }
+        writeAppend(out, pIdent(src, buf));
+        expect(src, buf, 1, "Yaha function ka naam hona chahiye");
+        writeAppend(out, "(");
+        parseParams(src, buf, out);
+        writeAppend(out, ")");
+        if (matchTok(buf, 31) == 1) {
+            advance(src, buf);
+            writeAppend(out, " -> ");
+            parseType(src, buf, out);
+        }
+        parseBlock(src, buf, out);
+        writeAppend(out, ")");
+        return;
+    }
+
+    // if
+    if (tt == 6) {
+        advance(src, buf);
+        writeAppend(out, "If(");
+        expect(src, buf, 35, "Yaha '(' hona chahiye");
+        parseExpr(src, buf, out);
+        expect(src, buf, 36, "Yaha ')' hona chahiye");
+        parseBlock(src, buf, out);
+        while (matchTok(buf, 7) == 1) {
+            advance(src, buf);
+            writeAppend(out, " else ");
+            if (matchTok(buf, 6) == 1) {
+                advance(src, buf);
+                writeAppend(out, "If(");
+                expect(src, buf, 35, "Yaha '(' hona chahiye");
+                parseExpr(src, buf, out);
+                expect(src, buf, 36, "Yaha ')' hona chahiye");
+                parseBlock(src, buf, out);
+                writeAppend(out, ")");
+            } else {
+                parseBlock(src, buf, out);
+            }
+        }
+        writeAppend(out, ")");
+        return;
+    }
+
+    // while
+    if (tt == 8) {
+        advance(src, buf);
+        writeAppend(out, "While(");
+        expect(src, buf, 35, "Yaha '(' hona chahiye");
+        parseExpr(src, buf, out);
+        expect(src, buf, 36, "Yaha ')' hona chahiye");
+        parseBlock(src, buf, out);
+        writeAppend(out, ")");
+        return;
+    }
+
+    // for
+    if (tt == 47) {
+        advance(src, buf);
+        writeAppend(out, "For(");
+        expect(src, buf, 35, "Yaha '(' hona chahiye");
+        if (matchTok(buf, 4) == 1) {
+            advance(src, buf);
+            writeAppend(out, "Set(");
+            writeAppend(out, pIdent(src, buf));
+            expect(src, buf, 1, "Yaha variable naam hona chahiye");
+            expect(src, buf, 31, "Yaha ':' hona chahiye");
+            parseType(src, buf, out);
+            expect(src, buf, 41, "Yaha '=' hona chahiye");
+            writeAppend(out, " = ");
+            parseExpr(src, buf, out);
+            writeAppend(out, ")");
+        } else {
+            expect(src, buf, 30, "Yaha ';' hona chahiye");
+        }
+        expect(src, buf, 30, "Yaha ';' hona chahiye");
+        if (pTokType(buf) != 30) { parseExpr(src, buf, out); }
+        expect(src, buf, 30, "Yaha ';' hona chahiye");
+        if (pTokType(buf) != 36) { parseExpr(src, buf, out); }
+        expect(src, buf, 36, "Yaha ')' hona chahiye");
+        parseBlock(src, buf, out);
+        writeAppend(out, ")");
+        return;
+    }
+
+    // return
+    if (tt == 10) {
+        advance(src, buf);
+        writeAppend(out, "Return(");
+        if (pTokType(buf) != 30) { parseExpr(src, buf, out); }
+        expect(src, buf, 30, "Yaha ';' hona chahiye");
+        writeAppend(out, ")");
+        return;
+    }
+
+    // break
+    if (tt == 45) {
+        advance(src, buf);
+        expect(src, buf, 30, "Yaha ';' hona chahiye");
+        writeAppend(out, "Break");
+        return;
+    }
+
+    // continue
+    if (tt == 46) {
+        advance(src, buf);
+        expect(src, buf, 30, "Yaha ';' hona chahiye");
+        writeAppend(out, "Continue");
+        return;
+    }
+
+    // struct
+    if (tt == 49) {
+        advance(src, buf);
+        writeAppend(out, "StructDef(");
+        if (isPub == 1) { writeAppend(out, "pub "); }
+        writeAppend(out, pIdent(src, buf));
+        expect(src, buf, 1, "Yaha struct ka naam hona chahiye");
+        parseBlock(src, buf, out);
+        writeAppend(out, ")");
+        return;
+    }
+
+    // enum
+    if (tt == 50) {
+        advance(src, buf);
+        writeAppend(out, "EnumDef(");
+        if (isPub == 1) { writeAppend(out, "pub "); }
+        writeAppend(out, pIdent(src, buf));
+        expect(src, buf, 1, "Yaha enum ka naam hona chahiye");
+        parseBlock(src, buf, out);
+        writeAppend(out, ")");
+        return;
+    }
+
+    // trait
+    if (tt == 54) {
+        advance(src, buf);
+        writeAppend(out, "TraitDef(");
+        if (isPub == 1) { writeAppend(out, "pub "); }
+        writeAppend(out, pIdent(src, buf));
+        expect(src, buf, 1, "Yaha trait ka naam hona chahiye");
+        parseBlock(src, buf, out);
+        writeAppend(out, ")");
+        return;
+    }
+
+    // impl
+    if (tt == 55) {
+        advance(src, buf);
+        writeAppend(out, "Impl(");
+        writeAppend(out, pIdent(src, buf));
+        expect(src, buf, 1, "Yaha type/trait naam hona chahiye");
+        if (matchTok(buf, 7) == 1) {
+            advance(src, buf);
+            writeAppend(out, " for ");
+            writeAppend(out, pIdent(src, buf));
+            expect(src, buf, 1, "Yaha type naam hona chahiye");
+        }
+        parseBlock(src, buf, out);
+        writeAppend(out, ")");
+        return;
+    }
+
+    // match
+    if (tt == 51) {
+        advance(src, buf);
+        writeAppend(out, "Match(");
+        parseExpr(src, buf, out);
+        expect(src, buf, 37, "Yaha '{' hona chahiye");
+        while (pTokType(buf) != 38) {
+            if (pTokType(buf) == 0) { break; }
+            parseExpr(src, buf, out);
+            expect(src, buf, 52, "Yaha '=>' hona chahiye");
+            parseExpr(src, buf, out);
+            if (matchTok(buf, 32) == 1) { advance(src, buf); }
+        }
+        expect(src, buf, 38, "Yaha '}' hona chahiye");
+        writeAppend(out, ")");
+        return;
+    }
+
+    // @import
+    if (tt == 57) {
+        advance(src, buf);
+        writeAppend(out, "@import(");
+        if (matchTok(buf, 3) == 1) {
+            writeAppend(out, pIdent(src, buf));
+            advance(src, buf);
+        } else {
+            writeAppend(out, pIdent(src, buf));
+            advance(src, buf);
+        }
+        if (matchTok(buf, 30) == 1) { advance(src, buf); }
+        writeAppend(out, ")");
+        return;
+    }
+
+    // Expression statement
+    parseExpr(src, buf, out);
+    if (matchTok(buf, 30) == 1) { advance(src, buf); }
+}
+
+// --- Main ---
+function main(): int {
+    set buf: string = getStateBuf();
+    set i: int = 0;
+    while (i < 128) { setInt(buf, i * 8, 0); i = i + 1; }
+    pSetLine(buf, 1);
+    pSetError(buf, 0);
+
+    set inPath: string = readArg(1);
+    set src: string = readFile(inPath);
+    set out: string = "build/parsed.txt";
+    set errFile: string = "build/errors.txt";
+    writeFile(out, "");
+    writeFile(errFile, "");
+
+    // Initialize parser: read first token
+    advance(src, buf);
+
+    writeAppend(out, "Program(\n");
+    while (pTokType(buf) != 0) {
+        if (pError(buf) != 0) { break; }
+        writeAppend(out, "  ");
+        parseStmt(src, buf, out);
+        writeAppend(out, "\n");
+    }
+    writeAppend(out, ")\n");
+
+    if (pError(buf) == 1) {
+        writeAppend(out, "PARSE_ERROR\n");
+    } else {
+        writeAppend(out, "OK\n");
+    }
+    return 0;
+}

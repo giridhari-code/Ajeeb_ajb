@@ -1,0 +1,68 @@
+function isDigit(c: int): int { if (c >= 48 && c <= 57) { return 1; } return 0; }
+function isAlpha(c: int): int {
+    if (c >= 65 && c <= 90) { return 1; }
+    if (c >= 97 && c <= 122) { return 1; }
+    if (c == 95) { return 1; }
+    return 0;
+}
+function isAlphaNum(c: int): int { if (isDigit(c) == 1) { return 1; } if (isAlpha(c) == 1) { return 1; } return 0; }
+function isSpace(c: int): int { if (c == 32 || c == 9 || c == 10 || c == 13) { return 1; } return 0; }
+function chr(src: int, i: int): int { return charCode(src, i); }
+
+function rdB(buf: string, off: int): int { return getInt(buf, off); }
+function wrB(buf: string, off: int, v: int): void { setInt(buf, off, v); }
+function rdPos(buf: string): int { return rdB(buf, 0); }
+function wrPos(buf: string, v: int): void { wrB(buf, 0, v); }
+function rdSrc(buf: string): int { return rdB(buf, 32); }
+function wrSrc(buf: string, v: int): void { wrB(buf, 32, v); }
+
+function skipWS(src: int, buf: string): void {
+    set pos: int = rdPos(buf);
+    set go: int = 1;
+    while (go == 1) {
+        set c: int = chr(src, pos);
+        if (isSpace(c) == 1) { pos = pos + 1; }
+        else { go = 0; }
+    }
+    wrPos(buf, pos);
+}
+
+function readIdent(src: int, buf: string): int {
+    set pos: int = rdPos(buf);
+    set start: int = pos;
+    while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+    wrPos(buf, pos);
+    return start;
+}
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set i: int = 0;
+    while (i < 128) { setInt(buf, i * 8, 0); i = i + 1; }
+    set inPath: string = readArg(1);
+    set src: string = readFile(inPath);
+    wrSrc(buf, src);
+    set out: string = "build/debug_func.txt";
+    writeFile(out, "");
+    writeAppend(out, "src_len=" + itoa(len(src)) + "\n");
+
+    skipWS(src, buf);
+    set pos: int = rdPos(buf);
+    writeAppend(out, "after_ws pos=" + itoa(pos) + "\n");
+
+    set c: int = chr(src, pos);
+    writeAppend(out, "c=" + itoa(c) + "\n");
+
+    set start: int = readIdent(src, buf);
+    set end: int = rdPos(buf);
+    set slen: int = end - start;
+    writeAppend(out, "ident start=" + itoa(start) + " end=" + itoa(end) + " slen=" + itoa(slen) + "\n");
+
+    set j: int = 0;
+    while (j < slen) {
+        writeAppend(out, itoa(charCode(src, start + j)) + " ");
+        j = j + 1;
+    }
+    writeAppend(out, "\n");
+    return 0;
+}

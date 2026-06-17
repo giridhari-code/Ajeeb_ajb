@@ -1,0 +1,16 @@
+function main(): int {
+    set x: int = 0;
+    set go: int = 1;
+    while (go == 1) {
+        set acted: int = 0;
+        if (x == 0) { x = 1; acted = 1; }
+        if (acted == 0) { x = x + 10; }
+        if (acted == 0) { go = 0; }
+    }
+    set out: string = "build/debug_multiif.txt";
+    writeFile(out, "");
+    writeAppend(out, "x=");
+    writeAppend(out, itoa(x));
+    writeAppend(out, "\n");
+    return 0;
+}

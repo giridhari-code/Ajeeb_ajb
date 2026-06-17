@@ -251,7 +251,7 @@ impl Codegen {
                 => Some(format!("declare i64 @{}()", name)),
             // 1-arg functions
             "len" | "itoa" | "readArg" | "readFile"
-            | "toUpperCase" | "toLowerCase" | "trim" | "chr"
+            | "toUpperCase" | "toLowerCase" | "trim"
                 => Some(format!("declare i64 @{}(i64)", name)),
             // 2-arg functions
             "str_concat" | "indexOf" | "contains"
@@ -267,7 +267,8 @@ impl Codegen {
             "tcp_connect" => Some(format!("declare i64 @tcp_connect(i64, i64)")),
             "tcp_read" => Some(format!("declare i64 @tcp_read(i64, i64)")),
             "dns_lookup" | "tls_read" => Some(format!("declare i64 @{}(i64)", name)),
-            "tcp_write" | "tls_write" | "setInt" | "strSet" => Some(format!("declare void @{}(i64, i64)", name)),
+            "tcp_write" | "tls_write" => Some(format!("declare void @{}(i64, i64)", name)),
+            "setInt" | "strSet" => Some(format!("declare void @{}(i64, i64, i64)", name)),
             "tcp_close" | "tls_close" => Some(format!("declare void @{}(i64)", name)),
             "writeFile" | "writeAppend" | "writeByte" => Some(format!("declare void @{}(i64, i64)", name)),
             "exit" => Some("declare void @exit(i32)".into()),
@@ -611,7 +612,7 @@ impl Codegen {
                             // Track return type for known string-returning functions
                             if matches!(func.as_str(),
                                 "str_concat" | "itoa" | "substring" | "toUpperCase" | "toLowerCase"
-                                | "trim" | "readFile" | "readArg" | "replace" | "chr"
+                                | "trim" | "readFile" | "readArg" | "replace"
                             ) {
                                 self.string_regs.insert(reg.clone());
                                 self.string_vars.insert(dest_name.clone());
