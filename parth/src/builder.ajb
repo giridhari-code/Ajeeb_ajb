@@ -1,0 +1,81 @@
+// builder.ajb — Project builder for parth
+// Config parser, source combiner, build command generator
+// All errors in Hinglish!
+
+import parser;
+import resolver;
+
+function readSource(path: string): string {
+    set content: string = readFile(path);
+    if (len(content) == 0) {
+        println(str_concat("Chetaavani: file nahi mili — ", path));
+        return "";
+    }
+    return content;
+}
+
+function makeBuildDir(): int {
+    writeFile("build/.parth_keep", "");
+    return 0;
+}
+
+function combineProject(buf: string, src: string, outPath: string): int {
+    set entry: string = readSource("src/main.ajb");
+    if (len(entry) == 0) {
+        println("Error: src/main.ajb nahi mila! Pehle 'parth init' karo.");
+        return 1;
+    }
+
+    set name: string = getConfigName(buf, src);
+    set combined: string = str_concat("// Combined source — ", str_concat(name, "\n"));
+    combined = str_concat(combined, entry);
+
+    set dc: int = getDepCount(buf);
+    set j: int = 0;
+    while (j < dc) {
+        set dn: string = getDepName(buf, src, j);
+        set pkgSrc: string = str_concat("packages/", str_concat(dn, "/src/main.ajb"));
+        set pkgContent: string = readSource(pkgSrc);
+        if (len(pkgContent) > 0) {
+            combined = str_concat(combined, str_concat("\n// --- Dependency: ", str_concat(dn, " ---\n")));
+            combined = str_concat(combined, pkgContent);
+            println(str_concat("  + ", str_concat(dn, " [package]")));
+        }
+        j = j + 1;
+    }
+
+    writeFile(outPath, combined);
+    println(str_concat("Combined source → ", outPath));
+    return 0;
+}
+
+function buildProject(): int {
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das padh nahi paaya! File exist karti hai?");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+
+    println(str_concat("Project: ", getConfigName(buf, src)));
+    println(str_concat("Version: ", getConfigVersion(buf, src)));
+
+    r = resolveAll(buf, src);
+    if (r != 0) { return r; }
+
+    makeBuildDir();
+
+    set outPath: string = "build/combined.ajb";
+    r = combineProject(buf, src, outPath);
+    if (r != 0) { return r; }
+
+    set name: string = getConfigName(buf, src);
+    println("");
+    println("Compile karne ke liye:");
+    println(str_concat("  build/ajeeb_native build/combined.ajb build/output.c"));
+    println(str_concat("  gcc build/output.c runtime/ajeeb_runtime.c -o build/", name));
+    println(str_concat("Phir run karo: ./build/", name));
+
+    return 0;
+}

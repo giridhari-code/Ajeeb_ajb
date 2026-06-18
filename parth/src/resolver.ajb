@@ -1,0 +1,59 @@
+// resolver.ajb — Dependency resolver for parth
+// Uses parser.ajb to read deps, checks cache & packages/
+// All errors in Hinglish!
+
+import parser;
+
+function fileExists(path: string): int {
+    set content: string = readFile(path);
+    if (len(content) > 0) { return 1; }
+    return 0;
+}
+
+function findPackageCache(name: string): int {
+    set path: string = str_concat("/root/.parth/cache/", str_concat(name, "/parth.das"));
+    if (fileExists(path) == 1) { return 1; }
+    return 0;
+}
+
+function findPackageLocal(name: string): int {
+    set p1: string = str_concat("packages/", str_concat(name, "/parth.das"));
+    if (fileExists(p1) == 1) { return 1; }
+    set p2: string = str_concat("../packages/", str_concat(name, "/parth.das"));
+    if (fileExists(p2) == 1) { return 1; }
+    set p3: string = str_concat("/root/ajeeb_compiler/Ajeeb_ajb/packages/", str_concat(name, "/parth.das"));
+    if (fileExists(p3) == 1) { return 1; }
+    return 0;
+}
+
+function resolveAll(buf: string, src: string): int {
+    set dc: int = getDepCount(buf);
+    if (dc == 0) {
+        println("Koi dependency nahi hai. Seedha build karo!");
+        return 0;
+    }
+    set missing: int = 0;
+    println(str_concat(itoa(dc), str_concat(" dependency(ies) resolve kar rahe hain...", "")));
+    set j: int = 0;
+    while (j < dc) {
+        set dn: string = getDepName(buf, src, j);
+        set dv: string = getDepVersion(buf, src, j);
+        set r: int = findPackageCache(dn);
+        if (r == 0) { r = findPackageLocal(dn); }
+        if (r > 0) {
+            println(str_concat("  ✓ ", str_concat(dn, str_concat(" @ ", dv))));
+        } else {
+            println(str_concat("  ✗ ", str_concat(dn, str_concat(" v", str_concat(dv, " — nahi mila bhai!")))));
+            missing = missing + 1;
+        }
+        j = j + 1;
+    }
+    if (missing > 0) {
+        println("");
+        println(str_concat(itoa(missing), str_concat(" dependency(ies) missing hai!", "")));
+        println("Package add karo: parth add <package-name>");
+        return 1;
+    }
+    println("Sab dependencies resolve ho gayi! Badhiya!");
+    return 0;
+}

@@ -1,0 +1,23 @@
+import parser;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set src: string = readFile("parth/tests/sample.parth.das");
+    println(itoa(len(src)));
+    // Manually test the parsing
+    set nl: int = findChar(src, 0, 10);
+    println(str_concat("nl=", itoa(nl)));
+    set secName: string = substring(src, 1, nl - 1);
+    println(str_concat("section=", secName));
+    // Parse key=value on line 2
+    set i: int = nl + 1;
+    set nl2: int = findChar(src, i, 10);
+    println(str_concat("line2: ", substring(src, i, nl2)));
+    set eq: int = findChar(src, i, 61);
+    println(str_concat("eq at=", itoa(eq)));
+    if (eq < nl2) {
+        set val: string = substring(src, eq + 1, nl2);
+        println(str_concat("raw val=", val));
+    }
+    return 0;
+}

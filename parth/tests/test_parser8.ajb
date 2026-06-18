@@ -1,0 +1,18 @@
+import parser;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set src: string = readFile("parth/tests/sample.parth.das");
+    // call parseKeyValue directly on line 2: name = "my-project"
+    set nl: int = findChar(src, 0, 10); // end of line 1
+    set i: int = nl + 1; // start of line 2
+    set nl2: int = findChar(src, i, 10); // end of line 2
+    set r: int = parseKeyValue(src, i, nl2, buf, 0);
+    println(str_concat("r=", itoa(r)));
+    set off: int = br(buf, 0);
+    set ln: int = br(buf, 1);
+    println(str_concat("off=", itoa(off), " ln=", itoa(ln)));
+    set name: string = substring(src, off, off + ln);
+    println(str_concat("name=", name));
+    return 0;
+}

@@ -1,0 +1,16 @@
+import parser;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth/tests/sample.parth.das");
+    println(str_concat("r=", itoa(r)));
+    set v0: int = getInt(buf, 0);
+    set v1: int = getInt(buf, 8);
+    set v2: int = getInt(buf, 16);
+    set v3: int = getInt(buf, 24);
+    println(str_concat("v0=", itoa(v0)));
+    println(str_concat("v1=", itoa(v1)));
+    println(str_concat("v2=", itoa(v2)));
+    println(str_concat("v3=", itoa(v3)));
+    return 0;
+}

@@ -1,0 +1,22 @@
+import parser;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth/tests/sample.parth.das");
+    if (r != 0) { println("Parse fail!"); return 1; }
+    set src: string = readFile("parth/tests/sample.parth.das");
+    println(str_concat("Name: ", getConfigName(buf, src)));
+    println(str_concat("Version: ", getConfigVersion(buf, src)));
+    println(str_concat("Author: ", getConfigAuthor(buf, src)));
+    println(str_concat("Output: ", getBuildOutput(buf, src)));
+    set dc: int = getDepCount(buf);
+    println(str_concat("Deps: ", itoa(dc)));
+    set j: int = 0;
+    while (j < dc) {
+        set dn: string = getDepName(buf, src, j);
+        set dv: string = getDepVersion(buf, src, j);
+        println(str_concat(dn, str_concat(" = ", dv)));
+        j = j + 1;
+    }
+    return 0;
+}

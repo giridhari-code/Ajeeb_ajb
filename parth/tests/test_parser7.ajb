@@ -1,0 +1,11 @@
+import parser;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    println("before bw");
+    bw(buf, 0, 42);
+    println("after bw");
+    set v: int = br(buf, 0);
+    println(str_concat("v=", itoa(v)));
+    return 0;
+}

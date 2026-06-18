@@ -1,0 +1,5 @@
+function main(): int {
+    println(str_concat(str_concat("a=", "b"), str_concat(" c=", "d")));
+    println(str_concat("a", str_concat("b", str_concat("c", "d"))));
+    return 0;
+}

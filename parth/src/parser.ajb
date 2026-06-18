@@ -1,0 +1,172 @@
+// parser.ajb — parth.das config parser
+// Slots: 0=nameOff 1=nameLen 2=verOff 3=verLen 4=authorOff 5=authorLen
+// 6=outOff 7=outLen  10=depCount  100+ i*4 = dep entries
+
+function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
+function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
+
+function findChar(src: string, start: int, ch: int): int {
+    set i: int = start;
+    while (i < len(src)) {
+        if (charCode(src, i) == ch) { return i; }
+        i = i + 1;
+    }
+    return len(src);
+}
+
+function trimStart(src: string, start: int): int {
+    while (start < len(src)) {
+        set c: int = charCode(src, start);
+        if (c != 32 && c != 9 && c != 13) { return start; }
+        start = start + 1;
+    }
+    return start;
+}
+
+function trimEnd(src: string, end: int): int {
+    while (end > 0) {
+        set c: int = charCode(src, end - 1);
+        if (c != 32 && c != 9 && c != 13 && c != 10) { return end; }
+        end = end - 1;
+    }
+    return end;
+}
+
+function skipBlankLines(src: string, start: int): int {
+    set i: int = start;
+    while (i < len(src)) {
+        set c: int = charCode(src, i);
+        if (c == 10 || c == 13) { i = i + 1; }
+        else { return i; }
+    }
+    return i;
+}
+
+function extractStr(src: string, start: int, end: int): string {
+    return substring(src, start, end);
+}
+
+function parseKeyValue(src: string, lineStart: int, lineEnd: int, buf: string, slotBase: int): int {
+    set eq: int = findChar(src, lineStart, 61);
+    if (eq >= lineEnd) { return 1; }
+    set keyStart: int = trimStart(src, lineStart);
+    set keyEnd: int = trimEnd(src, eq);
+    // Find value after =, trim whitespace
+    set valStart: int = trimStart(src, eq + 1);
+    set valEnd: int = trimEnd(src, lineEnd);
+    // Strip quotes if present
+    if (valStart < valEnd) {
+        set fc: int = charCode(src, valStart);
+        if (fc == 34) { valStart = valStart + 1; }
+    }
+    if (valEnd > valStart) {
+        set lc: int = charCode(src, valEnd - 1);
+        if (lc == 34) { valEnd = valEnd - 1; }
+    }
+    bw(buf, slotBase, keyStart);
+    bw(buf, slotBase + 1, keyEnd - keyStart);
+    bw(buf, slotBase + 2, valStart);
+    bw(buf, slotBase + 3, valEnd - valStart);
+    return 0;
+}
+
+function parseDasConfig(path: string): int {
+    set src: string = readFile(path);
+    if (len(src) == 0) { return 1; }
+    set buf: string = getStateBuf();
+    set i: int = 0;
+    set section: int = 0;
+    set depCount: int = 0;
+    bw(buf, 10, 0);
+    while (i < len(src)) {
+        i = skipBlankLines(src, i);
+        if (i >= len(src)) { return 0; }
+        set nl: int = findChar(src, i, 10);
+        set lineEnd: int = nl;
+        if (lineEnd > i && charCode(src, lineEnd - 1) == 13) { lineEnd = lineEnd - 1; }
+        set c: int = charCode(src, i);
+        if (c == 91) {
+            set close: int = findChar(src, i + 1, 93);
+            if (close >= nl || close > i + 40) { i = nl + 1; continue; }
+            set secName: string = extractStr(src, i + 1, close);
+            if (strcmp_ajeeb(secName, "package") == 0) { section = 1; }
+            else if (strcmp_ajeeb(secName, "dependencies") == 0) { section = 2; }
+            else if (strcmp_ajeeb(secName, "build") == 0) { section = 3; }
+            else { section = 0; }
+        } else if (c == 35 || c == 59) {
+            // comment line (; or #)
+        } else if (section == 1 || section == 3) {
+            set eq: int = findChar(src, i, 61);
+            if (eq >= lineEnd) { i = nl + 1; continue; }
+            set vs: int = trimStart(src, eq + 1);
+            set ve: int = trimEnd(src, lineEnd);
+            if (vs < ve && charCode(src, vs) == 34) { vs = vs + 1; }
+            if (ve > vs && charCode(src, ve - 1) == 34) { ve = ve - 1; }
+            if (section == 1) {
+                set ks: int = trimStart(src, i);
+                set ke: int = trimEnd(src, eq);
+                set key: string = substring(src, ks, ke);
+                set db: int = 0;
+                if (strcmp_ajeeb(key, "name") == 0) { db = 0; }
+                else if (strcmp_ajeeb(key, "version") == 0) { db = 2; }
+                else if (strcmp_ajeeb(key, "author") == 0) { db = 4; }
+                else { i = nl + 1; continue; }
+                bw(buf, db, vs);
+                bw(buf, db + 1, ve - vs);
+            } else {
+                bw(buf, 6, vs);
+                bw(buf, 7, ve - vs);
+            }
+        } else if (section == 2) {
+            if (depCount >= 20) { i = nl + 1; continue; }
+            set db: int = 100 + depCount * 4;
+            set r: int = parseKeyValue(src, i, lineEnd, buf, db);
+            if (r == 0) { depCount = depCount + 1; }
+        }
+        i = nl + 1;
+    }
+    bw(buf, 10, depCount);
+    return 0;
+}
+
+function getConfigName(buf: string, src: string): string {
+    set off: int = br(buf, 0); set ln: int = br(buf, 1);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function getConfigVersion(buf: string, src: string): string {
+    set off: int = br(buf, 2); set ln: int = br(buf, 3);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function getConfigAuthor(buf: string, src: string): string {
+    set off: int = br(buf, 4); set ln: int = br(buf, 5);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function getBuildOutput(buf: string, src: string): string {
+    set off: int = br(buf, 6); set ln: int = br(buf, 7);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function getDepCount(buf: string): int {
+    return br(buf, 10);
+}
+
+function getDepName(buf: string, src: string, idx: int): string {
+    set db: int = 100 + idx * 4;
+    set off: int = br(buf, db); set ln: int = br(buf, db + 1);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function getDepVersion(buf: string, src: string, idx: int): string {
+    set db: int = 100 + idx * 4;
+    set off: int = br(buf, db + 2); set ln: int = br(buf, db + 3);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}

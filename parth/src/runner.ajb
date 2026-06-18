@@ -1,0 +1,25 @@
+// runner.ajb — Project runner for parth
+// Build karo aur binary chalao
+// All errors in Hinglish!
+
+import builder;
+
+function runProject(): int {
+    set r: int = buildProject();
+    if (r != 0) {
+        println("Build fail ho gaya! Run nahi kar sakte.");
+        return r;
+    }
+
+    set buf: string = getStateBuf();
+    set src: string = readFile("parth.das");
+    set name: string = getConfigName(buf, src);
+
+    println("");
+    println("Sab taiyaar! Binary banao aur chalao:");
+    println(str_concat("  build/ajeeb_native build/combined.ajb build/output.c"));
+    println(str_concat("  gcc build/output.c runtime/ajeeb_runtime.c -o build/", name));
+    println(str_concat("  ./build/", name));
+
+    return 0;
+}

@@ -1,0 +1,21 @@
+import parser;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth/tests/sample.parth.das");
+    println(str_concat("r=", itoa(r)));
+    set off: int = br(buf, 0);
+    set ln: int = br(buf, 1);
+    println(str_concat("off=", itoa(off), " ln=", itoa(ln)));
+    set src: string = readFile("parth/tests/sample.parth.das");
+    set name: string = getConfigName(buf, src);
+    println(str_concat("name='", name, "'"));
+    println(str_concat("len=", itoa(len(name))));
+    // Also try direct br
+    set v0: int = getInt(buf, 0);
+    set v1: int = getInt(buf, 8);
+    set v2: int = getInt(buf, 16);
+    set v3: int = getInt(buf, 24);
+    println(str_concat("raw: ", itoa(v0), " ", itoa(v1), " ", itoa(v2), " ", itoa(v3)));
+    return 0;
+}

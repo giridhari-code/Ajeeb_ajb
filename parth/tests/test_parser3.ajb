@@ -1,0 +1,10 @@
+function main(): int {
+    set src = readFile("parth/tests/sample.parth.das");
+    set j = 0;
+    while (j < 30 && j < len(src)) {
+        set c = charCode(src, j);
+        println(str_concat(itoa(j), str_concat(": ", itoa(c))));
+        j = j + 1;
+    }
+    return 0;
+}

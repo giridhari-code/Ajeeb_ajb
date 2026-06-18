@@ -1,0 +1,104 @@
+// main.ajb — Parth CLI: project manager for Ajeeb
+// Commands: init, new, build, run
+// All errors in Hinglish!
+
+import parser;
+import resolver;
+import builder;
+import runner;
+
+function cmdInit(): int {
+    set src: string = readFile("parth.das");
+    if (len(src) > 0) {
+        println("Error: parth.das pehle se hai! 'parth new <name>' try karo.");
+        return 1;
+    }
+
+    writeFile("src/main.ajb", "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n");
+
+    set name: string = "";
+    set cwd: string = readArg(0);
+    set i: int = len(cwd) - 1;
+    while (i >= 0) {
+        if (charCode(cwd, i) == 47) {
+            name = substring(cwd, i + 1, len(cwd));
+            break;
+        }
+        i = i - 1;
+        if (i < 0) { name = cwd; }
+    }
+    if (len(name) == 0) { name = "project"; }
+
+    set das: string = str_concat("[package]\nname = \"", str_concat(name, str_concat("\"\nversion = \"0.1.0\"\nauthor = \"\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n", "")));
+    writeFile("parth.das", das);
+    writeFile("build/.gitkeep", "");
+
+    println(str_concat("✓ Project initialize ho gaya: ", name));
+    return 0;
+}
+
+function cmdNew(args: string): int {
+    if (len(args) == 0) {
+        println("Usage: parth new <project-name>");
+        return 1;
+    }
+
+    set dir: string = args;
+    set srcDir: string = str_concat(dir, "/src");
+    set buildDir: string = str_concat(dir, "/build");
+
+    writeFile(str_concat(srcDir, "/main.ajb"), "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n");
+
+    set das: string = str_concat("[package]\nname = \"", str_concat(dir, str_concat("\"\nversion = \"0.1.0\"\nauthor = \"\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n", "")));
+    writeFile(str_concat(dir, "/parth.das"), das);
+    writeFile(str_concat(buildDir, "/.gitkeep"), "");
+
+    println(str_concat("✓ Project bana: ", dir));
+    println(str_concat("  cd ", str_concat(dir, " && parth build")));
+    return 0;
+}
+
+function main(): int {
+    set argc: int = 0;
+    set i: int = 1;
+    while (i < 10) {
+        set arg: string = readArg(i);
+        if (len(arg) == 0) { break; }
+        argc = i;
+        i = i + 1;
+    }
+
+    if (argc < 1) {
+        println("Usage: parth <init|new|build|run>");
+        println("");
+        println("Commands:");
+        println("  init           Project initialize karo current dir mein");
+        println("  new <name>     Naya project banao");
+        println("  build          Project build karo");
+        println("  run            Build + binary chalao");
+        return 1;
+    }
+
+    set cmd: string = readArg(1);
+
+    if (strcmp_ajeeb(cmd, "init") == 0) {
+        return cmdInit();
+    }
+
+    if (strcmp_ajeeb(cmd, "new") == 0) {
+        set name: string = readArg(2);
+        return cmdNew(name);
+    }
+
+    if (strcmp_ajeeb(cmd, "build") == 0) {
+        return buildProject();
+    }
+
+    if (strcmp_ajeeb(cmd, "run") == 0) {
+        return runProject();
+    }
+
+    println(str_concat("Unknown command: ", cmd));
+    println("Usage: parth <init|new|build|run>");
+    return 1;
+}

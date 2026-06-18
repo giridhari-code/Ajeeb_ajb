@@ -1,0 +1,18 @@
+function main(): int {
+    set src: string = readFile("parth/tests/sample.parth.das");
+    set secName: string = substring(src, 1, 8);
+    println(str_concat(str_concat("len=", itoa(len(secName))), str_concat(" len2=", itoa(len("package")))));
+    // char by char
+    set i: int = 0;
+    while (i < len("package")) {
+        if (charCode(secName, i) != charCode("package", i)) { println(itoa(i)); }
+        i = i + 1;
+    }
+    // Compare using strcmp
+    if (strcmp_ajeeb(secName, "package") == 0) {
+        println("strcmp equal");
+    } else {
+        println("strcmp not equal");
+    }
+    return 0;
+}
