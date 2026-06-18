@@ -4,7 +4,9 @@
 function callArgAt(ext: int, idx: int): int {
     set tmp: int = ext; set j: int = 0;
     while (j < idx) { tmp = tmp / 1000; j = j + 1; }
-    return (tmp % 1000) - 1;
+    set mod: int = tmp;
+    while (mod >= 1000) { mod = mod - 1000; }
+    return mod - 1;
 }
 function callArgCount(ext: int): int {
     set tmp: int = ext; set c: int = 0;

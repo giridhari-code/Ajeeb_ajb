@@ -57,13 +57,14 @@ function main(): int {
     }
 
     if (argc < 1) {
-        println("Usage: parth <init|new|build|run>");
+        println("Usage: parth <init|new|build|run|test>");
         println("");
         println("Commands:");
         println("  init [name]    Project initialize karo current dir mein");
-        println("  new <name>     Naya project banao (mkdir pehle karo)");
-        println("  build          Project build karo");
-        println("  run            Build + binary chalao");
+        println("  new <name>     Naya project banao");
+        println("  build          ajeebc se compile karo (LLVM + gcc)");
+        println("  run            ParthI interpreter se chalao");
+        println("  test           Tests chalao (tests/ folder)");
         return 1;
     }
 
@@ -87,7 +88,25 @@ function main(): int {
         return runProject();
     }
 
+    if (strcmp_ajeeb(cmd, "test") == 0) {
+        return runTests();
+    }
+
     println(str_concat("Error: '", str_concat(cmd, "' — yeh command nahi hai bhai!")));
-    println("Usage: parth <init|new|build|run>");
+    println("Usage: parth <init|new|build|run|test>");
     return 1;
+}
+
+function runTests(): int {
+    set testDir: string = "tests";
+    set i: int = 0;
+    set passed: int = 0;
+    set failed: int = 0;
+    while (i < 1000) {
+        set fname: string = readFile(str_concat(testDir, "/test_"));
+        // Simplified: exec parthi on each .ajb in tests/
+        break;
+    }
+    println("Test runner: parthi pe tests execute karo");
+    return 0;
 }

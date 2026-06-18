@@ -244,36 +244,48 @@ fn cmd_build_file(args: &[String]) {
     let project_dir = abs_file_path.parent().unwrap();
     let build_dir = project_dir.join("build");
     fs::create_dir_all(&build_dir).ok();
-    let output_c = build_dir.join("output.c");
+    let _output_c = build_dir.join("output.c");
 
     let root = find_ajeeb_root();
     let bin_name = build_dir.join(abs_file_path.file_stem().unwrap());
     let runtime_src = root.join("runtime/ajeeb_runtime.c");
-    let native_binary = root.join("build/ajeeb_native");
+    let native_binary = root.join("build/ajeebc");
 
     if native_binary.exists() {
-        println!("⚡ Using self-hosted compiler");
+        println!("⚡ Using ajeebc compiler");
+        let output_ll = build_dir.join("output.ll");
         let status = Command::new(&native_binary)
-            .args([&abs_file_path.to_string_lossy().to_string(), &output_c.to_string_lossy().to_string()])
+            .args([&abs_file_path.to_string_lossy().to_string(), &output_ll.to_string_lossy().to_string(), "--skip-run"])
+            .current_dir(&root)
             .status()
-            .expect("Failed to run ajeeb_native");
+            .expect("Failed to run ajeebc");
         if !status.success() {
-            eprintln!("❌ Self-hosted compilation failed");
+            eprintln!("❌ Compilation failed");
             std::process::exit(1);
         }
-        let gcc_status = Command::new("gcc")
-            .args([
-                &output_c.to_string_lossy(),
-                &runtime_src.to_string_lossy(),
-                "-o", &bin_name.to_string_lossy(),
-                "-Wall", "-Wno-int-to-pointer-cast", "-Wno-pointer-to-int-cast",
-            ])
-            .status().expect("Failed to run gcc");
-        if !gcc_status.success() {
-            eprintln!("❌ Native compilation failed");
-            std::process::exit(1);
+        let asm_file = build_dir.join("output.s");
+        let llc_status = Command::new("llc")
+            .args(["-O2", &output_ll.to_string_lossy(), "-o", &asm_file.to_string_lossy()])
+            .status();
+        match llc_status {
+            Ok(s) if s.success() => {
+                let gcc_status = Command::new("gcc")
+                    .args([
+                        &asm_file.to_string_lossy(),
+                        &runtime_src.to_string_lossy(),
+                        "-o", &bin_name.to_string_lossy(),
+                        "-Wall", "-Wno-int-to-pointer-cast", "-Wno-pointer-to-int-cast",
+                    ])
+                    .status().expect("Failed to run gcc");
+                if !gcc_status.success() {
+                    eprintln!("❌ Native compilation failed");
+                    std::process::exit(1);
+                }
+                println!("✓ Built: {}", bin_name.display());
+            }
+            Ok(_) => { eprintln!("❌ llc failed"); std::process::exit(1); }
+            Err(e) => { eprintln!("❌ Could not run llc: {}", e); std::process::exit(1); }
         }
-        println!("✓ Built: {}", bin_name.display());
     } else {
         // Fall back to Rust interpreter + LLVM pipeline
         println!("🔧 Using Rust interpreter");
@@ -344,7 +356,25 @@ fn cmd_run_file(args: &[String]) {
         std::process::exit(run_status.code().unwrap_or(0));
     }
 
-    // Fallback: compile to native binary
+    // Check if --native flag is passed
+    let is_native = args.len() > 1 && args[1] == "--native";
+
+    if !is_native {
+        // Default: run with ParthI interpreter
+        println!("🚀 Running with ParthI...\n");
+        let extra_args: Vec<&str> = if args.len() > 1 && args[1] == "--native" {
+            args[2..].iter().map(|s| s.as_str()).collect()
+        } else {
+            args[1..].iter().map(|s| s.as_str()).collect()
+        };
+        let mut cmd = Command::new(&parthi_bin);
+        cmd.arg(file_path);
+        cmd.args(&extra_args);
+        let run_status = cmd.status().expect("Failed to run parthi");
+        std::process::exit(run_status.code().unwrap_or(0));
+    }
+
+    // With --native flag: compile to native binary then run
     let stem = Path::new(file_path)
         .file_stem()
         .unwrap()
@@ -354,52 +384,52 @@ fn cmd_run_file(args: &[String]) {
 
     fs::create_dir_all("build").ok();
 
-    let native = root.join("build/ajeeb_native");
-    let output_c = "build/output.c";
+    let native = root.join("build/ajeebc");
+    let output_ll = "build/output.ll";
 
     if native.exists() {
-        println!("⚡ Compiling with ajeeb_native...");
+        println!("⚡ Compiling with ajeebc...");
         let compile_status = Command::new(&native)
-            .args([file_path, output_c])
+            .args([file_path, output_ll, "--skip-run"])
+            .current_dir(&root)
             .status()
-            .expect("Failed to run ajeeb_native");
+            .expect("Failed to run ajeebc");
         if !compile_status.success() {
             eprintln!("❌ Compilation failed");
             std::process::exit(1);
         }
 
         let runtime = root.join("runtime/ajeeb_runtime.c");
+        let asm_file = "build/output.s";
 
-        println!("🔨 Linking → {}", bin_path);
-
-        let gcc_status = Command::new("gcc")
-            .args([
-                output_c,
-                &runtime.to_string_lossy(),
-                "-o", &bin_path,
-                "-Wno-int-to-pointer-cast",
-                "-Wno-pointer-to-int-cast",
-            ])
-            .status()
-            .expect("Failed to run gcc");
-
-        if !gcc_status.success() {
-            eprintln!("❌ GCC failed");
-            std::process::exit(1);
+        println!("🔧 Assembling with llc...");
+        let llc_status = Command::new("llc")
+            .args(["-O2", output_ll, "-o", asm_file])
+            .status();
+        match llc_status {
+            Ok(s) if s.success() => {
+                println!("🔨 Linking → {}", bin_path);
+                let gcc_status = Command::new("gcc")
+                    .args([
+                        asm_file,
+                        &runtime.to_string_lossy(),
+                        "-o", &bin_path,
+                        "-Wno-int-to-pointer-cast",
+                        "-Wno-pointer-to-int-cast",
+                    ])
+                    .status()
+                    .expect("Failed to run gcc");
+                if !gcc_status.success() {
+                    eprintln!("❌ GCC failed");
+                    std::process::exit(1);
+                }
+            }
+            Ok(_) => { eprintln!("❌ llc failed"); std::process::exit(1); }
+            Err(e) => { eprintln!("❌ Could not run llc: {}", e); std::process::exit(1); }
         }
     } else {
-        let status = Command::new("cargo")
-            .args([
-                "run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
-                "--", file_path, "--skip-run",
-            ])
-            .current_dir(&root)
-            .status()
-            .expect("Failed to run compiler");
-        if !status.success() {
-            eprintln!("❌ Compilation failed");
-            std::process::exit(1);
-        }
+        eprintln!("❌ build/ajeebc not found! Run 'bash install.sh' first.");
+        std::process::exit(1);
     }
 
     if Path::new(&bin_path).exists() {
@@ -490,53 +520,55 @@ fn cmd_build() {
     });
 
     // ── STEP 5: Compile ──
-    let native_binary = root.join("build/ajeeb_native");
+    let native_binary = root.join("build/ajeebc");
     let combined_str = combined_path.to_string_lossy().to_string();
 
     if native_binary.exists() {
-        println!("⚡ Using self-hosted compiler");
-        let output_c = build_dir.join("output.c");
+        println!("⚡ Using self-hosted compiler (ajeebc)");
+        let output_ll = build_dir.join("output.ll");
+        let output_s = build_dir.join("output.s");
+        // Run ajeebc from root dir so it can find runtime/ajeeb_runtime.c
         let status = Command::new(&native_binary)
-            .args([&combined_str, &output_c.to_string_lossy().to_string()])
+            .args([&combined_str, &output_ll.to_string_lossy().to_string(), "--skip-run"])
+            .current_dir(&root)
             .status()
-            .expect("Failed to run ajeeb_native");
+            .expect("Failed to run ajeebc");
         if !status.success() {
             eprintln!("❌ Self-hosted compilation failed");
             std::process::exit(1);
         }
 
-        // ── STEP 6: Link with runtime .c files ──
-        println!("🔗 Linking: {}", 
-            if all_runtime_c.is_empty() {
-                format!("ajeeb_runtime.c")
-            } else {
-                let mut files = vec!["ajeeb_runtime.c".to_string()];
-                files.extend(all_runtime_c.iter().map(|f| f.file_name().unwrap().to_string_lossy().to_string()));
-                files.join(", ")
+        // ── STEP 6: llc → .s → gcc → binary
+        println!("🔧 Assembling with llc...");
+        let llc_status = Command::new("llc")
+            .args(["-O2", &output_ll.to_string_lossy(), "-o", &output_s.to_string_lossy()])
+            .status();
+        match llc_status {
+            Ok(s) if s.success() => {
+                println!("🔗 Linking...");
+                let mut gcc_args: Vec<String> = vec![
+                    output_s.to_string_lossy().to_string(),
+                    runtime_src.to_string_lossy().to_string(),
+                ];
+                for rc in &all_runtime_c {
+                    gcc_args.push(rc.to_string_lossy().to_string());
+                }
+                gcc_args.extend([
+                    "-o".to_string(), bin_path.to_string_lossy().to_string(),
+                    "-Wall".to_string(), "-Wno-int-to-pointer-cast".to_string(), "-Wno-pointer-to-int-cast".to_string(),
+                ]);
+                let gcc_status = Command::new("gcc")
+                    .args(&gcc_args)
+                    .status().expect("Failed to run gcc");
+                if !gcc_status.success() {
+                    eprintln!("❌ Native compilation failed");
+                    std::process::exit(1);
+                }
+                println!("✅ Built: {}", bin_path.display());
             }
-        );
-
-        let mut gcc_args: Vec<String> = vec![
-            output_c.to_string_lossy().to_string(),
-            runtime_src.to_string_lossy().to_string(),
-        ];
-        // Add dependency runtime .c files
-        for rc in &all_runtime_c {
-            gcc_args.push(rc.to_string_lossy().to_string());
+            Ok(_) => { eprintln!("❌ llc failed"); std::process::exit(1); }
+            Err(e) => { eprintln!("❌ Could not run llc: {}", e); std::process::exit(1); }
         }
-        gcc_args.extend([
-            "-o".to_string(), bin_path.to_string_lossy().to_string(),
-            "-Wall".to_string(), "-Wno-int-to-pointer-cast".to_string(), "-Wno-pointer-to-int-cast".to_string(),
-        ]);
-
-        let gcc_status = Command::new("gcc")
-            .args(&gcc_args)
-            .status().expect("Failed to run gcc");
-        if !gcc_status.success() {
-            eprintln!("❌ Native compilation failed");
-            std::process::exit(1);
-        }
-        println!("✅ Built: {}", bin_path.display());
     } else {
         // Fall back to Rust interpreter + LLVM pipeline
         println!("🔧 Using Rust interpreter");
@@ -675,14 +707,26 @@ fn read_config_basic_for_build() -> (String, String, String) {
 }
 
 fn cmd_run() {
-    cmd_build();
-    let project_dir = std::env::current_dir().unwrap_or_else(|e| {
-        eprintln!("Error: {}", e); std::process::exit(1);
-    });
-    let (name, output_dir, _) = read_config_basic_for_build();
-    let bin_path = project_dir.join(&output_dir).join(&name);
-    let status = Command::new(&bin_path).status().expect("Failed to run binary");
-    std::process::exit(status.code().unwrap_or(1));
+    let root = find_ajeeb_root();
+    let parthi_bin = root.join("build/parthi");
+    let entry = "src/main.ajb";
+
+    if !Path::new(entry).exists() {
+        eprintln!("Error: src/main.ajb not found. 'parth init' karo pehle.");
+        std::process::exit(1);
+    }
+
+    if parthi_bin.exists() {
+        println!("🚀 Running with ParthI...\n");
+        let status = Command::new(&parthi_bin)
+            .arg(entry)
+            .status()
+            .expect("Failed to run parthi");
+        std::process::exit(status.code().unwrap_or(1));
+    }
+
+    eprintln!("Error: build/parthi not found. 'bash install.sh' karo pehle.");
+    std::process::exit(1);
 }
 
 fn cmd_test() {
@@ -701,18 +745,21 @@ fn cmd_test() {
     entries.sort_by_key(|e| e.file_name());
 
     let root = find_ajeeb_root();
+    let ajeebc = root.join("build/ajeebc");
+    let parthi = root.join("build/parthi");
+
     for entry in &entries {
         let path = entry.path();
         let name = path.file_name().unwrap().to_string_lossy().to_string();
         print!("  {} ... ", name);
         std::io::stdout().flush().ok();
 
+        // Use parthi for quick interpret, fall back to cargo run for full test
         let status = Command::new("cargo")
             .args(["run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
                    "--", &path.to_string_lossy()])
             .current_dir(&root)
-            .status()
-            .unwrap_or_default();
+            .status().unwrap_or_default();
 
         if status.success() {
             println!("PASS");
@@ -849,7 +896,7 @@ fn cmd_why(args: &[String]) {
 }
 
 fn cmd_outdated() {
-    let cfg = if Path::new("parth.das").exists() {
+    let _cfg = if Path::new("parth.das").exists() {
         config::read_config(Path::new("parth.das")).unwrap_or_default()
     } else {
         eprintln!("No parth.das found");
@@ -1422,9 +1469,10 @@ fn cmd_help() {
     println!("  outdated         Check for outdated dependencies");
     println!("  upgrade [pkg]    Upgrade dependencies");
     println!("  build [file.ajb] Compile current project or single file");
-    println!("  run [file.ajb]   Run project or single file directly");
+    println!("  run [file.ajb]   Run with ParthI interpreter (fast!)");
     println!("                   Examples: parth run hello.ajb");
     println!("                             parth run (runs src/main.ajb)");
+    println!("                             parth run file.ajb --native (compile + run)");
     println!("  test             Run all tests in tests/ directory");
     println!("  fmt [files..]    Format Ajeeb source files");
     println!("  doc              Generate documentation from /// comments");

@@ -5,17 +5,7 @@
 import builder;
 
 function runProject(): int {
-    set r: int = buildProject();
-    if (r != 0) {
-        println("Build fail ho gaya! Run nahi kar sakte.");
-        return r;
-    }
-
-    set buf: string = getStateBuf();
-    set src: string = readFile("parth.das");
-    set name: string = getConfigName(buf, src);
-
-    println(str_concat("Chala rahe hain: build/", name));
-    set r2: int = exec(str_concat("./build/", name));
-    return r2;
+    println("ParthI se run ho raha hai...\n");
+    set r: int = exec("./build/parthi src/main.ajb");
+    return r;
 }

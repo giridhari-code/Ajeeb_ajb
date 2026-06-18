@@ -72,14 +72,16 @@ function buildProject(): int {
 
     set name: string = getConfigName(buf, src);
     println("");
-    println("Compile ho raha hai...");
-    r = exec(str_concat("build/ajeeb_native build/combined.ajb build/output.c"));
+    println("Compile ho raha hai (ajeebc)...");
+    r = exec("./build/ajeebc src/main.ajb build/out.ll");
     if (r != 0) {
-        println("Compile fail! Neeche dekh lo.");
+        println("ajeebc compile fail! Neeche dekh lo.");
         return r;
     }
+    r = exec("llc build/out.ll -o build/out.s");
+    if (r != 0) { return r; }
     set outName: string = str_concat("build/", name);
-    r = exec(str_concat("gcc build/output.c runtime/ajeeb_runtime.c -o ", outName));
+    r = exec(str_concat("gcc build/out.s runtime/ajeeb_runtime.c -o ", outName));
     if (r != 0) { return r; }
     println(str_concat("Binary ready: ", outName));
     return 0;
