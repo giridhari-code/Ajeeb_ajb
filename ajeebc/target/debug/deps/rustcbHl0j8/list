@@ -1,8 +1,0 @@
-{
-  global:
-    __rustc_proc_macro_decls_930651ea9cd4b88d__;
-    rust_metadata_async_trait_930651ea9cd4b88d;
-
-  local:
-    *;
-};
