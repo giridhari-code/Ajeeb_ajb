@@ -1,0 +1,23 @@
+pub function math_abs(n: int): int {
+    if (n < 0) { return -n; }
+    return n;
+}
+pub function math_max(a: int, b: int): int {
+    if (a > b) { return a; }
+    return b;
+}
+pub function math_min(a: int, b: int): int {
+    if (a < b) { return a; }
+    return b;
+}
+pub function math_clamp(val: int, low: int, high: int): int {
+    if (val < low) { return low; }
+    if (val > high) { return high; }
+    return val;
+}
+pub function math_pow(base: int, exp: int): int {
+    set result = 1;
+    let i = 0;
+    while (i < exp) { result = result * base; i = i + 1; }
+    return result;
+}

@@ -6,6 +6,6 @@ import builder;
 
 function runProject(): int {
     println("ParthI se run ho raha hai...\n");
-    set r: int = exec("./build/parthi src/main.ajb");
+    set r: int = exec("parthi src/main.ajb");
     return r;
 }

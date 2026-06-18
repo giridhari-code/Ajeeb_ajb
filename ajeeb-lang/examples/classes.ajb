@@ -1,0 +1,16 @@
+class Counter {
+    count: int;
+    label: string;
+    function increment(step: int): void { self.count = self.count + step; }
+    function getValue(): int { return self.count; }
+    function getLabel(): string { return self.label; }
+}
+function main(): int {
+    let c = new Counter;
+    c.count = 0;
+    c.label = "MyCounter";
+    c.increment(5);
+    println(c.getLabel());
+    println(itoa(c.getValue()));
+    return 0;
+}

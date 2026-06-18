@@ -1,0 +1,3 @@
+pub function array_len[T](arr: T[]): int { return len(arr); }
+pub function array_first[T](arr: T[]): T { return arr[0]; }
+pub function array_last[T](arr: T[]): T { return arr[len(arr) - 1]; }

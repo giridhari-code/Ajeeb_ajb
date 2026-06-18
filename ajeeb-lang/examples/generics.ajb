@@ -1,0 +1,8 @@
+function identity[T](x: T): T { return x; }
+function main(): int {
+    let x = identity[int](42);
+    let y = identity[string]("hello");
+    println(itoa(x));
+    println(y);
+    return 0;
+}
