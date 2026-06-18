@@ -1,6 +1,0 @@
-function main(): int {
-    println("Duniya ka pehla Ajeeb program!");
-    println("Ajeeb compiler apna code khud compile karta hai.");
-    println("Self-hosting bootstrap: SUCCESS ✅");
-    return 0;
-}
