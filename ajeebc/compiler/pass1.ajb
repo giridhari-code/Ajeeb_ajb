@@ -1,0 +1,211 @@
+// PASS 1: Function Collection + Forward Declarations
+
+function addFn(src: int, buf: string, nameStart: int): void {
+    set count: int = rdFnC(buf);
+    if (count >= 600) {
+        return;
+    }
+    set pos: int = rdPos(buf);
+    set nameLen: int = pos - nameStart;
+    set off: int = 96 + count * 24;
+    setInt(buf, off, nameStart);
+    setInt(buf, off+8, nameLen);
+    setInt(buf, off+16, count);
+    wrFnC(buf, count + 1);
+    set fnFile: string = "build/_fnnames.txt";
+    set j: int = 0;
+    while (j < nameLen) {
+        set scratch2: string = getOutbuf();
+        strSet(scratch2, 0, chr(src, nameStart + j));
+        strSet(scratch2, 1, 0);
+        writeAppend(fnFile, scratch2);
+        j = j + 1;
+    }
+    writeAppend(fnFile, "\n");
+}
+
+function skipDepth(src: int, pos: int, open: int, close: int): int {
+    set depth: int = 1; pos = pos + 1;
+    while (depth > 0) {
+        set c: int = chr(src, pos);
+        if (c == 34) {
+            pos = pos + 1;
+            while (chr(src, pos) != 34 && chr(src, pos) != 0) {
+                if (chr(src, pos) == 92) { pos = pos + 1; }
+                pos = pos + 1;
+            }
+            pos = pos + 1;
+        } else if (c == 47 && chr(src, pos+1) == 47) {
+            pos = pos + 2;
+            while (chr(src, pos) != 10 && chr(src, pos) != 0) { pos = pos + 1; }
+        } else if (c == 47 && chr(src, pos+1) == 42) {
+            pos = pos + 2;
+            while (chr(src, pos) != 0 && !(chr(src, pos) == 42 && chr(src, pos+1) == 47)) { pos = pos + 1; }
+            pos = pos + 2;
+        } else {
+            if (c == open) { depth = depth + 1; }
+            else if (c == close) { depth = depth - 1; }
+            pos = pos + 1;
+        }
+    }
+    return pos;
+}
+
+function collectFns(src: int, buf: string): void {
+    wrPos(buf, 0);
+    wrFnC(buf, 0);
+    set go: int = 1;
+    while (go == 1) {
+        skipWS(src, buf);
+        set pos: int = rdPos(buf);
+        if (chr(src, pos) == 0) { go = 0; }
+        else if (matchKwd(src, buf, "class") == 1) {
+            pos = pos + 5; wrPos(buf, pos); skipWS(src, buf);
+            readIdent(src, buf); skipWS(src, buf);
+            pos = rdPos(buf);
+            if (chr(src, pos) == 123) {
+                pos = pos + 1;
+                set cd: int = 1;
+                while (cd > 0) {
+                    set c: int = chr(src, pos);
+                    if (c == 0) { cd = 0; }
+                    else if (c == 34) {
+                        pos = pos + 1;
+                        while (chr(src, pos) != 34 && chr(src, pos) != 0) {
+                            if (chr(src, pos) == 92) { pos = pos + 1; }
+                            pos = pos + 1;
+                        }
+                        pos = pos + 1;
+                    } else if (c == 47 && chr(src, pos+1) == 47) {
+                        pos = pos + 2;
+                        while (chr(src, pos) != 10 && chr(src, pos) != 0) { pos = pos + 1; }
+                    } else if (c == 47 && chr(src, pos+1) == 42) {
+                        pos = pos + 2;
+                        while (chr(src, pos) != 0 && !(chr(src, pos) == 42 && chr(src, pos+1) == 47)) { pos = pos + 1; }
+                        pos = pos + 2;
+                    } else if (c == 123) { cd = cd + 1; pos = pos + 1; }
+                    else if (c == 125) { cd = cd - 1; pos = pos + 1; }
+                    else if (c == 102 && chr(src, pos+1) == 117 && chr(src, pos+2) == 110 && chr(src, pos+3) == 99 && chr(src, pos+4) == 116 && chr(src, pos+5) == 105 && chr(src, pos+6) == 111 && chr(src, pos+7) == 110) {
+                        pos = pos + 8;
+                        while (isSpace(chr(src, pos)) == 1) { pos = pos + 1; }
+                        set fnS: int = pos;
+                        while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+                        if (pos > fnS) {
+                            savePos(buf); wrPos(buf, fnS); addFn(src, buf, fnS); restorePos(buf);
+                        }
+                    } else if (c == 102 && chr(src, pos+1) == 110 && isAlphaNum(chr(src, pos+2)) == 0) {
+                        pos = pos + 2;
+                        while (isSpace(chr(src, pos)) == 1) { pos = pos + 1; }
+                        set fnS2: int = pos;
+                        while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+                        if (pos > fnS2) {
+                            savePos(buf); wrPos(buf, fnS2); addFn(src, buf, fnS2); restorePos(buf);
+                        }
+                    } else { pos = pos + 1; }
+                }
+                wrPos(buf, pos);
+            }
+        }
+        else if (matchKwd(src, buf, "import") == 1) {
+            pos = pos + 6; wrPos(buf, pos); skipWS(src, buf);
+            pos = rdPos(buf);
+            set modStart: int = pos;
+            while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+            if (pos > modStart) {
+                set scratchI: string = getOutbuf();
+                set pi: int = 0;
+                set prefix: string = "compiler/";
+                while (pi < len(prefix)) {
+                    strSet(scratchI, pi, charCode(prefix, pi));
+                    pi = pi + 1;
+                }
+                set mj: int = 0;
+                while (mj < pos - modStart) {
+                    strSet(scratchI, pi + mj, chr(src, modStart + mj));
+                    mj = mj + 1;
+                }
+                set suffix: string = ".ajb";
+                set si: int = 0;
+                while (si < len(suffix)) {
+                    strSet(scratchI, pi + mj + si, charCode(suffix, si));
+                    si = si + 1;
+                }
+                strSet(scratchI, pi + mj + si, 0);
+                set importSrcF: string = readFile(scratchI);
+                if (len(importSrcF) > 0) {
+                    collectFns(importSrcF, buf);
+                }
+                while (chr(src, pos) != 59 && chr(src, pos) != 10 && chr(src, pos) != 0) { pos = pos + 1; }
+                if (chr(src, pos) == 59) { pos = pos + 1; }
+                wrPos(buf, pos);
+            }
+        }
+        else if (matchKwd(src, buf, "function") == 1) {
+            pos = pos + 8; wrPos(buf, pos); skipWS(src, buf);
+            set fnStart: int = rdPos(buf);
+            readIdent(src, buf);
+            addFn(src, buf, fnStart);
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 40) {
+                pos = skipDepth(src, pos, 40, 41);
+                wrPos(buf, pos);
+            }
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 58) {
+                pos = pos + 1;
+                while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+                if (chr(src, pos) == 91) { pos = pos + 2; }
+                wrPos(buf, pos);
+            }
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 123) {
+                pos = skipDepth(src, pos, 123, 125);
+                wrPos(buf, pos);
+            }
+        }
+        else if (matchKwd(src, buf, "fn") == 1) {
+            pos = pos + 2; wrPos(buf, pos); skipWS(src, buf);
+            set fnStart2: int = rdPos(buf);
+            readIdent(src, buf);
+            addFn(src, buf, fnStart2);
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 40) {
+                pos = skipDepth(src, pos, 40, 41);
+                wrPos(buf, pos);
+            }
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 58) {
+                pos = pos + 1;
+                while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+                if (chr(src, pos) == 91) { pos = pos + 2; }
+                wrPos(buf, pos);
+            }
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 123) {
+                pos = skipDepth(src, pos, 123, 125);
+                wrPos(buf, pos);
+            }
+        }
+        else { wrPos(buf, pos + 1); }
+    }
+}
+
+function emitFwdDecls(src: int, buf: string, out: string): void {
+    set names: string = readFile("build/_fnnames.txt");
+    set count: int = rdFnC(buf);
+    set pos: int = 0;
+    set i: int = 0;
+    while (i < count) {
+        emitStr(out, "intptr_t ");
+        while (pos < len(names) && chr(names, pos) != 10) {
+            set scratch2: string = getOutbuf();
+            strSet(scratch2, 0, chr(names, pos));
+            strSet(scratch2, 1, 0);
+            writeAppend(out, scratch2);
+            pos = pos + 1;
+        }
+        emitStr(out, "();\n");
+        pos = pos + 1;
+        i = i + 1;
+    }
+}

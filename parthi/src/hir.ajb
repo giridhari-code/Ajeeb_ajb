@@ -1,0 +1,123 @@
+// hir.ajb — ParthI HIR Node Builders
+// HIR types: 0=Prog 1=Fn 2=Block 3=Set 4=Assign 5=If 6=While 8=Return
+//   11=Call 12=Binop 14=Ident 15=Int 16=Str 17=Bool
+// Heap at buf[511] (head), bump-allocated
+
+function hinit(buf: string): void {
+    bw(buf, 511, 512);
+}
+
+function halloc(buf: string, slots: int): int {
+    set h: int = br(buf, 511);
+    bw(buf, 511, h + slots);
+    return h;
+}
+
+function hFn(buf: string, no: int, nl: int, rt: int, pc: int): int {
+    set o: int = halloc(buf, 6 + pc * 3);
+    bw(buf, o, 1);
+    bw(buf, o + 1, no);
+    bw(buf, o + 2, nl);
+    bw(buf, o + 3, rt);
+    bw(buf, o + 4, pc);
+    return o;
+}
+
+function hBlock(buf: string, c: int): int {
+    set o: int = halloc(buf, 2 + c);
+    bw(buf, o, 2);
+    bw(buf, o + 1, c);
+    return o;
+}
+
+function hSet(buf: string, no: int, nl: int, ty: int, v: int): int {
+    set o: int = halloc(buf, 5);
+    bw(buf, o, 3);
+    bw(buf, o + 1, no);
+    bw(buf, o + 2, nl);
+    bw(buf, o + 3, ty);
+    bw(buf, o + 4, v);
+    return o;
+}
+
+function hReturn(buf: string, v: int, ty: int): int {
+    set o: int = halloc(buf, 3);
+    bw(buf, o, 8);
+    bw(buf, o + 1, v);
+    bw(buf, o + 2, ty);
+    return o;
+}
+
+function hCall(buf: string, no: int, nl: int, ac: int): int {
+    set o: int = halloc(buf, 5 + ac);
+    bw(buf, o, 11);
+    bw(buf, o + 1, no);
+    bw(buf, o + 2, nl);
+    bw(buf, o + 3, ac);
+    return o;
+}
+
+function hBinop(buf: string, l: int, op: int, r: int): int {
+    set o: int = halloc(buf, 5);
+    bw(buf, o, 12);
+    bw(buf, o + 1, l);
+    bw(buf, o + 2, op);
+    bw(buf, o + 3, r);
+    return o;
+}
+
+function hIdent(buf: string, so: int, sl: int): int {
+    set o: int = halloc(buf, 3);
+    bw(buf, o, 14);
+    bw(buf, o + 1, so);
+    bw(buf, o + 2, sl);
+    return o;
+}
+
+function hInt(buf: string, v: int): int {
+    set o: int = halloc(buf, 3);
+    bw(buf, o, 15);
+    bw(buf, o + 1, v);
+    return o;
+}
+
+function hStr(buf: string, so: int, sl: int): int {
+    set o: int = halloc(buf, 3);
+    bw(buf, o, 16);
+    bw(buf, o + 1, so);
+    bw(buf, o + 2, sl);
+    return o;
+}
+
+function hBool(buf: string, v: int): int {
+    set o: int = halloc(buf, 3);
+    bw(buf, o, 17);
+    bw(buf, o + 1, v);
+    return o;
+}
+
+function hIf(buf: string, c: int, t: int, e: int): int {
+    set o: int = halloc(buf, 4);
+    bw(buf, o, 5);
+    bw(buf, o + 1, c);
+    bw(buf, o + 2, t);
+    bw(buf, o + 3, e);
+    return o;
+}
+
+function hWhile(buf: string, c: int, b: int): int {
+    set o: int = halloc(buf, 3);
+    bw(buf, o, 6);
+    bw(buf, o + 1, c);
+    bw(buf, o + 2, b);
+    return o;
+}
+
+function hAssign(buf: string, no: int, nl: int, v: int): int {
+    set o: int = halloc(buf, 4);
+    bw(buf, o, 4);
+    bw(buf, o + 1, no);
+    bw(buf, o + 2, nl);
+    bw(buf, o + 3, v);
+    return o;
+}

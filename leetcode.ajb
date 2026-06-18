@@ -1,0 +1,42 @@
+function windowHasWords(s: string, i: int, wordBuf: string, wlen: int, wcnt: int): int {
+    set k: int = 0;
+    while (k < wcnt) {
+        set target: string = substring(wordBuf, k * wlen, k * wlen + wlen);
+        set targetCnt: int = 0;
+        set m: int = 0;
+        while (m < wcnt) {
+            set w: string = substring(wordBuf, m * wlen, m * wlen + wlen);
+            if (strcmp_ajeeb(target, w) == 0) { targetCnt = targetCnt + 1; }
+            m = m + 1;
+        }
+        set windowCnt: int = 0;
+        set j: int = 0;
+        while (j < wcnt) {
+            set part: string = substring(s, i + j * wlen, i + j * wlen + wlen);
+            if (strcmp_ajeeb(target, part) == 0) { windowCnt = windowCnt + 1; }
+            j = j + 1;
+        }
+        if (targetCnt != windowCnt) { return 0; }
+        k = k + 1;
+    }
+    return 1;
+}
+
+function findSubstring(s: string, wordBuf: string, wordLen: int, wordCount: int): void {
+    set totalLen: int = wordLen * wordCount;
+    if (len(s) < totalLen) { return; }
+    set resultStr: string = "";
+
+    for (set i: int = 0; i <= len(s) - totalLen; i = i + 1) {
+        if (windowHasWords(s, i, wordBuf, wordLen, wordCount) == 1) {
+            if (len(resultStr) > 0) { resultStr = str_concat(resultStr, ", "); }
+            resultStr = str_concat(resultStr, itoa(i));
+        }
+    }
+    println(str_concat("[", str_concat(resultStr, "]")));
+}
+
+function main(): int {
+    findSubstring("barfoothefoobarman", "foobar", 3, 2);
+    return 0;
+}

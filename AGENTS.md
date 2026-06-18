@@ -41,6 +41,26 @@ Key test files: test_simple, test_small, test_strings, test_math, test_for, test
 **Root cause:** The LLVM codegen's `Eq` operator (`icmp eq i64`) compares string POINTERS, not string contents. `substring` creates a new arena allocation, so `substring(src,1,8) == "package"` compares different addresses and returns false even when contents match.
 **Fix:** Use `strcmp_ajeeb(str1, str2) == 0` instead of `str1 == str2` for all string equality checks in Ajeeb code compiled via the LLVM backend.
 
+## compiler.ajb Split — Phase 7 Complete
+**compiler.ajb (1279L) → 6 files (max 364L):**
+
+| File | Lines | Contains |
+|---|---|---|
+| `compiler/compiler.ajb` | 115 | Imports, helpers (rdB/wrB), main() |
+| `compiler/lexer.ajb` | 228 | nextTok, skipWS, matchKwd, readIdent/Number/String, setTok/tokType, identStr |
+| `compiler/emit.ajb` | 33 | emitStr, emitI, emitEscapedStr |
+| `compiler/expr.ajb` | 297 | parsePrimary, parseUnary, parseMul/Add/Cmp/Eq/And/Or/Assign, parseExpr |
+| `compiler/stmt.ajb` | 364 | parseType, parseStmt (all statement types incl. import/class) |
+| `compiler/pass1.ajb` | 211 | addFn, skipDepth, collectFns, emitFwdDecls |
+
+**Verification:** `cargo test` ✓, `bash tests/bootstrap_check.sh` ✓ (MIR/LLVM pipeline, 78KB binary).
+
+**Critical design:** The import statements (`import lexer;`) are resolved at TWO levels simultaneously:
+1. **Rust ModuleLoader** (Step 1) — flattens all function definitions from all files into evaluator
+2. **Ajeeb-level parseStmt import handler** (Step 3) — recursively processes imported files during C codegen
+
+Both levels must handle the same `import ident;` syntax identically. The path construction in both handlers uses the `compiler/` prefix.
+
 ## Key Bug Fix: Parth Parser Slot Mapping
 **Root cause:** `parseKeyValue` stores `(keyStart, keyLen, valStart, valLen)` at slots `(base, base+1, base+2, base+3)`, but `getConfigName/Version/Author` read value offsets at slots 0-1, 2-3, 4-5. Calling `parseKeyValue(src, lineStart, lineEnd, buf, 0)` for every package field overwrote key-value pairs — storing the field KEY name (e.g. "author") where `getConfigName` expected the value "my-project".
 **Fix:** Inline value extraction for `[package]` and `[build]` sections: extract the value string directly (after `=`, quote-stripped), identify the key by name via `strcmp_ajeeb`, and store only value offset+length at the correct slot. Use `parseKeyValue` only for `[dependencies]` where both key (dep name) and value (version) are needed.
@@ -64,6 +84,17 @@ Added: `allocBuf` — `declare i64 @allocBuf(i64)`, allocates N+1 zero-initializ
 - Both are 1-arg i64→i64 functions in LLVM codegen (`declare i64 @exec(i64)`, `declare i64 @mkdir(i64)`)
 - C implementations in `runtime/ajeeb_runtime.c` (wrappers around `system()`)
 - **Stale `build/runtime.o` must be deleted** after adding new runtime functions, or the linker won't find the new symbols
+
+## Monster File Split — Phase 6 Complete
+All 3 compiler-core Rust files >1000 LOC have been split into modular directories:
+
+- **`cache.rs`** (1050L) → `cache/` (2 files: mod.rs 179L, serialize.rs 877L)
+- **`eval.rs`** (1872L) → `eval/` (5 files: mod.rs 293L, builtins.rs 988L, expr.rs 455L, stmt.rs 111L, functions.rs 46L)
+- **`parser.rs`** (1930L) → `parser/` (7 files: mod.rs 223L, decls.rs 687L, expr.rs 686L, stmt.rs 173L, types.rs 79L, generics.rs 66L, patterns.rs 62L)
+
+Pre-existing monster files NOT split (deferred): `stage2/src/hir_lower.ajb` (1103L), `stage3/src/main.ajb` (1066L), `parth/src/main.rs` (1563L), `parth/src/registry.rs` (1454L).
+
+Verification: `cargo test` ✓, `bash tests/bootstrap_check.sh` ✓ (bootstrap success, 77KB binary).
 
 ## Ajeeb Limitations in .ajb Self-Hosted Code
 1. **No global variables:** `set` at module scope is parsed but `exprTy` cannot be

@@ -1,0 +1,297 @@
+// EXPRESSION PARSING
+
+function parsePrimary(src: int, buf: string, out: string): void {
+    set t: int = tokType(buf);
+    if (t == 2) {
+        emitI(out, tokVal(buf));
+        nextTok(src, buf);
+    }
+    else if (t == 3) {
+        emitEscapedStr(out, src, tokStrOff(buf), tokStrLen(buf));
+        nextTok(src, buf);
+    }
+    else if (t == 11) { emitStr(out, "1"); nextTok(src, buf); }
+    else if (t == 12) { emitStr(out, "0"); nextTok(src, buf); }
+    else if (t == 43) {
+        nextTok(src, buf);
+        set se: int = 0;
+        set go: int = 1;
+        while (go == 1) {
+            t = tokType(buf);
+            if (t == 34) {
+                nextTok(src, buf);
+                set fd: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                nextTok(src, buf);
+                if (tokType(buf) == 35) {
+                    nextTok(src, buf);
+                    emitStr(out, fd); emitStr(out, "(self");
+                    se = 1;
+                    set first: int = 1;
+                    while (tokType(buf) != 36 && tokType(buf) != 0) {
+                        if (first == 0) { emitStr(out, ", "); }
+                        first = 0;
+                        parseExpr(src, buf, out);
+                        if (tokType(buf) == 32) { nextTok(src, buf); }
+                    }
+                    emitStr(out, ")");
+                    if (tokType(buf) == 36) { nextTok(src, buf); }
+                } else {
+                    emitStr(out, "self->"); emitStr(out, fd); se = 1;
+                }
+            }
+            else if (t == 39) {
+                nextTok(src, buf);
+                emitStr(out, "self["); se = 1;
+                parseExpr(src, buf, out);
+                emitStr(out, "]");
+                if (tokType(buf) == 40) { nextTok(src, buf); }
+            }
+            else if (t == 35) {
+                nextTok(src, buf);
+                emitStr(out, "self("); se = 1;
+                set first: int = 1;
+                while (tokType(buf) != 36 && tokType(buf) != 0) {
+                    if (first == 0) { emitStr(out, ", "); }
+                    first = 0;
+                    parseExpr(src, buf, out);
+                    if (tokType(buf) == 32) { nextTok(src, buf); }
+                }
+                emitStr(out, ")");
+                if (tokType(buf) == 36) { nextTok(src, buf); }
+            }
+            else { if (se == 0) { emitStr(out, "self"); } go = 0; }
+        }
+    }
+    else if (t == 44) {
+        nextTok(src, buf);
+        set cn: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+        nextTok(src, buf);
+        emitStr(out, "("); emitStr(out, cn); emitStr(out, "){0}");
+    }
+    else if (t == 35) {
+        nextTok(src, buf);
+        emitStr(out, "(");
+        parseExpr(src, buf, out);
+        emitStr(out, ")");
+        if (tokType(buf) == 36) { nextTok(src, buf); }
+    }
+    else if (t == 39) {
+        nextTok(src, buf);
+        emitStr(out, "{");
+        set first: int = 1;
+        while (tokType(buf) != 40 && tokType(buf) != 0) {
+            if (first == 0) { emitStr(out, ", "); }
+            first = 0;
+            parseExpr(src, buf, out);
+            if (tokType(buf) == 32) { nextTok(src, buf); }
+        }
+        emitStr(out, "}");
+        if (tokType(buf) == 40) { nextTok(src, buf); }
+    }
+    else if (t == 1) {
+        set id: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+        nextTok(src, buf);
+
+        set emitted: int = 0;
+        set go: int = 1;
+        while (go == 1) {
+            t = tokType(buf);
+            if (t == 35) {
+                if (emitted == 0) { emitStr(out, id); emitted = 1; }
+                nextTok(src, buf);
+                set isPrint: int = 0;
+                if (strcmp_ajeeb(id, "println") == 0 || strcmp_ajeeb(id, "print") == 0) { isPrint = 1; }
+                if (isPrint == 1) {
+                    set ctr: int = rdB(buf, 88);
+                    wrB(buf, 88, ctr + 1);
+                    set ptmp: string = "build/_pp" + itoa(ctr) + ".txt";
+                    writeFile(ptmp, "");
+                    parseExpr(src, buf, ptmp);
+                    while (tokType(buf) == 32) {
+                        nextTok(src, buf);
+                        set left: string = readFile(ptmp);
+                        writeFile(ptmp, "");
+                        parseExpr(src, buf, ptmp);
+                        set right: string = readFile(ptmp);
+                        writeFile(ptmp, "");
+                        set cres: string = "str_concat(" + left + ", " + right + ")";
+                        writeAppend(ptmp, cres);
+                    }
+                    emitStr(out, "(");
+                    writeAppend(out, readFile(ptmp));
+                    emitStr(out, ")");
+                } else {
+                    emitStr(out, "(");
+                    set first: int = 1;
+                    while (tokType(buf) != 36 && tokType(buf) != 0) {
+                        if (first == 0) { emitStr(out, ", "); }
+                        first = 0;
+                        parseExpr(src, buf, out);
+                        if (tokType(buf) == 32) { nextTok(src, buf); }
+                    }
+                    emitStr(out, ")");
+                }
+                if (tokType(buf) == 36) { nextTok(src, buf); }
+            }
+            else if (t == 34) {
+                nextTok(src, buf);
+                set fd: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                nextTok(src, buf);
+                if (tokType(buf) == 35) {
+                    if (emitted == 0) { emitStr(out, fd); emitted = 1; }
+                    else { emitStr(out, fd); }
+                    nextTok(src, buf);
+                    emitStr(out, "(&"); emitStr(out, id);
+                    while (tokType(buf) != 36 && tokType(buf) != 0) {
+                        emitStr(out, ", ");
+                        parseExpr(src, buf, out);
+                        if (tokType(buf) == 32) { nextTok(src, buf); }
+                    }
+                    emitStr(out, ")");
+                    if (tokType(buf) == 36) { nextTok(src, buf); }
+                } else {
+                    if (emitted == 0) { emitStr(out, id); emitted = 1; }
+                    emitStr(out, "."); emitStr(out, fd);
+                }
+            }
+            else if (t == 39) {
+                if (emitted == 0) { emitStr(out, id); emitted = 1; }
+                nextTok(src, buf);
+                emitStr(out, "[");
+                parseExpr(src, buf, out);
+                emitStr(out, "]");
+                if (tokType(buf) == 40) { nextTok(src, buf); }
+            }
+            else { go = 0; }
+        }
+        if (emitted == 0) { emitStr(out, id); }
+    }
+    else {
+        emitStr(out, "0");
+        nextTok(src, buf);
+    }
+}
+
+function parseUnary(src: int, buf: string, out: string): void {
+    if (tokType(buf) == 18) {
+        nextTok(src, buf);
+        emitStr(out, "(-");
+        parseUnary(src, buf, out);
+        emitStr(out, ")");
+    }
+    else if (tokType(buf) == 29) {
+        nextTok(src, buf);
+        emitStr(out, "(!");
+        parseUnary(src, buf, out);
+        emitStr(out, ")");
+    }
+    else { parsePrimary(src, buf, out); }
+}
+
+function parseMul(src: int, buf: string, out: string): void {
+    parseUnary(src, buf, out);
+    while (tokType(buf) == 19 || tokType(buf) == 20) {
+        set op: int = tokType(buf);
+        nextTok(src, buf);
+        if (op == 19) { emitStr(out, " * "); } else { emitStr(out, " / "); }
+        parseUnary(src, buf, out);
+    }
+}
+
+function parseAdd(src: int, buf: string, out: string): void {
+    set ctr: int = rdB(buf, 88);
+    wrB(buf, 88, ctr + 1);
+    set tmp: string = "build/ap" + itoa(ctr) + ".txt";
+    writeFile(tmp, "");
+    parseMul(src, buf, tmp);
+    while (tokType(buf) == 17 || tokType(buf) == 18) {
+        set op: int = tokType(buf);
+        nextTok(src, buf);
+        set left: string = readFile(tmp);
+        writeFile(tmp, "");
+        parseMul(src, buf, tmp);
+        set right: string = readFile(tmp);
+        writeFile(tmp, "");
+        if (op == 18) {
+            writeAppend(tmp, left + " - " + right);
+        } else {
+            set hasStrLit: int = 0;
+            set j: int = 0;
+            while (j < len(left)) {
+                if (charCode(left, j) == 40) {
+                    if (j + 10 < len(left) && charCode(left, j+1) == 105 && charCode(left, j+2) == 110 && charCode(left, j+3) == 116 && charCode(left, j+4) == 112 && charCode(left, j+5) == 116 && charCode(left, j+6) == 114 && charCode(left, j+7) == 95 && charCode(left, j+8) == 116 && charCode(left, j+9) == 41 && charCode(left, j+10) == 34) { hasStrLit = 1; }
+                }
+                j = j + 1;
+            }
+            if (hasStrLit == 0) {
+                j = 0;
+                while (j < len(right)) {
+                    if (charCode(right, j) == 40) {
+                        if (j + 10 < len(right) && charCode(right, j+1) == 105 && charCode(right, j+2) == 110 && charCode(right, j+3) == 116 && charCode(right, j+4) == 112 && charCode(right, j+5) == 116 && charCode(right, j+6) == 114 && charCode(right, j+7) == 95 && charCode(right, j+8) == 116 && charCode(right, j+9) == 41 && charCode(right, j+10) == 34) { hasStrLit = 1; }
+                    }
+                    j = j + 1;
+                }
+            }
+            if (hasStrLit == 1) {
+                writeAppend(tmp, "str_concat(" + left + ", " + right + ")");
+            } else {
+                writeAppend(tmp, left + " + " + right);
+            }
+        }
+    }
+    emitStr(out, readFile(tmp));
+}
+
+function parseCmp(src: int, buf: string, out: string): void {
+    parseAdd(src, buf, out);
+    while (tokType(buf) == 23 || tokType(buf) == 24 || tokType(buf) == 25 || tokType(buf) == 26) {
+        set op: int = tokType(buf);
+        nextTok(src, buf);
+        if (op == 23) { emitStr(out, " < "); }
+        else if (op == 24) { emitStr(out, " > "); }
+        else if (op == 25) { emitStr(out, " <= "); }
+        else { emitStr(out, " >= "); }
+        parseAdd(src, buf, out);
+    }
+}
+
+function parseEq(src: int, buf: string, out: string): void {
+    parseCmp(src, buf, out);
+    while (tokType(buf) == 21 || tokType(buf) == 22) {
+        set op: int = tokType(buf);
+        nextTok(src, buf);
+        if (op == 21) { emitStr(out, " == "); } else { emitStr(out, " != "); }
+        parseCmp(src, buf, out);
+    }
+}
+
+function parseAnd(src: int, buf: string, out: string): void {
+    parseEq(src, buf, out);
+    while (tokType(buf) == 27) {
+        nextTok(src, buf);
+        emitStr(out, " && ");
+        parseEq(src, buf, out);
+    }
+}
+
+function parseOr(src: int, buf: string, out: string): void {
+    parseAnd(src, buf, out);
+    while (tokType(buf) == 28) {
+        nextTok(src, buf);
+        emitStr(out, " || ");
+        parseAnd(src, buf, out);
+    }
+}
+
+function parseAssign(src: int, buf: string, out: string): void {
+    parseOr(src, buf, out);
+    if (tokType(buf) == 41) {
+        nextTok(src, buf);
+        emitStr(out, " = ");
+        parseAssign(src, buf, out);
+    }
+}
+
+function parseExpr(src: int, buf: string, out: string): void {
+    parseAssign(src, buf, out);
+}

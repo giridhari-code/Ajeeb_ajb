@@ -1,41 +1,28 @@
-// builtins.ajb — Built-in function dispatch for ParthI
-// All errors in Hinglish!
+// builtins.ajb — ParthI Builtin Function Dispatch
+// Like Miri's shims/ directory — external function emulation
 
-function callArgAt(ext: int, idx: int): int {
-    set tmp: int = ext; set j: int = 0;
-    while (j < idx) { tmp = tmp / 1000; j = j + 1; }
-    set mod: int = tmp;
-    while (mod >= 1000) { mod = mod - 1000; }
-    return mod - 1;
-}
 function callArgCount(ext: int): int {
-    set tmp: int = ext; set c: int = 0;
-    while (tmp > 0) { c = c + 1; tmp = tmp / 1000; }
+    set tmp: int = ext;
+    set c: int = 0;
+    while (tmp > 0) {
+        c = c + 1;
+        tmp = tmp / 1000;
+    }
     return c;
 }
-function getRegInt(buf: string, i: int): int { return br(buf, i * 3 + 1); }
-function getRegType(buf: string, i: int): int { return br(buf, i * 3); }
-function getRegStr(buf: string, sp: string, i: int): string {
-    set pos: int = br(buf, i * 3 + 1);
-    set slen: int = br(buf, i * 3 + 2);
-    return substring(sp, pos, pos + slen);
-}
-function setRegInt(buf: string, i: int, val: int): void {
-    bw(buf, i * 3, 0); bw(buf, i * 3 + 1, val); bw(buf, i * 3 + 2, 0);
-}
-function setRegStr(buf: string, sp: string, i: int, val: string): void {
-    bw(buf, i * 3, 1);
-    set pos: int = br(buf, 9998);
-    set slen: int = len(val);
-    if (pos + slen > 70000) {
-        println("Bhai string pool bhar gaya!\n");
-        return;
-    }
+
+function callArgAt(ext: int, idx: int): int {
+    set tmp: int = ext;
     set j: int = 0;
-    while (j < slen) { strSet(sp, pos + j, charCode(val, j)); j = j + 1; }
-    bw(buf, i * 3 + 1, pos);
-    bw(buf, i * 3 + 2, slen);
-    bw(buf, 9998, pos + slen);
+    while (j < idx) {
+        tmp = tmp / 1000;
+        j = j + 1;
+    }
+    set val: int = tmp;
+    while (val >= 1000) {
+        val = val - 1000;
+    }
+    return val - 1;
 }
 
 function isBuiltin(name: string): int {
@@ -94,9 +81,11 @@ function callBuiltin(regBuf: string, strPool: string, name: string, dst: int, ex
         return;
     }
     if (strcmp_ajeeb(name, "readFile") == 0) {
-        if (a0 >= 0) { set s: string = readFile(getRegStr(regBuf, strPool, a0));
+        if (a0 >= 0) {
+            set s: string = readFile(getRegStr(regBuf, strPool, a0));
             if (len(s) == 0) { setRegInt(regBuf, dst, 0); }
-            else { setRegStr(regBuf, strPool, dst, s); } }
+            else { setRegStr(regBuf, strPool, dst, s); }
+        }
         return;
     }
     if (strcmp_ajeeb(name, "writeFile") == 0) {
@@ -113,7 +102,8 @@ function callBuiltin(regBuf: string, strPool: string, name: string, dst: int, ex
     }
     if (strcmp_ajeeb(name, "str_concat") == 0) {
         if (a0 >= 0 && a1 >= 0) {
-            setRegStr(regBuf, strPool, dst, str_concat(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1)));
+            setRegStr(regBuf, strPool, dst,
+                str_concat(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1)));
         }
         return;
     }
@@ -128,7 +118,8 @@ function callBuiltin(regBuf: string, strPool: string, name: string, dst: int, ex
     }
     if (strcmp_ajeeb(name, "strcmp_ajeeb") == 0) {
         if (a0 >= 0 && a1 >= 0) {
-            setRegInt(regBuf, dst, strcmp_ajeeb(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1)));
+            setRegInt(regBuf, dst,
+                strcmp_ajeeb(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1)));
         }
         return;
     }
@@ -146,7 +137,11 @@ function callBuiltin(regBuf: string, strPool: string, name: string, dst: int, ex
     }
     if (strcmp_ajeeb(name, "contains") == 0) {
         if (a0 >= 0 && a1 >= 0) {
-            setRegInt(regBuf, dst, contains(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1)));
+            if (contains(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1))) {
+                setRegInt(regBuf, dst, 1);
+            } else {
+                setRegInt(regBuf, dst, 0);
+            }
         }
         return;
     }
@@ -216,7 +211,10 @@ function callBuiltin(regBuf: string, strPool: string, name: string, dst: int, ex
     }
     if (strcmp_ajeeb(name, "replace") == 0) {
         if (a0 >= 0 && a1 >= 0 && a2 >= 0) {
-            setRegStr(regBuf, strPool, dst, replace(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1), getRegStr(regBuf, strPool, a2)));
+            setRegStr(regBuf, strPool, dst,
+                replace(getRegStr(regBuf, strPool, a0),
+                    getRegStr(regBuf, strPool, a1),
+                    getRegStr(regBuf, strPool, a2)));
         }
         return;
     }

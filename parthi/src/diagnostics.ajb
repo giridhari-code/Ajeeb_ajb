@@ -1,0 +1,21 @@
+// diagnostics.ajb — ParthI Error Reporting
+// Like Miri's TerminationInfo + NonHaltingDiagnostic
+// Error codes: 1=FileNotFound, 2=NoMain, 3=ParseError, 4=PoolFull, 5=MaxIter
+
+function diagReport(code: int, msg: string): void {
+    if (code == 1) {
+        println("Error: File nahi mila — ");
+        println(msg);
+        println("\n");
+    } else if (code == 2) {
+        println("Error: main() function define nahi hai!\n");
+    } else if (code == 3) {
+        println("Error: Parse error — ");
+        println(msg);
+        println("\n");
+    } else if (code == 4) {
+        println("Error: String pool bhar gaya (limit 70KB)!\n");
+    } else if (code == 5) {
+        println("Error: Max iterations (100K) reached — infinite loop?\n");
+    }
+}

@@ -1,50 +1,46 @@
-// value.ajb — Runtime value helpers for ParthI
-// Types: 0=int 1=string 2=bool 3=void 5=null
-// All errors in Hinglish!
+// value.ajb — ParthI Value Representation
+// Like Miri's Scalar/ImmTy/OpTy types
+// Layout: reg[i*3]=type(0=int,1=str,3=bool,5=void), reg[i*3+1]=val, reg[i*3+2]=strLen
+// String write head at buf[9998]
 
-// Create a fresh value buffer
 function makeValBuf(): string {
-    set buf: string = substring("", 0, 0);
-    bw(buf, 0, 0); // write head for string pool at slot 9998
-    bw(buf, 9998, 0);
-    return buf;
+    return allocBuf(80000);
 }
 
-// Store int value in register i
 function setRegInt(buf: string, i: int, val: int): void {
-    bw(buf, i * 3, 0);     // type = int
-    bw(buf, i * 3 + 1, val); // value
-    bw(buf, i * 3 + 2, 0);   // string len = 0
+    bw(buf, i * 3, 0);     // TYPE_INT
+    bw(buf, i * 3 + 1, val);
+    bw(buf, i * 3 + 2, 0);
 }
 
-// Get int value from register i
 function getRegInt(buf: string, i: int): int {
     return br(buf, i * 3 + 1);
 }
 
-// Store string value in register i
-function setRegStr(buf: string, strPool: string, i: int, val: string): void {
-    bw(buf, i * 3, 1);        // type = string
-    set pos: int = br(buf, 9998);   // write head in strPool
-    set slen: int = len(val);
-    set j: int = 0;
-    while (j < slen) {
-        strSet(strPool, pos + j, charCode(val, j));
-        j = j + 1;
-    }
-    bw(buf, i * 3 + 1, pos);   // start
-    bw(buf, i * 3 + 2, slen);  // length
-    bw(buf, 9998, pos + slen); // update write head
-}
-
-// Get string value from register i
-function getRegStr(buf: string, strPool: string, i: int): string {
-    set pos: int = br(buf, i * 3 + 1);
-    set slen: int = br(buf, i * 3 + 2);
-    return substring(strPool, pos, pos + slen);
-}
-
-// Get type of register i
 function getRegType(buf: string, i: int): int {
     return br(buf, i * 3);
+}
+
+function setRegStr(buf: string, sp: string, i: int, val: string): void {
+    bw(buf, i * 3, 2);     // TYPE_STRING
+    set pos: int = br(buf, 9998);
+    set slen: int = len(val);
+    if (pos + slen > 70000) {
+        println("Bhai string pool bhar gaya!\n");
+        return;
+    }
+    set j: int = 0;
+    while (j < slen) {
+        strSet(sp, pos + j, charCode(val, j));
+        j = j + 1;
+    }
+    bw(buf, i * 3 + 1, pos);
+    bw(buf, i * 3 + 2, slen);
+    bw(buf, 9998, pos + slen);
+}
+
+function getRegStr(buf: string, sp: string, i: int): string {
+    set pos: int = br(buf, i * 3 + 1);
+    set slen: int = br(buf, i * 3 + 2);
+    return substring(sp, pos, pos + slen);
 }
