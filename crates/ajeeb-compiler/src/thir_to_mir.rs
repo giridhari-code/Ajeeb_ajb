@@ -1,5 +1,6 @@
 use crate::hir::*;
 use crate::mir::*;
+use std::collections::HashMap;
 
 pub struct MirBuilder {
     current_blocks: Vec<BasicBlock>,
@@ -8,6 +9,7 @@ pub struct MirBuilder {
     loop_stack: Vec<(usize, usize)>, // (continue_target, break_target) — 0 = placeholder
     break_patches: Vec<usize>,       // block indices whose Goto target should become exit_block
     continue_patches: Vec<usize>,    // block indices whose Goto target should become update/header_block
+    method_mangled_names: HashMap<String, Vec<String>>, // type_method -> [mangled1, mangled2, ...]
 }
 
 impl MirBuilder {
@@ -19,6 +21,7 @@ impl MirBuilder {
             loop_stack: Vec::new(),
             break_patches: Vec::new(),
             continue_patches: Vec::new(),
+            method_mangled_names: HashMap::new(),
         }
     }
 
@@ -55,11 +58,27 @@ impl MirBuilder {
     pub fn build_program(&mut self, hir: &HirProgram) -> MirProgram {
         let mut functions = Vec::new();
 
+        // Pre-register all method mangled names before building any function
+        // (so MethodCall inside main() can resolve trait methods)
+        for imp in &hir.impls {
+            for m in &imp.methods {
+                let mangled = if let Some(ref trait_name) = imp.trait_name {
+                    format!("{}_{}_{}", imp.type_name, trait_name, m.name)
+                } else {
+                    format!("{}_{}", imp.type_name, m.name)
+                };
+                let key = format!("{}_{}", imp.type_name, m.name);
+                self.method_mangled_names.entry(key)
+                    .or_insert_with(Vec::new)
+                    .push(mangled);
+            }
+        }
+
         for f in &hir.functions {
             functions.push(self.build_fn(f));
         }
 
-        // Also build impl methods as separate functions
+        // Build impl methods as separate functions
         for imp in &hir.impls {
             for m in &imp.methods {
                 let mangled = if let Some(ref trait_name) = imp.trait_name {
@@ -374,7 +393,7 @@ impl MirBuilder {
     fn lower_expr(&mut self, expr: &HirExpr) -> MirOperand {
         match expr {
             HirExpr::Int(n) => MirOperand::Constant(MirConst::Int(*n)),
-            HirExpr::Float(f) => MirOperand::Constant(MirConst::Int(f.to_bits() as i64)),
+            HirExpr::Float(f) => MirOperand::Constant(MirConst::Float(*f)),
             HirExpr::Str(s) => MirOperand::Constant(MirConst::Str(s.clone())),
             HirExpr::Bool(b) => MirOperand::Constant(MirConst::Bool(*b)),
             HirExpr::Var { name, .. } => MirOperand::Var(name.clone()),
@@ -427,9 +446,16 @@ impl MirBuilder {
                 for arg in args {
                     mir_args.push(self.lower_expr(arg));
                 }
-                // Determine mangled name from receiver type
+                // Determine mangled name: try inherent first, then trait
                 let mangled = match receiver.ty() {
-                    HirType::Named(type_name) => format!("{}_{}", type_name, method),
+                    HirType::Named(type_name) => {
+                        let key = format!("{}_{}", type_name, method);
+                        if let Some(list) = self.method_mangled_names.get(&key) {
+                            list[0].clone()
+                        } else {
+                            format!("{}_{}", type_name, method)
+                        }
+                    }
                     _ => method.clone(),
                 };
                 let temp = self.fresh_temp();
@@ -456,9 +482,13 @@ impl MirBuilder {
             HirExpr::FieldAccess { obj, field, .. } => {
                 let obj_op = self.lower_expr(obj);
                 let temp = self.fresh_temp();
+                let struct_name = match obj.ty() {
+                    HirType::Named(name) => name.clone(),
+                    _ => String::new(),
+                };
                 self.push_stmt(MirStmt::Call {
                     dest: Some(temp.clone()),
-                    func: format!("__field_access_{}", field),
+                    func: format!("__struct_get_{}_{}", struct_name, field),
                     args: vec![obj_op],
                 });
                 MirOperand::Var(temp)
@@ -467,9 +497,13 @@ impl MirBuilder {
                 let obj_op = self.lower_expr(obj);
                 let val_op = self.lower_expr(value);
                 let temp = self.fresh_temp();
+                let struct_name = match obj.ty() {
+                    HirType::Named(name) => name.clone(),
+                    _ => String::new(),
+                };
                 self.push_stmt(MirStmt::Call {
                     dest: Some(temp.clone()),
-                    func: format!("__field_assign_{}", field),
+                    func: format!("__struct_set_{}_{}", struct_name, field),
                     args: vec![obj_op, val_op],
                 });
                 MirOperand::Var(temp)
@@ -581,6 +615,18 @@ fn const_fold_binop(op: MirBinOp, l: &MirConst, r: &MirConst) -> Option<MirConst
         (MirBinOp::Gt, MirConst::Int(a), MirConst::Int(b)) => Some(MirConst::Bool(a > b)),
         (MirBinOp::Le, MirConst::Int(a), MirConst::Int(b)) => Some(MirConst::Bool(a <= b)),
         (MirBinOp::Ge, MirConst::Int(a), MirConst::Int(b)) => Some(MirConst::Bool(a >= b)),
+        (MirBinOp::Add, MirConst::Float(a), MirConst::Float(b)) => Some(MirConst::Float(a + b)),
+        (MirBinOp::Sub, MirConst::Float(a), MirConst::Float(b)) => Some(MirConst::Float(a - b)),
+        (MirBinOp::Mul, MirConst::Float(a), MirConst::Float(b)) => Some(MirConst::Float(a * b)),
+        (MirBinOp::Div, MirConst::Float(a), MirConst::Float(b)) => {
+            if *b == 0.0 { None } else { Some(MirConst::Float(a / b)) }
+        }
+        (MirBinOp::Eq, MirConst::Float(a), MirConst::Float(b)) => Some(MirConst::Bool(a == b)),
+        (MirBinOp::Neq, MirConst::Float(a), MirConst::Float(b)) => Some(MirConst::Bool(a != b)),
+        (MirBinOp::Lt, MirConst::Float(a), MirConst::Float(b)) => Some(MirConst::Bool(a < b)),
+        (MirBinOp::Gt, MirConst::Float(a), MirConst::Float(b)) => Some(MirConst::Bool(a > b)),
+        (MirBinOp::Le, MirConst::Float(a), MirConst::Float(b)) => Some(MirConst::Bool(a <= b)),
+        (MirBinOp::Ge, MirConst::Float(a), MirConst::Float(b)) => Some(MirConst::Bool(a >= b)),
         (MirBinOp::And, MirConst::Bool(a), MirConst::Bool(b)) => Some(MirConst::Bool(*a && *b)),
         (MirBinOp::Or, MirConst::Bool(a), MirConst::Bool(b)) => Some(MirConst::Bool(*a || *b)),
         (MirBinOp::Eq, MirConst::Bool(a), MirConst::Bool(b)) => Some(MirConst::Bool(a == b)),

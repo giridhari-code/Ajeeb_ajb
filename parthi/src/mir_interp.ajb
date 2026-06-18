@@ -33,6 +33,10 @@ function setRegStr(buf: string, sp: string, i: int, val: string): void {
     bw(buf, i * 3, 1);
     set pos: int = br(buf, 9998);
     set slen: int = len(val);
+    if (pos + slen > 70000) {
+        println("Bhai string pool bhar gaya!\n");
+        return;
+    }
     set j: int = 0;
     while (j < slen) {
         strSet(sp, pos + j, charCode(val, j));

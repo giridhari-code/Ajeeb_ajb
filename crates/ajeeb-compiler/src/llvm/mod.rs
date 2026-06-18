@@ -48,6 +48,9 @@ pub struct Codegen {
     // Boolean type tracking — for printing true/false instead of 1/0
     bool_vars: HashSet<String>,     // variable names known to hold booleans
     bool_regs: HashSet<String>,     // LLVM register names holding boolean values
+    // Float type tracking — for fadd/fsub etc instead of i64 ops
+    float_vars: HashSet<String>,    // variable names known to hold floats
+    float_regs: HashSet<String>,    // LLVM register names holding float values (as i64 bit pattern)
     // Array type tracking — for printing arrays recursively
     array_vars: HashSet<String>,    // variable names known to hold arrays
     array_regs: HashSet<String>,    // LLVM register names holding array pointers
@@ -105,6 +108,8 @@ impl Codegen {
             monomorphized: HashSet::new(),
             enum_regs: HashSet::new(),
             enum_vars: HashSet::new(),
+            float_vars: HashSet::new(),
+            float_regs: HashSet::new(),
         }
     }
 
@@ -444,9 +449,10 @@ impl Codegen {
             self.user_fns.insert(name.clone());
         }
 
-        // Register all function names upfront so forward calls resolve
+        // Register all function names and return types upfront so forward calls resolve
         for f in &prog.functions {
             self.user_fns.insert(f.name.clone());
+            self.fn_return_types.insert(f.name.clone(), hir_type_to_type_ann(&f.return_type));
         }
 
         // Generate each MIR function as an LLVM function
@@ -474,6 +480,8 @@ impl Codegen {
         let saved_string_regs = self.string_regs.clone();
         let saved_var_types = self.var_types.clone();
         let saved_bool_regs = self.bool_regs.clone();
+        let saved_float_regs = self.float_regs.clone();
+        let saved_float_vars = self.float_vars.clone();
         let saved_array_regs = self.array_regs.clone();
         let saved_array_vars = self.array_vars.clone();
         let saved_enum_regs = self.enum_regs.clone();
@@ -481,6 +489,8 @@ impl Codegen {
         let saved_mir_temps = self.mir_temps.clone();
         self.string_regs.clear();
         self.bool_regs.clear();
+        self.float_regs.clear();
+        self.float_vars.clear();
         self.array_regs.clear();
         self.array_vars.clear();
         self.enum_regs.clear();
@@ -556,6 +566,8 @@ impl Codegen {
         self.string_regs = saved_string_regs;
         self.var_types = saved_var_types;
         self.bool_regs = saved_bool_regs;
+        self.float_regs = saved_float_regs;
+        self.float_vars = saved_float_vars;
         self.array_regs = saved_array_regs;
         self.array_vars = saved_array_vars;
         self.enum_regs = saved_enum_regs;
@@ -564,27 +576,99 @@ impl Codegen {
         Ok(())
     }
 
+    fn emit_mir_struct_ctor(&mut self, full_name: &str, fields: &[(String, TypeAnnot)]) -> Result<(), String> {
+        let saved_unnamed = self.unnamed_count;
+        self.unnamed_count = fields.len() as u64 + 1;
+        let mut body = String::new();
+        let params: Vec<String> = (0..fields.len()).map(|i| format!("i64 %{}", i)).collect();
+        let header = format!("define i64 @{}({}) {{\n", full_name, params.join(", "));
+        let size = (fields.len().max(1) * 8) as i64;
+        let s1 = self.fresh();
+        write!(body, "  {} = add i64 0, {}\n", s1, size).unwrap();
+        self.declare_extern("malloc");
+        let s2 = self.fresh();
+        write!(body, "  {} = call ptr @malloc(i64 {})\n", s2, s1).unwrap();
+        for i in 0..fields.len() {
+            let elem = self.fresh();
+            write!(body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem, s2, i).unwrap();
+            write!(body, "  store i64 %{}, ptr {}\n", i, elem).unwrap();
+        }
+        let res = self.fresh();
+        write!(body, "  {} = ptrtoint ptr {} to i64\n", res, s2).unwrap();
+        write!(body, "  ret i64 {}\n", res).unwrap();
+        body.push_str("}\n");
+        self.functions.push_str(&header);
+        self.functions.push_str(&body);
+        self.unnamed_count = saved_unnamed;
+        Ok(())
+    }
+
+    fn emit_mir_struct_getter(&mut self, struct_name: &str, field_name: &str, fields: &[(String, TypeAnnot)]) -> Result<(), String> {
+        let saved_unnamed = self.unnamed_count;
+        self.unnamed_count = 2;
+        let offset = fields.iter().position(|(n, _)| n == field_name).unwrap_or(0);
+        let full_name = format!("__struct_get_{}_{}", struct_name, field_name);
+        let header = format!("define i64 @{}(i64 %0) {{\n", full_name);
+        let mut body = String::new();
+        let r1 = self.fresh();
+        write!(body, "  {} = inttoptr i64 %0 to ptr\n", r1).unwrap();
+        let r2 = self.fresh();
+        write!(body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", r2, r1, offset).unwrap();
+        let r3 = self.fresh();
+        write!(body, "  {} = load i64, ptr {}\n", r3, r2).unwrap();
+        write!(body, "  ret i64 {}\n", r3).unwrap();
+        body.push_str("}\n");
+        self.functions.push_str(&header);
+        self.functions.push_str(&body);
+        self.unnamed_count = saved_unnamed;
+        Ok(())
+    }
+
+    fn emit_mir_struct_setter(&mut self, struct_name: &str, field_name: &str, fields: &[(String, TypeAnnot)]) -> Result<(), String> {
+        let saved_unnamed = self.unnamed_count;
+        self.unnamed_count = 3;
+        let offset = fields.iter().position(|(n, _)| n == field_name).unwrap_or(0);
+        let full_name = format!("__struct_set_{}_{}", struct_name, field_name);
+        let header = format!("define i64 @{}(i64 %0, i64 %1) {{\n", full_name);
+        let mut body = String::new();
+        let r1 = self.fresh();
+        write!(body, "  {} = inttoptr i64 %0 to ptr\n", r1).unwrap();
+        let r2 = self.fresh();
+        write!(body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", r2, r1, offset).unwrap();
+        write!(body, "  store i64 %1, ptr {}\n", r2).unwrap();
+        write!(body, "  ret i64 %0\n").unwrap();
+        body.push_str("}\n");
+        self.functions.push_str(&header);
+        self.functions.push_str(&body);
+        self.unnamed_count = saved_unnamed;
+        Ok(())
+    }
+
     fn emit_mir_stmt(&mut self, stmt: &MirStmt) -> Result<(), String> {
         match stmt {
             MirStmt::Assign { dest, value } => {
                 let val = self.emit_mir_rvalue(value)?;
-                // Propagate type tracking (strings, bools, etc.)
+                // Propagate type tracking (strings, bools, floats, etc.)
                 let is_string = self.string_regs.contains(&val);
                 let is_bool = self.bool_regs.contains(&val);
+                let is_float = self.float_regs.contains(&val);
                 // Check if it's a user variable (store to alloca) or a temp (SSA register)
                 if let Some(var_reg) = self.variables.get(dest).cloned() {
                     write!(self.body, "  store i64 {}, ptr {}\n", val, var_reg).unwrap();
                     if is_string { self.string_vars.insert(dest.clone()); }
                     if is_bool { self.bool_vars.insert(dest.clone()); }
+                    if is_float { self.float_vars.insert(dest.clone()); }
                 } else if let Some(gname) = self.globals_map.get(dest).cloned() {
                     write!(self.body, "  store i64 {}, ptr @{}\n", val, gname).unwrap();
                     if is_string { self.string_vars.insert(dest.clone()); }
                     if is_bool { self.bool_vars.insert(dest.clone()); }
+                    if is_float { self.float_vars.insert(dest.clone()); }
                 } else {
                     // MIR temporary - track the SSA register and propagate type info
                     self.mir_temps.insert(dest.clone(), val.clone());
                     if is_string { self.string_vars.insert(dest.clone()); }
                     if is_bool { self.bool_vars.insert(dest.clone()); }
+                    if is_float { self.float_vars.insert(dest.clone()); }
                 }
                 Ok(())
             }
@@ -603,18 +687,102 @@ impl Codegen {
                     "println" | "print" => {
                         self.emit_mir_print(compiled_args, func == "println")?;
                     }
+                    "assert_eq" => {
+                        let left = compiled_args.get(0).ok_or("assert_eq expects 2 arguments")?;
+                        let right = compiled_args.get(1).ok_or("assert_eq expects 2 arguments")?;
+                        let cmp_reg = self.fresh();
+                        write!(self.body, "  {} = icmp eq i64 {}, {}\n", cmp_reg, left, right).unwrap();
+                        let cont_label = self.fresh_label();
+                        let fail_label = self.fresh_label();
+                        write!(self.body, "  br i1 {}, label %{}, label %{}\n", cmp_reg, cont_label, fail_label).unwrap();
+                        write!(self.body, "{}:\n", fail_label).unwrap();
+                        write!(self.body, "  br label %{}\n", cont_label).unwrap();
+                        write!(self.body, "{}:\n", cont_label).unwrap();
+                        if let Some(ref dest_name) = dest {
+                            let reg = self.fresh();
+                            write!(self.body, "  {} = add i64 0, 0\n", reg).unwrap();
+                            if let Some(var_reg) = self.variables.get(dest_name).cloned() {
+                                write!(self.body, "  store i64 {}, ptr {}\n", reg, var_reg).unwrap();
+                            } else {
+                                self.mir_temps.insert(dest_name.clone(), reg);
+                            }
+                        }
+                    }
                     _ => {
                         if !self.declare_extern(func) && !self.user_fns.contains(func.as_str()) {
-                            return Err(format!("MIR codegen: unknown function '{}'", func));
-                        }
-                        if let Some(dest_name) = dest {
-                            let reg = self.fresh();
-                            write!(self.body, "  {} = call i64 @{}({})\n", reg, func, args_str).unwrap();
-                            // Track return type for known string-returning functions
-                            if matches!(func.as_str(),
+                            // Auto-generate __struct_* constructor/getter/setter functions
+                            // IMPORTANT: check longer prefixes FIRST (getter/setter before constructor)
+                            let func_name = func.clone();
+                            if let Some(field_name) = func_name.strip_prefix("__struct_get_") {
+                                if let Some(underscore) = field_name.rfind('_') {
+                                    let sname = &field_name[..underscore];
+                                    let fname = &field_name[underscore + 1..];
+                                    let fields_opt = self.struct_defs.get(sname).cloned();
+                                    if let Some(fields) = fields_opt {
+                                        self.emit_mir_struct_getter(sname, fname, &fields)?;
+                                        self.user_fns.insert(func_name);
+                                    } else {
+                                        return Err(format!("MIR codegen: unknown struct '{}' for getter", sname));
+                                    }
+                                } else {
+                                    return Err(format!("MIR codegen: unknown function '{}'", func));
+                                }
+                            } else if let Some(field_name) = func_name.strip_prefix("__struct_set_") {
+                                if let Some(underscore) = field_name.rfind('_') {
+                                    let sname = &field_name[..underscore];
+                                    let fname = &field_name[underscore + 1..];
+                                    let fields_opt = self.struct_defs.get(sname).cloned();
+                                    if let Some(fields) = fields_opt {
+                                        self.emit_mir_struct_setter(sname, fname, &fields)?;
+                                        self.user_fns.insert(func_name);
+                                    } else {
+                                        return Err(format!("MIR codegen: unknown struct '{}' for setter", sname));
+                                    }
+                                } else {
+                                    return Err(format!("MIR codegen: unknown function '{}'", func));
+                                }
+                            } else if func_name.starts_with("__struct_") {
+                                // Constructor: __struct_StructName
+                                if let Some(struct_name) = func_name.strip_prefix("__struct_") {
+                                    let fields_opt = self.struct_defs.get(struct_name).cloned();
+                                    if let Some(fields) = fields_opt {
+                                        self.emit_mir_struct_ctor(&func_name, &fields)?;
+                                        self.user_fns.insert(func_name);
+                                    } else {
+                                        return Err(format!("MIR codegen: unknown struct '{}' for constructor", struct_name));
+                                    }
+                                } else {
+                                    return Err(format!("MIR codegen: unknown function '{}'", func));
+                                }
+                            } else {
+                                return Err(format!("MIR codegen: unknown function '{}'", func));
+                             }
+                         }
+                          if let Some(dest_name) = dest {
+                             let final_args_str = if func == "itoa" && compiled_args.len() == 1 {
+                                 let a = &compiled_args[0];
+                                 if self.float_regs.contains(a) {
+                                     let f_bits = self.fresh();
+                                     write!(self.body, "  {} = bitcast i64 {} to double\n", f_bits, a).unwrap();
+                                     let int_val = self.fresh();
+                                     write!(self.body, "  {} = fptosi double {} to i64\n", int_val, f_bits).unwrap();
+                                     format!("i64 {}", int_val)
+                                 } else {
+                                     args_str.clone()
+                                 }
+                             } else {
+                                 args_str.clone()
+                             };
+                             let reg = self.fresh();
+                             write!(self.body, "  {} = call i64 @{}({})\n", reg, func, final_args_str).unwrap();
+                            // Track return type for string-returning functions
+                            let is_string_ret = matches!(func.as_str(),
                                 "str_concat" | "itoa" | "substring" | "toUpperCase" | "toLowerCase"
                                 | "trim" | "readFile" | "readArg" | "replace"
-                            ) {
+                            ) || self.fn_return_types.get(func.as_str())
+                                .map(|rt| matches!(rt, TypeAnnot::String))
+                                .unwrap_or(false);
+                            if is_string_ret {
                                 self.string_regs.insert(reg.clone());
                                 self.string_vars.insert(dest_name.clone());
                             }
@@ -652,6 +820,45 @@ impl Codegen {
                     write!(self.body, "  {} = call i64 @str_concat(i64 {}, i64 {})\n", reg, l, r).unwrap();
                     self.string_regs.insert(reg.clone());
                     return Ok(reg);
+                }
+                // Check if this is a float operation
+                let is_float_op = self.float_regs.contains(&l) || self.float_regs.contains(&r)
+                    || self.float_vars.iter().any(|v| {
+                        self.mir_temps.get(v).map_or(false, |sr| sr == &l || sr == &r)
+                    });
+                if is_float_op {
+                    let bits_l = self.fresh();
+                    write!(self.body, "  {} = bitcast i64 {} to double\n", bits_l, l).unwrap();
+                    let bits_r = self.fresh();
+                    write!(self.body, "  {} = bitcast i64 {} to double\n", bits_r, r).unwrap();
+                    let freg = self.fresh();
+                    let (fop, use_fcmp) = match op {
+                        MirBinOp::Add => ("fadd", false),
+                        MirBinOp::Sub => ("fsub", false),
+                        MirBinOp::Mul => ("fmul", false),
+                        MirBinOp::Div => ("fdiv", false),
+                        MirBinOp::Eq => ("fcmp oeq", true),
+                        MirBinOp::Neq => ("fcmp une", true),
+                        MirBinOp::Lt => ("fcmp olt", true),
+                        MirBinOp::Gt => ("fcmp ogt", true),
+                        MirBinOp::Le => ("fcmp ole", true),
+                        MirBinOp::Ge => ("fcmp oge", true),
+                        _ => ("fadd", false),
+                    };
+                    if use_fcmp {
+                        let cmp_reg = self.fresh();
+                        write!(self.body, "  {} = {} double {}, {}\n", cmp_reg, fop, bits_l, bits_r).unwrap();
+                        let zext_reg = self.fresh();
+                        write!(self.body, "  {} = zext i1 {} to i64\n", zext_reg, cmp_reg).unwrap();
+                        self.bool_regs.insert(zext_reg.clone());
+                        return Ok(zext_reg);
+                    } else {
+                        write!(self.body, "  {} = {} double {}, {}\n", freg, fop, bits_l, bits_r).unwrap();
+                        let result = self.fresh();
+                        write!(self.body, "  {} = bitcast double {} to i64\n", result, freg).unwrap();
+                        self.float_regs.insert(result.clone());
+                        return Ok(result);
+                    }
                 }
                 let reg = self.fresh();
                 match op {
@@ -741,11 +948,13 @@ impl Codegen {
                     // Propagate type tracking
                     if self.string_vars.contains(name) { self.string_regs.insert(reg.clone()); }
                     if self.bool_vars.contains(name) { self.bool_regs.insert(reg.clone()); }
+                    if self.float_vars.contains(name) { self.float_regs.insert(reg.clone()); }
                     Ok(reg)
                 } else if let Some(ssa_reg) = self.mir_temps.get(name).cloned() {
                     // MIR temp - already an SSA register, propagate type info
                     if self.string_vars.contains(name) { self.string_regs.insert(ssa_reg.clone()); }
                     if self.bool_vars.contains(name) { self.bool_regs.insert(ssa_reg.clone()); }
+                    if self.float_vars.contains(name) { self.float_regs.insert(ssa_reg.clone()); }
                     Ok(ssa_reg)
                 } else if let Some(gname) = self.globals_map.get(name).cloned() {
                     let reg = self.fresh();
@@ -771,6 +980,13 @@ impl Codegen {
             MirConst::Int(n) => {
                 let reg = self.fresh();
                 write!(self.body, "  {} = add i64 0, {}\n", reg, n).unwrap();
+                Ok(reg)
+            }
+            MirConst::Float(f) => {
+                let reg = self.fresh();
+                let bits = f.to_bits() as i64;
+                write!(self.body, "  {} = add i64 0, {}\n", reg, bits).unwrap();
+                self.float_regs.insert(reg.clone());
                 Ok(reg)
             }
             MirConst::Str(s) => {

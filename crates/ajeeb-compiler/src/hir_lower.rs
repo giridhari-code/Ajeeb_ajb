@@ -9,6 +9,7 @@ pub struct HirLowering {
     type_env: HashMap<String, HirType>,
     generic_params: HashMap<String, Vec<String>>,
     in_loop: bool,
+    tmp_counter: u32,
 }
 
 impl HirLowering {
@@ -20,6 +21,7 @@ impl HirLowering {
             type_env: HashMap::new(),
             generic_params: HashMap::new(),
             in_loop: false,
+            tmp_counter: 0,
         };
         lowering.register_builtins();
         lowering
@@ -174,7 +176,7 @@ impl HirLowering {
             .collect();
 
         let hir_ret = self.resolve_type(return_type);
-        let hir_body: Vec<HirStmt> = body.iter().map(|s| self.lower_stmt(s)).collect();
+        let hir_body: Vec<HirStmt> = body.iter().flat_map(|s| self.lower_stmt_vec(s)).collect();
 
         self.type_env = saved_env;
 
@@ -186,6 +188,62 @@ impl HirLowering {
             is_generic: !type_params.is_empty(),
             type_params: type_params.to_vec(),
         }
+    }
+
+    fn lower_stmt_vec(&mut self, s: &Stmt) -> Vec<HirStmt> {
+        match s {
+            Stmt::Expr(expr, ..) => {
+                if let Expr::Match { value, arms, .. } = expr {
+                    self.lower_match_stmt(value, arms)
+                } else {
+                    vec![self.lower_stmt(s)]
+                }
+            }
+            _ => vec![self.lower_stmt(s)],
+        }
+    }
+
+    fn lower_match_stmt(&mut self, value: &Expr, arms: &[ast::MatchArm]) -> Vec<HirStmt> {
+        let hir_val = self.lower_expr(value);
+        let match_ty = hir_val.ty().clone();
+        let tmp_name = format!("__match_{}", self.tmp_counter);
+        self.tmp_counter += 1;
+        self.type_env.insert(tmp_name.clone(), match_ty.clone());
+        let tmp_var = HirExpr::Var { name: tmp_name.clone(), ty: match_ty.clone() };
+        // Build nested if-else chain from last arm to first
+        let mut chain: Vec<HirStmt> = Vec::new();
+        for arm in arms.iter().rev() {
+            let body_hir = self.lower_expr(&arm.body);
+            let body_stmt = HirStmt::Expr(body_hir);
+            match &arm.pattern {
+                ast::Pattern::Wildcard => {
+                    chain = vec![body_stmt];
+                }
+                ast::Pattern::Int(n) => {
+                    let cond = HirExpr::BinOp {
+                        op: HirBinOp::Eq,
+                        left: Box::new(tmp_var.clone()),
+                        right: Box::new(HirExpr::Int(*n)),
+                        ty: HirType::Bool,
+                    };
+                    chain = vec![HirStmt::If {
+                        cond,
+                        then: vec![body_stmt],
+                        else_: chain,
+                    }];
+                }
+                _ => {
+                    chain = vec![body_stmt];
+                }
+            }
+        }
+        let mut stmts: Vec<HirStmt> = vec![HirStmt::Set {
+            name: tmp_name.clone(),
+            ty: match_ty,
+            value: hir_val,
+        }];
+        stmts.extend(chain);
+        stmts
     }
 
     fn lower_stmt(&mut self, s: &Stmt) -> HirStmt {
@@ -321,10 +379,18 @@ impl HirLowering {
                     ty,
                 }
             }
-            Expr::GenericCall { name, type_args: _, args, .. } => {
+            Expr::GenericCall { name, type_args, args, .. } => {
                 let hir_args: Vec<HirExpr> = args.iter().map(|a| self.lower_expr(a)).collect();
+                let hir_type_args: Vec<HirType> = type_args.iter().map(|t| self.resolve_type(t)).collect();
+                let generic_params = self.generic_params.get(name).cloned().unwrap_or_default();
                 let ty = self.fn_signatures.get(name)
-                    .map(|(_, ret)| ret.clone())
+                    .map(|(_, ret)| {
+                        if generic_params.is_empty() {
+                            ret.clone()
+                        } else {
+                            substitute_type(ret, &generic_params, &hir_type_args)
+                        }
+                    })
                     .unwrap_or(HirType::Unknown);
                 HirExpr::Call {
                     name: name.clone(),
@@ -579,5 +645,27 @@ impl HirLowering {
 
     pub fn infer_type(&self, e: &HirExpr) -> HirType {
         e.ty().clone()
+    }
+}
+
+fn substitute_type(ty: &HirType, generic_params: &[String], type_args: &[HirType]) -> HirType {
+    match ty {
+        HirType::Named(name) => {
+            if let Some(pos) = generic_params.iter().position(|p| p == name) {
+                type_args.get(pos).cloned().unwrap_or(ty.clone())
+            } else {
+                ty.clone()
+            }
+        }
+        HirType::Generic(base, args) => {
+            let new_args: Vec<HirType> = args.iter()
+                .map(|a| substitute_type(a, generic_params, type_args))
+                .collect();
+            HirType::Generic(base.clone(), new_args)
+        }
+        HirType::Array(inner) => {
+            HirType::Array(Box::new(substitute_type(inner, generic_params, type_args)))
+        }
+        _ => ty.clone(),
     }
 }

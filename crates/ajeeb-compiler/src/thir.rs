@@ -182,8 +182,15 @@ impl ThirChecker {
                 }
                 // Check method exists on type
                 if let HirType::Named(type_name) = receiver.ty() {
-                    let mangled = format!("{}_{}", type_name, method);
-                    if !self.fn_signatures.contains_key(&mangled) {
+                    let inherent = format!("{}_{}", type_name, method);
+                    // Also check trait impl patterns: type_trait_method
+                    let found = self.fn_signatures.contains_key(&inherent)
+                        || self.fn_signatures.keys().any(|k| {
+                            k.starts_with(&format!("{}_", type_name))
+                                && k.ends_with(&format!("_{}", method))
+                                && k.len() > inherent.len()
+                        });
+                    if !found {
                         // Also check struct fields (field access as method)
                         if let Some(fields) = self.struct_fields.get(type_name) {
                             if !fields.iter().any(|(n, _)| n == method) {

@@ -2,10 +2,6 @@
 // Types: 0=int 1=string 2=bool 3=void 5=null
 // All errors in Hinglish!
 
-// Buffer helpers
-function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
-function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
-
 // Create a fresh value buffer
 function makeValBuf(): string {
     set buf: string = substring("", 0, 0);

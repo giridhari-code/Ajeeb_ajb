@@ -52,6 +52,7 @@ pub enum MirOperand {
 #[derive(Debug, Clone)]
 pub enum MirConst {
     Int(i64),
+    Float(f64),
     Str(String),
     Bool(bool),
 }

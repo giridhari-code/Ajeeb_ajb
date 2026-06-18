@@ -1,8 +1,6 @@
 // builtins.ajb — Built-in function dispatch for ParthI
 // All errors in Hinglish!
 
-function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
-function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
 function callArgAt(ext: int, idx: int): int {
     set tmp: int = ext; set j: int = 0;
     while (j < idx) { tmp = tmp / 1000; j = j + 1; }
@@ -27,6 +25,10 @@ function setRegStr(buf: string, sp: string, i: int, val: string): void {
     bw(buf, i * 3, 1);
     set pos: int = br(buf, 9998);
     set slen: int = len(val);
+    if (pos + slen > 70000) {
+        println("Bhai string pool bhar gaya!\n");
+        return;
+    }
     set j: int = 0;
     while (j < slen) { strSet(sp, pos + j, charCode(val, j)); j = j + 1; }
     bw(buf, i * 3 + 1, pos);
@@ -52,15 +54,30 @@ function isBuiltin(name: string): int {
     if (strcmp_ajeeb(name, "setInt") == 0) { return 1; }
     if (strcmp_ajeeb(name, "writeAppend") == 0) { return 1; }
     if (strcmp_ajeeb(name, "writeByte") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "trim") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "replace") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "toUpperCase") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "toLowerCase") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "startsWith") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "endsWith") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "readArg") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "strSet") == 0) { return 1; }
     return 0;
 }
 
 function callBuiltin(regBuf: string, strPool: string, name: string, dst: int, ext: int): void {
     set ac: int = callArgCount(ext);
     set a0: int = -1; set a1: int = -1; set a2: int = -1;
+    set a3: int = -1; set a4: int = -1; set a5: int = -1;
+    set a6: int = -1; set a7: int = -1;
     if (ac >= 1) { a0 = callArgAt(ext, 0); }
     if (ac >= 2) { a1 = callArgAt(ext, 1); }
     if (ac >= 3) { a2 = callArgAt(ext, 2); }
+    if (ac >= 4) { a3 = callArgAt(ext, 3); }
+    if (ac >= 5) { a4 = callArgAt(ext, 4); }
+    if (ac >= 6) { a5 = callArgAt(ext, 5); }
+    if (ac >= 7) { a6 = callArgAt(ext, 6); }
+    if (ac >= 8) { a7 = callArgAt(ext, 7); }
 
     if (strcmp_ajeeb(name, "println") == 0) {
         if (a0 >= 0) { println(getRegStr(regBuf, strPool, a0)); }
@@ -150,5 +167,55 @@ function callBuiltin(regBuf: string, strPool: string, name: string, dst: int, ex
     if (strcmp_ajeeb(name, "writeByte") == 0) {
         if (a0 >= 0 && a1 >= 0) { writeByte(getRegStr(regBuf, strPool, a0), getRegInt(regBuf, a1)); }
         setRegInt(regBuf, dst, 0); return;
+    }
+    if (strcmp_ajeeb(name, "readArg") == 0) {
+        if (a0 >= 0) { set s: string = readArg(getRegInt(regBuf, a0));
+            if (len(s) == 0) { setRegInt(regBuf, dst, 0); }
+            else { setRegStr(regBuf, strPool, dst, s); } }
+        return;
+    }
+    if (strcmp_ajeeb(name, "strSet") == 0) {
+        if (a0 >= 0 && a1 >= 0 && a2 >= 0) {
+            strSet(getRegStr(regBuf, strPool, a0), getRegInt(regBuf, a1), getRegInt(regBuf, a2));
+        }
+        setRegInt(regBuf, dst, 0); return;
+    }
+    if (strcmp_ajeeb(name, "toUpperCase") == 0) {
+        if (a0 >= 0) { setRegStr(regBuf, strPool, dst, toUpperCase(getRegStr(regBuf, strPool, a0))); }
+        return;
+    }
+    if (strcmp_ajeeb(name, "toLowerCase") == 0) {
+        if (a0 >= 0) { setRegStr(regBuf, strPool, dst, toLowerCase(getRegStr(regBuf, strPool, a0))); }
+        return;
+    }
+    if (strcmp_ajeeb(name, "trim") == 0) {
+        if (a0 >= 0) { setRegStr(regBuf, strPool, dst, trim(getRegStr(regBuf, strPool, a0))); }
+        return;
+    }
+    if (strcmp_ajeeb(name, "startsWith") == 0) {
+        if (a0 >= 0 && a1 >= 0) {
+            if (startsWith(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1))) {
+                setRegInt(regBuf, dst, 1);
+            } else {
+                setRegInt(regBuf, dst, 0);
+            }
+        }
+        return;
+    }
+    if (strcmp_ajeeb(name, "endsWith") == 0) {
+        if (a0 >= 0 && a1 >= 0) {
+            if (endsWith(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1))) {
+                setRegInt(regBuf, dst, 1);
+            } else {
+                setRegInt(regBuf, dst, 0);
+            }
+        }
+        return;
+    }
+    if (strcmp_ajeeb(name, "replace") == 0) {
+        if (a0 >= 0 && a1 >= 0 && a2 >= 0) {
+            setRegStr(regBuf, strPool, dst, replace(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1), getRegStr(regBuf, strPool, a2)));
+        }
+        return;
     }
 }
