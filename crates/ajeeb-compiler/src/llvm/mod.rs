@@ -252,6 +252,7 @@ impl Codegen {
             // 1-arg functions
             "len" | "itoa" | "readArg" | "readFile"
             | "toUpperCase" | "toLowerCase" | "trim"
+            | "exec" | "mkdir"
                 => Some(format!("declare i64 @{}(i64)", name)),
             // 2-arg functions
             "str_concat" | "indexOf" | "contains"

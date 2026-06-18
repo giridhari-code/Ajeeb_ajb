@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <dlfcn.h>
 
+
 // ── Arena Allocator ──────────────────────────────────────────────────
 // Bump-pointer arena. No individual frees. Reset entire arena at program end.
 // All string allocations come from the arena — zero memory leaks by construction.
@@ -618,6 +619,19 @@ intptr_t readFile(intptr_t path) {
     AjeebValue vpath = ajb_string((const char*)path, strlen((const char*)path));
     AjeebValue result = ajeeb_readFile(vpath);
     return (intptr_t)result.string;
+}
+
+int64_t exec(int64_t cmd_ptr) {
+    return system((const char*)cmd_ptr);
+}
+
+int64_t mkdir(int64_t path_ptr) {
+    // Use system() to avoid name conflict with POSIX mkdir()
+    // mkdir -p creates parent directories too
+    char buf[4096];
+    int r = snprintf(buf, sizeof(buf), "mkdir -p %s", (const char*)path_ptr);
+    if (r < 0 || (size_t)r >= sizeof(buf)) return -1;
+    return system(buf);
 }
 
 void writeFile(intptr_t path, intptr_t content) {

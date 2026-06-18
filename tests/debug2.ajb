@@ -1,0 +1,5 @@
+function main(): int {
+    set x = 10;
+    set y = 20;
+    return x + y;
+}

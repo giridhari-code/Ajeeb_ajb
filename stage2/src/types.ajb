@@ -1,0 +1,45 @@
+// types.ajb — Type system constants + helpers
+// Stage 2 of Ajeeb self-hosting compiler
+// Constants: TY_UNKNOWN=0, TY_INT=1, TY_STRING=2, TY_BOOL=3,
+//            TY_FLOAT=4, TY_VOID=5, TY_ARRAY=6, TY_CLASS=7
+
+function tyName(t: int): string {
+    if (t == 1) { return "int"; }
+    if (t == 2) { return "string"; }
+    if (t == 3) { return "bool"; }
+    if (t == 4) { return "float"; }
+    if (t == 5) { return "void"; }
+    if (t == 6) { return "array"; }
+    if (t == 7) { return "class"; }
+    return "unknown";
+}
+
+function isIntType(t: int): int {
+    if (t == 1) { return 1; }
+    if (t == 4) { return 1; }
+    return 0;
+}
+
+function isNumeric(t: int): int {
+    if (t == 1) { return 1; }
+    if (t == 4) { return 1; }
+    return 0;
+}
+
+function typesCompatible(a: int, b: int): int {
+    if (a == b) { return 1; }
+    if (isNumeric(a) == 1 && isNumeric(b) == 1) { return 1; }
+    return 0;
+}
+
+function main(): int {
+    println("=== types.ajb test ===");
+    println(tyName(1));
+    println(tyName(2));
+    println(tyName(5));
+    println(tyName(99));
+    if (typesCompatible(1, 1) == 1) { println("int==int: ok"); } else { println("int==int: FAIL"); }
+    if (typesCompatible(1, 4) == 1) { println("int==float: ok"); } else { println("int==float: FAIL"); }
+    if (typesCompatible(1, 2) == 0) { println("int!=string: ok"); } else { println("int!=string: FAIL"); }
+    return 0;
+}

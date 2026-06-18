@@ -10,6 +10,9 @@ import runner;
 function cmdInit(name: string): int {
     if (len(name) == 0) { name = "project"; }
 
+    mkdir("src");
+    mkdir("build");
+
     set srcContent: string = "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n";
     writeFile("src/main.ajb", srcContent);
 
@@ -19,7 +22,6 @@ function cmdInit(name: string): int {
     writeFile("build/.gitkeep", "");
 
     println(str_concat("✓ Project initialize ho gaya: ", name));
-    println("Pehle 'mkdir -p src build' karo, phir 'parth init' chalao.");
     return 0;
 }
 
@@ -28,6 +30,11 @@ function cmdNew(name: string): int {
         println("Usage: parth new <project-name>");
         return 1;
     }
+
+    mkdir(name);
+    mkdir(str_concat(name, "/src"));
+    mkdir(str_concat(name, "/build"));
+
     set srcContent: string = "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n";
     writeFile(str_concat(name, "/src/main.ajb"), srcContent);
     set das: string = str_concat("[package]\nname = \"", name);
@@ -35,9 +42,7 @@ function cmdNew(name: string): int {
     writeFile(str_concat(name, "/parth.das"), das);
     writeFile(str_concat(name, "/build/.gitkeep"), "");
     println(str_concat("✓ Project files bana: ", name));
-    println(str_concat("  mkdir -p ", str_concat(name, "/src")));
-    println(str_concat("  mkdir -p ", str_concat(name, "/build")));
-    println(str_concat("  cd ", str_concat(name, " && parth init")));
+    println(str_concat("Ab karo: cd ", str_concat(name, " && parth init")));
     return 0;
 }
 

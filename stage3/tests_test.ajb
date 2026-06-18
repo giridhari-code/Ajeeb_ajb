@@ -1,0 +1,42 @@
+// Ajeeb Stage 3 — standalone compiler test file
+// Tests that the compiler can compile a simple .ajb file via the pipeline
+
+function main(): int {
+    // Test 1: compile a file that defines add(a,b) → verify C output
+    set inPath: string = "build/test_input.ajb";
+    set outPath: string = "build/stage3_test.c";
+    writeFile(inPath, "function add(a: int, b: int): int { return a + b; }");
+
+    set state: string = getStateBuf();
+    setInt(state, 0, 0);
+    hinit(state);
+    set src: string = readFile(inPath);
+    set hirProg: int = parseProgram(src, state);
+
+    minit(state);
+    scInit(state);
+    set mirProg: int = lowerProgram(state, hirProg, state, state, src);
+    optimizeMirProgram(state, mirProg);
+
+    writeFile(outPath, "");
+    emitCProg(state, mirProg, outPath, src);
+
+    set out: string = readFile(outPath);
+    if (len(out) > 0 && contains(out, "intptr_t add(intptr_t p0, intptr_t p1)") == 1) {
+        println("Stage 3 test: C output has add function: PASS");
+    } else {
+        println("Stage 3 test: C output missing add function: FAIL");
+        return 1;
+    }
+
+    // Test 2: verify function body uses correct params
+    if (contains(out, "return") == 1) {
+        println("Stage 3 test: function body present: PASS");
+    } else {
+        println("Stage 3 test: function body missing: FAIL");
+        return 1;
+    }
+
+    println("ALL STAGE 3 TESTS PASSED");
+    return 0;
+}

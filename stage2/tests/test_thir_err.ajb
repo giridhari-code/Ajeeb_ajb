@@ -1,0 +1,6 @@
+// test_thir_err.ajb — Type errors (THIR checker should catch these)
+function main(): int {
+    set x: int = "hello";
+    set y: string = 42;
+    return 0;
+}

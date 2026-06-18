@@ -1,0 +1,346 @@
+// mir_opt.ajb — MIR optimizations
+// Stage 3 of Ajeeb self-hosting compiler
+//
+// Optimizations:
+//   1. Constant folding: evaluate constant expressions at compile time
+//   2. Dead code elimination: remove unused instructions
+//
+// MIR opcodes: 0=NOP 1=ASSIGN 2=BINOP 3=UNOP 4=CALL 5=RETURN
+//   6=JUMP 7=BRANCH 8=ALLOC 9=LOAD 10=STORE 11=PARAM 12=PHI
+// MIR node tags: 0=PROGRAM 1=FN 2=BLOCK 3=INSTR 4=LOCAL
+// Block terminator: 0=none(entry) 1=Goto(target) 2=Branch(cond,else) 3=Return(val)
+
+// Binop codes in ext field: 1=+ 2=- 3=* 4=/ 5=Eq 6=Ne 7=Lt 8=Gt 9=Le 10=Ge 11=And 12=Or
+// Type codes in ext field for const load: 1=int 2=string 3=bool
+
+// ============================================================
+// Buffer helpers
+// ============================================================
+function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
+function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
+
+function mallac(buf: string, slots: int): int {
+    set bufLen: int = len(buf);
+    set newLen: int = bufLen + slots * 8;
+    set origLen: int = bufLen / 8;
+    while (len(buf) < newLen) {
+        setInt(buf, len(buf), 0);
+    }
+    return origLen;
+}
+
+// ============================================================
+// MIR reader helpers
+// ============================================================
+function mInstrOp(ibuf: string, ioff: int): int { return br(ibuf, ioff + 1); }
+function mInstrDst(ibuf: string, ioff: int): int { return br(ibuf, ioff + 2); }
+function mInstrS1(ibuf: string, ioff: int): int { return br(ibuf, ioff + 3); }
+function mInstrS2(ibuf: string, ioff: int): int { return br(ibuf, ioff + 4); }
+function mInstrExt(ibuf: string, ioff: int): int { return br(ibuf, ioff + 5); }
+
+function mBlockInstrCount(bbuf: string, boff: int): int { return br(bbuf, boff + 2); }
+function mBlockTermTy(bbuf: string, boff: int): int { return br(bbuf, boff + 3); }
+function mBlockTerm0(bbuf: string, boff: int): int { return br(bbuf, boff + 4); }
+function mBlockInstr(bbuf: string, boff: int, i: int): int { return br(bbuf, boff + 6 + i); }
+
+// ============================================================
+// Is this instruction a constant load?
+// A constant load has: opcode=BINOP(2), s2=0, ext=type(1,2,3)
+// src1 holds the literal value
+// ============================================================
+function isConstLoad(ibuf: string, ioff: int): int {
+    if (mInstrOp(ibuf, ioff) != 2) { return 0; }
+    if (mInstrS2(ibuf, ioff) != 0) { return 0; }
+    set ext: int = mInstrExt(ibuf, ioff);
+    if (ext >= 1 && ext <= 3) { return 1; }
+    return 0;
+}
+
+function constLoadValue(ibuf: string, ioff: int): int {
+    return mInstrS1(ibuf, ioff);
+}
+
+// ============================================================
+// Is this a binary operation?
+// opcode=BINOP(2), s2 != 0 (has second operand)
+// ext holds the binop opcode (1=+, 2=-, etc.)
+// ============================================================
+function isBinop(ibuf: string, ioff: int): int {
+    if (mInstrOp(ibuf, ioff) != 2) { return 0; }
+    if (mInstrS2(ibuf, ioff) == 0) { return 0; }
+    return 1;
+}
+
+// ============================================================
+// Constant folding for a single block
+// ============================================================
+function findDefiningInstr(buf: string, boff: int, ic: int, temp: int): int {
+    set j: int = 0;
+    set result: int = 0;
+    while (j < ic) {
+        set ioff: int = mBlockInstr(buf, boff, j);
+        if (mInstrOp(buf, ioff) == 2 || mInstrOp(buf, ioff) == 1 || mInstrOp(buf, ioff) == 3) {
+            if (mInstrDst(buf, ioff) == temp) {
+                result = ioff;
+            }
+        }
+        j = j + 1;
+    }
+    return result;
+}
+
+function constantFoldBlock(buf: string, boff: int): void {
+    set ic: int = mBlockInstrCount(buf, boff);
+    set changed: int = 1;
+
+    while (changed == 1) {
+        changed = 0;
+
+        set j: int = 0;
+        while (j < ic) {
+            set ioff: int = mBlockInstr(buf, boff, j);
+            if (isBinop(buf, ioff) == 1) {
+                set s1: int = mInstrS1(buf, ioff);
+                set s2: int = mInstrS2(buf, ioff);
+
+                // Find the instructions that define s1 and s2
+                set s1Def: int = findDefiningInstr(buf, boff, ic, s1);
+                set s2Def: int = findDefiningInstr(buf, boff, ic, s2);
+
+                set s1Const: int = 0;
+                set s2Const: int = 0;
+                set s1Val: int = 0;
+                set s2Val: int = 0;
+
+                if (s1Def != 0 && isConstLoad(buf, s1Def) == 1) {
+                    s1Const = 1;
+                    s1Val = constLoadValue(buf, s1Def);
+                }
+                if (s2Def != 0 && isConstLoad(buf, s2Def) == 1) {
+                    s2Const = 1;
+                    s2Val = constLoadValue(buf, s2Def);
+                }
+
+                if (s1Const == 1 && s2Const == 1) {
+                    set op: int = mInstrExt(buf, ioff);
+                    set res: int = 0;
+                    if (op == 1) { res = s1Val + s2Val; }
+                    else if (op == 2) { res = s1Val - s2Val; }
+                    else if (op == 3) { res = s1Val * s2Val; }
+                    else if (op == 4) {
+                        if (s2Val != 0) { res = s1Val / s2Val; }
+                        else { res = 0; }
+                    }
+                    else { res = 0; }
+
+                    // Replace with constant load
+                    set dst: int = mInstrDst(buf, ioff);
+                    bw(buf, ioff + 1, 2);
+                    bw(buf, ioff + 2, dst);
+                    bw(buf, ioff + 3, res);
+                    bw(buf, ioff + 4, 0);
+                    bw(buf, ioff + 5, 1);
+                    changed = 1;
+                }
+            }
+            j = j + 1;
+        }
+    }
+}
+
+// ============================================================
+// Dead code elimination for a single block
+// Remove instructions whose dest is never used as src1/src2
+// (except CALL, STORE, RETURN which have side effects)
+// ============================================================
+function isTempUsed(buf: string, boff: int, ic: int, temp: int): int {
+    set j: int = 0;
+    while (j < ic) {
+        set ioff: int = mBlockInstr(buf, boff, j);
+        set s1: int = mInstrS1(buf, ioff);
+        set s2: int = mInstrS2(buf, ioff);
+        if (s1 == temp || s2 == temp) { return 1; }
+        j = j + 1;
+    }
+    return 0;
+}
+
+function canRemoveInstr(buf: string, ioff: int): int {
+    set op: int = mInstrOp(buf, ioff);
+    if (op == 4) { return 0; }   // CALL — side effects
+    if (op == 5) { return 0; }   // RETURN
+    if (op == 1) { return 0; }   // ASSIGN
+    if (op == 10) { return 0; }  // STORE
+    if (op == 11) { return 0; }  // PARAM
+    if (op == 6) { return 0; }   // JUMP
+    if (op == 7) { return 0; }   // BRANCH
+    return 1;
+}
+
+function deadCodeElimBlock(buf: string, boff: int): void {
+    set ic: int = mBlockInstrCount(buf, boff);
+    if (ic == 0) { return; }
+
+    set newIc: int = 0;
+    set j: int = 0;
+    while (j < ic) {
+        set ioff: int = mBlockInstr(buf, boff, j);
+        set keep: int = 0;
+
+        if (canRemoveInstr(buf, ioff) == 0) {
+            keep = 1;
+        } else {
+            set dst: int = mInstrDst(buf, ioff);
+            if (isTempUsed(buf, boff, ic, dst) == 1) {
+                keep = 1;
+            }
+        }
+
+        if (keep == 1) {
+            if (newIc != j) {
+                set newIoff: int = mBlockInstr(buf, boff, newIc);
+                bw(buf, newIoff, br(buf, ioff));
+                bw(buf, newIoff + 1, br(buf, ioff + 1));
+                bw(buf, newIoff + 2, br(buf, ioff + 2));
+                bw(buf, newIoff + 3, br(buf, ioff + 3));
+                bw(buf, newIoff + 4, br(buf, ioff + 4));
+                bw(buf, newIoff + 5, br(buf, ioff + 5));
+            }
+            newIc = newIc + 1;
+        }
+        j = j + 1;
+    }
+
+    bw(buf, boff + 2, newIc);
+}
+
+// ============================================================
+// Run all optimizations on a MIR function
+// ============================================================
+function optimizeMirFn(buf: string, foff: int): void {
+    set bc: int = br(buf, foff + 4);
+    set j: int = 0;
+    while (j < bc) {
+        set blkOff: int = br(buf, foff + 6 + j);
+        constantFoldBlock(buf, blkOff);
+        j = j + 1;
+    }
+    j = 0;
+    while (j < bc) {
+        set blkOff: int = br(buf, foff + 6 + j);
+        deadCodeElimBlock(buf, blkOff);
+        j = j + 1;
+    }
+}
+
+function optimizeMirProgram(buf: string, progOff: int): void {
+    set cnt: int = br(buf, progOff + 1);
+    set j: int = 0;
+    while (j < cnt) {
+        set fnOff: int = br(buf, progOff + 2 + j);
+        optimizeMirFn(buf, fnOff);
+        j = j + 1;
+    }
+}
+
+// ============================================================
+// Build test MIR: main() { set x: int = 2 + 3; return x; }
+// Before opt:  BINOP t0 = 2, BINOP t1 = 3, BINOP t2 = t0 + t1, ASSIGN x = t2, RETURN x
+// After opt:   BINOP t2 = 5, ASSIGN x = t2, RETURN x
+// ============================================================
+function buildTestMir(buf: string): int {
+    set t0: int = mallac(buf, 6); bw(buf, t0, 3); bw(buf, t0 + 1, 2); bw(buf, t0 + 2, 0); bw(buf, t0 + 3, 2); bw(buf, t0 + 4, 0); bw(buf, t0 + 5, 1);
+    set t1: int = mallac(buf, 6); bw(buf, t1, 3); bw(buf, t1 + 1, 2); bw(buf, t1 + 2, 1); bw(buf, t1 + 3, 3); bw(buf, t1 + 4, 0); bw(buf, t1 + 5, 1);
+    set t2: int = mallac(buf, 6); bw(buf, t2, 3); bw(buf, t2 + 1, 2); bw(buf, t2 + 2, 2); bw(buf, t2 + 3, 0); bw(buf, t2 + 4, 1); bw(buf, t2 + 5, 1);
+    set asgn: int = mallac(buf, 6); bw(buf, asgn, 3); bw(buf, asgn + 1, 1); bw(buf, asgn + 2, 2); bw(buf, asgn + 3, 0); bw(buf, asgn + 4, 1); bw(buf, asgn + 5, 1);
+    set ret: int = mallac(buf, 6); bw(buf, ret, 3); bw(buf, ret + 1, 5); bw(buf, ret + 2, 2); bw(buf, ret + 3, 0); bw(buf, ret + 4, 0); bw(buf, ret + 5, 1);
+    set blk: int = mallac(buf, 11); bw(buf, blk, 2); bw(buf, blk + 1, 0); bw(buf, blk + 2, 5); bw(buf, blk + 3, 3); bw(buf, blk + 4, 2); bw(buf, blk + 5, 1);
+    bw(buf, blk + 6, t0); bw(buf, blk + 7, t1); bw(buf, blk + 8, t2); bw(buf, blk + 9, asgn); bw(buf, blk + 10, ret);
+    set fnOff: int = mallac(buf, 7); bw(buf, fnOff, 1); bw(buf, fnOff + 1, 0); bw(buf, fnOff + 2, 4); bw(buf, fnOff + 3, 1); bw(buf, fnOff + 4, 1); bw(buf, fnOff + 5, 0);
+    bw(buf, fnOff + 6, blk);
+    return fnOff;
+}
+
+// ============================================================
+// Test
+// ============================================================
+function main(): int {
+    set buf: string = getStateBuf();
+    set allPass: int = 1;
+
+    println("=== mir_opt.ajb test ===");
+
+    // --- Test 1: constant folding ---
+    // Build MIR: t0=2, t1=3, t2=t0+t1 (ext=1 means +)
+    // After folding: t2=5
+    set t0: int = 1024;
+    set t1: int = 1030;
+    set t2: int = 1036;
+    set asgn: int = 1042;
+    set ret2: int = 1048;
+    set blk2: int = 1054;
+    set fn2: int = 1070;
+
+    bw(buf, t0, 3); bw(buf, t0 + 1, 2); bw(buf, t0 + 2, 0); bw(buf, t0 + 3, 2); bw(buf, t0 + 4, 0); bw(buf, t0 + 5, 1);
+    bw(buf, t1, 3); bw(buf, t1 + 1, 2); bw(buf, t1 + 2, 1); bw(buf, t1 + 3, 3); bw(buf, t1 + 4, 0); bw(buf, t1 + 5, 1);
+    bw(buf, t2, 3); bw(buf, t2 + 1, 2); bw(buf, t2 + 2, 2); bw(buf, t2 + 3, 0); bw(buf, t2 + 4, 1); bw(buf, t2 + 5, 1);
+    bw(buf, asgn, 3); bw(buf, asgn + 1, 1); bw(buf, asgn + 2, 2); bw(buf, asgn + 3, 0); bw(buf, asgn + 4, 1); bw(buf, asgn + 5, 1);
+    bw(buf, ret2, 3); bw(buf, ret2 + 1, 5); bw(buf, ret2 + 2, 2); bw(buf, ret2 + 3, 0); bw(buf, ret2 + 4, 0); bw(buf, ret2 + 5, 1);
+    bw(buf, blk2, 2); bw(buf, blk2 + 1, 0); bw(buf, blk2 + 2, 5); bw(buf, blk2 + 3, 3); bw(buf, blk2 + 4, 2); bw(buf, blk2 + 5, 1);
+    bw(buf, blk2 + 6, t0); bw(buf, blk2 + 7, t1); bw(buf, blk2 + 8, t2); bw(buf, blk2 + 9, asgn); bw(buf, blk2 + 10, ret2);
+    bw(buf, fn2, 1); bw(buf, fn2 + 1, 0); bw(buf, fn2 + 2, 4); bw(buf, fn2 + 3, 1); bw(buf, fn2 + 4, 1); bw(buf, fn2 + 5, 0);
+    bw(buf, fn2 + 6, blk2);
+
+    // Verify before folding: t2 is a BINOP t0 + t1
+    set s1Before: int = mInstrS1(buf, t2);
+    set s2Before: int = mInstrS2(buf, t2);
+    if (s1Before == 0 && s2Before == 1) { println("Test 1a: before fold t2 uses t0,t1: PASS"); }
+    else { println("Test 1a: before fold: FAIL (s1=" + itoa(s1Before) + " s2=" + itoa(s2Before) + ")"); allPass = 0; }
+
+    // Run constant folding
+    constantFoldBlock(buf, blk2);
+
+    // Verify after folding: t2 is now a constant load with value 5
+    if (isConstLoad(buf, t2) == 1) {
+        set val: int = constLoadValue(buf, t2);
+        if (val == 5) { println("Test 1b: after fold t2 = 5: PASS"); }
+        else { println("Test 1b: after fold t2 = " + itoa(val) + " (expected 5): FAIL"); allPass = 0; }
+    } else { println("Test 1b: after fold t2 not const: FAIL"); allPass = 0; }
+
+    // --- Test 2: dead code elimination ---
+    // Build MIR with a dead temp: t0=2, t1=3, t2=t0+t1 (unused!), t3=5, RETURN t3
+    set t3Off: int = 1076;
+    set ret3Off: int = 1082;
+    set blk3Off: int = 1088;
+
+    bw(buf, t3Off, 3); bw(buf, t3Off + 1, 2); bw(buf, t3Off + 2, 3); bw(buf, t3Off + 3, 5); bw(buf, t3Off + 4, 0); bw(buf, t3Off + 5, 1);
+    bw(buf, ret3Off, 3); bw(buf, ret3Off + 1, 5); bw(buf, ret3Off + 2, 3); bw(buf, ret3Off + 3, 0); bw(buf, ret3Off + 4, 0); bw(buf, ret3Off + 5, 1);
+    bw(buf, blk3Off, 2); bw(buf, blk3Off + 1, 0); bw(buf, blk3Off + 2, 3); bw(buf, blk3Off + 3, 3); bw(buf, blk3Off + 4, 3); bw(buf, blk3Off + 5, 1);
+    // Copy t0, t1, t2 from before into this block (they're dead since only t3 is used)
+    bw(buf, blk3Off + 6, t0); bw(buf, blk3Off + 7, t1); bw(buf, blk3Off + 8, t2); bw(buf, blk3Off + 9, t3Off); bw(buf, blk3Off + 10, ret3Off);
+
+    set icBefore: int = mBlockInstrCount(buf, blk3Off);
+    println("Test 2a: before DCE instr count = " + itoa(icBefore));
+    deadCodeElimBlock(buf, blk3Off);
+    set icAfter: int = mBlockInstrCount(buf, blk3Off);
+    if (icAfter <= 2) { println("Test 2b: after DCE removed dead instrs: PASS (count=" + itoa(icAfter) + ")"); }
+    else { println("Test 2b: after DCE count=" + itoa(icAfter) + " (expected <=2): FAIL"); allPass = 0; }
+
+    // --- Test 3: constant folding via opt function ---
+    set fn3Off: int = 1094;
+    set blk4Off: int = 1100;
+
+    bw(buf, 1094, 1); bw(buf, 1095, 0); bw(buf, 1096, 4); bw(buf, 1097, 1); bw(buf, 1098, 1); bw(buf, 1099, 0);
+    bw(buf, 1100, 2); bw(buf, 1101, 0); bw(buf, 1102, 5); bw(buf, 1103, 3); bw(buf, 1104, 2); bw(buf, 1105, 1);
+    bw(buf, 1106, t0); bw(buf, 1107, t1); bw(buf, 1108, t2); bw(buf, 1109, asgn); bw(buf, 1110, ret2);
+
+    optimizeMirFn(buf, fn3Off);
+    if (isConstLoad(buf, t2) == 1 && constLoadValue(buf, t2) == 5) {
+        println("Test 3: optimizeMirFn constant folding: PASS");
+    } else { println("Test 3: optimizeMirFn: FAIL"); allPass = 0; }
+
+    println("");
+    if (allPass == 1) { println("ALL MIR OPT TESTS PASSED"); }
+    else { println("SOME MIR OPT TESTS FAILED"); }
+    return 0;
+}

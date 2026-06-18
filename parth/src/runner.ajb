@@ -15,11 +15,7 @@ function runProject(): int {
     set src: string = readFile("parth.das");
     set name: string = getConfigName(buf, src);
 
-    println("");
-    println("Sab taiyaar! Binary banao aur chalao:");
-    println(str_concat("  build/ajeeb_native build/combined.ajb build/output.c"));
-    println(str_concat("  gcc build/output.c runtime/ajeeb_runtime.c -o build/", name));
-    println(str_concat("  ./build/", name));
-
-    return 0;
+    println(str_concat("Chala rahe hain: build/", name));
+    set r2: int = exec(str_concat("./build/", name));
+    return r2;
 }

@@ -27,17 +27,23 @@ Key test files: test_simple, test_small, test_strings, test_math, test_for, test
 2. Run `bash tests/bootstrap_check.sh`
 3. Run a few key .ajb interpreter tests (e.g. `cross_simple.ajb`, `test_strings.ajb`)
 
-## Key Bug Fix: While Loop Loop-back Edge (thir_to_mir.rs)
-**Root cause:** When a while/for loop body ends with an `if` without `else`, `lower_if` calls `start_block()` for the merge block, which empties `current_stmts`. Then `is_terminated()` returns true, causing the loop-back `Goto(header_block)` to be skipped. The body never loops back to the header.
+## Key Bug Fix: appenInstr Arg Order for Goto (main.ajb)
+**Root cause:** All `appendInstr(mirBuf, 6, target, 0, 0, 0)` calls placed the target block in `dst` (arg 3), but the C codegen reads `s1` (arg 4) for `goto block_{s1}`. Every Goto targeted block_0 regardless of intent, causing infinite loops.
 
-**Fix:** In `lower_while` and `lower_for`, always emit the loop-back `Goto` after the body (remove the `if !self.is_terminated()` guard). Safe because if the body already ended with return/break, the new block is unreachable but harmless.
+**Fix:** Changed all 3 Goto emit sites to `appendInstr(mirBuf, 6, 0, target, 0, 0)`.
 
-## Key Bug Fix: If-Else Else Block Index (thir_to_mir.rs)
-**Root cause:** `lower_if` computed the else block's SwitchInt default target as `then_block + 1`, but when the then branch contained loops, many blocks were created between then and else, making the else block unreachable. This caused `else { writeAppend(out, "Ident("); ... }` to be dropped from the generated IR.
+## Key Bug Fix: While Loop Exit Block vs Inner If-Else (main.ajb)
+**Root cause:** `lowerWhile` hardcoded `exitBlk = blockCount + 2`. When the body contained if-else, `lowerIf` claimed block indices `{bc+1, bc+2}` for then/else, making `exitBlk` overlap with the then-block. The while condition would branch to the then-block instead of the exit on false.
 
-**Fix:** Save the actual else block index from `start_block()` and use it directly instead of `then_block + 1`.
+**Fix:** In `lowerWhile`, after lowering the body (and the loop-back Goto), patch the Branch instruction's `s2` field with the actual exit block index (`blockCount`). This ensures the while condition's false-branch targets the correct exit block regardless of how many sub-blocks the body created.
 
-## Key Bug Fix: Codegen Interpreter HashMap Key Collision (codegen.ajb)
+## Key Bug Fix: LLVM Codegen String `==` Does Pointer Comparison
+**Root cause:** The LLVM codegen's `Eq` operator (`icmp eq i64`) compares string POINTERS, not string contents. `substring` creates a new arena allocation, so `substring(src,1,8) == "package"` compares different addresses and returns false even when contents match.
+**Fix:** Use `strcmp_ajeeb(str1, str2) == 0` instead of `str1 == str2` for all string equality checks in Ajeeb code compiled via the LLVM backend.
+
+## Key Bug Fix: Parth Parser Slot Mapping
+**Root cause:** `parseKeyValue` stores `(keyStart, keyLen, valStart, valLen)` at slots `(base, base+1, base+2, base+3)`, but `getConfigName/Version/Author` read value offsets at slots 0-1, 2-3, 4-5. Calling `parseKeyValue(src, lineStart, lineEnd, buf, 0)` for every package field overwrote key-value pairs — storing the field KEY name (e.g. "author") where `getConfigName` expected the value "my-project".
+**Fix:** Inline value extraction for `[package]` and `[build]` sections: extract the value string directly (after `=`, quote-stripped), identify the key by name via `strcmp_ajeeb`, and store only value offset+length at the correct slot. Use `parseKeyValue` only for `[dependencies]` where both key (dep name) and value (version) are needed.
 **Root cause:** The interpreter's `setInt`/`getInt` use the **string content** as the HashMap key for integer buffers. When `buf` (output) and `ast` (AST storage) are the same string object, writing to `buf` via `strSet` changes the string content, which changes the lookup key. Subsequent `getInt` calls fail (return 0) because the key no longer matches.
 
 **Fix:** Always use separate strings for `buf` (output buffer) and `ast` (AST storage). Use `getOutbuf()` for output (character buffer) and `getStateBuf()` for AST (integer buffer). Never pass the same string as both `buf` and `ast` to codegen functions.
@@ -48,8 +54,15 @@ Key test files: test_simple, test_small, test_strings, test_math, test_for, test
 **Fix:** In `ajeeb_runtime.c`, `strSet` now always writes `buf[i+1] = '\0'` after writing `buf[i] = c`. This ensures `strlen` returns the correct length after each sequential write.
 
 ## LLVM Codegen Runtime Functions
-Known to codegen: `getInt`, `setInt`, `getStateBuf`, `getOutbuf`, `charCode`, `len`, `strSet`, `writeFile`, `writeAppend`, `writeByte`, `itoa`, `println`, `readFile`, `strcmp_ajeeb`, `str_concat`, `substring`, `indexOf`, `contains`, `toUpperCase`, `toLowerCase`, `trim`, `startsWith`, `endsWith`, `replace`, `array_to_string`.
+Known to codegen: `getInt`, `setInt`, `getStateBuf`, `getOutbuf`, `charCode`, `len`, `strSet`, `writeFile`, `writeAppend`, `writeByte`, `itoa`, `println`, `readFile`, `strcmp_ajeeb`, `str_concat`, `substring`, `indexOf`, `contains`, `toUpperCase`, `toLowerCase`, `trim`, `startsWith`, `endsWith`, `replace`, `array_to_string`, `exec`, `mkdir`.
 NOT known: `chr`, `rdPos`, `wrPos` (evaluator-only).
+
+## exec() / mkdir() — Ajeeb Runtime Functions
+- `exec(cmd: string): int` — runs a shell command via `system()`, returns exit code
+- `mkdir(path: string): int` — creates directory (including parents) via `mkdir -p`, returns exit code
+- Both are 1-arg i64→i64 functions in LLVM codegen (`declare i64 @exec(i64)`, `declare i64 @mkdir(i64)`)
+- C implementations in `runtime/ajeeb_runtime.c` (wrappers around `system()`)
+- **Stale `build/runtime.o` must be deleted** after adding new runtime functions, or the linker won't find the new symbols
 
 ## Ajeeb Limitations in .ajb Self-Hosted Code
 1. **No global variables:** `set` at module scope is parsed but `exprTy` cannot be

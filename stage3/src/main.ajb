@@ -1,0 +1,1066 @@
+// main.ajb — Stage 3 self-hosting compiler
+// Full pipeline: lex -> parse -> HIR -> MIR -> C codegen
+// All errors in Hinglish!
+// Types: 0=unknown 1=int 2=string 3=bool 5=void
+// Binop: 1=+ 2=- 3=* 4=/ 5=Eq 6=Ne 7=Lt 8=Gt 9=Le 10=Ge 11=And 12=Or
+// Token: 0=EOF 1=Int 2=Str 3=Ident 5=( 6=) 7={ 8=} 9=; 10=, 11=+ 12=- 13=* 14=/
+//   15== 16=EqEq 17=Neq 18=< 19=> 20=<= 21=>= 22=&& 23=|| 24=! 25=:
+
+function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
+function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
+
+function mallac(buf: string, slots: int): int {
+    set h: int = br(buf, 510); bw(buf, 510, h + slots); return h;
+}
+
+function nameEq(src: string, ap: int, al: int, bp: int, bl: int): int {
+    if (al != bl) { return 0; }
+    set i: int = 0;
+    while (i < al) {
+        if (charCode(src, ap + i) != charCode(src, bp + i)) { return 0; }
+        i = i + 1;
+    }
+    return 1;
+}
+
+// HIR helpers (write head at 511)
+function hinit(buf: string): void { bw(buf, 511, 512); }
+function halloc(buf: string, slots: int): int {
+    set h: int = br(buf, 511); bw(buf, 511, h + slots); return h;
+}
+function hFn(buf: string, no: int, nl: int, rt: int, pc: int): int {
+    set o: int = halloc(buf, 6 + pc * 3); bw(buf, o, 1); bw(buf, o + 1, no);
+    bw(buf, o + 2, nl); bw(buf, o + 3, rt); bw(buf, o + 4, pc); return o;
+}
+function hBlock(buf: string, c: int): int {
+    set o: int = halloc(buf, 2 + c); bw(buf, o, 2); bw(buf, o + 1, c); return o;
+}
+function hSet(buf: string, no: int, nl: int, ty: int, v: int): int {
+    set o: int = halloc(buf, 5); bw(buf, o, 3); bw(buf, o + 1, no);
+    bw(buf, o + 2, nl); bw(buf, o + 3, ty); bw(buf, o + 4, v); return o;
+}
+function hReturn(buf: string, v: int, ty: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 8); bw(buf, o + 1, v); bw(buf, o + 2, ty); return o;
+}
+function hCall(buf: string, no: int, nl: int, ac: int): int {
+    set o: int = halloc(buf, 5 + ac); bw(buf, o, 11); bw(buf, o + 1, no);
+    bw(buf, o + 2, nl); bw(buf, o + 3, ac); return o;
+}
+function hBinop(buf: string, l: int, op: int, r: int): int {
+    set o: int = halloc(buf, 5); bw(buf, o, 12); bw(buf, o + 1, l);
+    bw(buf, o + 2, op); bw(buf, o + 3, r); return o;
+}
+function hIdent(buf: string, so: int, sl: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 14); bw(buf, o + 1, so);
+    bw(buf, o + 2, sl); return o;
+}
+function hInt(buf: string, v: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 15); bw(buf, o + 1, v); return o;
+}
+function hStr(buf: string, so: int, sl: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 16); bw(buf, o + 1, so);
+    bw(buf, o + 2, sl); return o;
+}
+function hBool(buf: string, v: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 17); bw(buf, o + 1, v); return o;
+}
+function hIf(buf: string, c: int, t: int, e: int): int {
+    set o: int = halloc(buf, 4); bw(buf, o, 5); bw(buf, o + 1, c);
+    bw(buf, o + 2, t); bw(buf, o + 3, e); return o;
+}
+function hWhile(buf: string, c: int, b: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 6); bw(buf, o + 1, c); bw(buf, o + 2, b); return o;
+}
+function hAssign(buf: string, no: int, nl: int, v: int): int {
+    set o: int = halloc(buf, 4); bw(buf, o, 4); bw(buf, o + 1, no);
+    bw(buf, o + 2, nl); bw(buf, o + 3, v); return o;
+}
+
+// Lexer (slots 50-53, 60+)
+function lexInit(buf: string): void { bw(buf, 50, 0); bw(buf, 51, 0); bw(buf, 60, 0); }
+function tokType(buf: string): int { return br(buf, 50); }
+function tokStrOff(buf: string): int { return br(buf, 52); }
+function tokStrLen(buf: string): int { return br(buf, 53); }
+function lexSkipWS(src: string, buf: string): void {
+    set p: int = br(buf, 60);
+    while (p < len(src)) {
+        set c: int = charCode(src, p);
+        if (c == 32 || c == 10 || c == 13 || c == 9) { p = p + 1; }
+        else { bw(buf, 60, p); return; }
+    }
+    bw(buf, 60, p);
+}
+function lexNumber(src: string, buf: string): void {
+    set p: int = br(buf, 60); set start: int = p;
+    while (p < len(src) && charCode(src, p) >= 48 && charCode(src, p) <= 57) { p = p + 1; }
+    bw(buf, 60, p); bw(buf, 52, start); bw(buf, 53, p - start);
+    bw(buf, 50, 1);
+}
+function lexIdent(src: string, buf: string): void {
+    set p: int = br(buf, 60); set start: int = p;
+    set c: int = charCode(src, p);
+    if ((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95) { p = p + 1; }
+    while (p < len(src)) {
+        c = charCode(src, p);
+        if ((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 95) { p = p + 1; }
+        else { break; }
+    }
+    bw(buf, 60, p); bw(buf, 52, start); bw(buf, 53, p - start); bw(buf, 50, 3);
+}
+function lexString(src: string, buf: string): void {
+    set p: int = br(buf, 60) + 1; set start: int = p;
+    while (p < len(src) && charCode(src, p) != 34) { p = p + 1; }
+    bw(buf, 60, p + 1); bw(buf, 52, start); bw(buf, 53, p - start); bw(buf, 50, 2);
+}
+function nextTok(src: string, buf: string): void {
+    lexSkipWS(src, buf);
+    set p: int = br(buf, 60);
+    if (p >= len(src)) { bw(buf, 50, 0); return; }
+    set c: int = charCode(src, p);
+    if (c >= 48 && c <= 57) { lexNumber(src, buf); return; }
+    if (c == 34) { lexString(src, buf); return; }
+    if ((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95) { lexIdent(src, buf); return; }
+    bw(buf, 60, p + 1); bw(buf, 52, p); bw(buf, 53, 1);
+    if (c == 40) { bw(buf, 50, 5); }
+    else if (c == 41) { bw(buf, 50, 6); }
+    else if (c == 123) { bw(buf, 50, 7); }
+    else if (c == 125) { bw(buf, 50, 8); }
+    else if (c == 59) { bw(buf, 50, 9); }
+    else if (c == 44) { bw(buf, 50, 10); }
+    else if (c == 43) { bw(buf, 50, 11); }
+    else if (c == 45) { bw(buf, 50, 12); }
+    else if (c == 42) { bw(buf, 50, 13); }
+    else if (c == 47) { bw(buf, 50, 14); }
+    else if (c == 58) { bw(buf, 50, 25); }
+    else if (c == 33) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 60, p + 2); bw(buf, 50, 17); } else { bw(buf, 50, 24); } }
+    else if (c == 61) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 60, p + 2); bw(buf, 50, 16); } else { bw(buf, 50, 15); } }
+    else if (c == 60) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 60, p + 2); bw(buf, 50, 20); } else { bw(buf, 50, 18); } }
+    else if (c == 62) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 60, p + 2); bw(buf, 50, 21); } else { bw(buf, 50, 19); } }
+    else if (c == 38 && charCode(src, p + 1) == 38) { bw(buf, 60, p + 2); bw(buf, 50, 22); }
+    else if (c == 124 && charCode(src, p + 1) == 124) { bw(buf, 60, p + 2); bw(buf, 50, 23); }
+    else if (c == 33 && charCode(src, p + 1) == 61) { bw(buf, 60, p + 2); bw(buf, 50, 17); }
+    else if (c == 91) { bw(buf, 50, 26); }
+    else if (c == 93) { bw(buf, 50, 27); }
+    else { bw(buf, 50, 0); }
+}
+function isKwd(src: string, buf: string, kw: string): int {
+    set off: int = tokStrOff(buf); set ln: int = tokStrLen(buf);
+    if (ln != len(kw)) { return 0; }
+    set i: int = 0;
+    while (i < ln) {
+        if (charCode(src, off + i) != charCode(kw, i)) { return 0; }
+        i = i + 1;
+    }
+    return 1;
+}
+function expectTok(src: string, buf: string, tt: int): int {
+    if (tokType(buf) != tt) { return 0; }
+    nextTok(src, buf); return 1;
+}
+
+// Parser
+function parseType(src: string, buf: string): int {
+    if (isKwd(src, buf, "int")) { nextTok(src, buf); return 1; }
+    if (isKwd(src, buf, "string")) { nextTok(src, buf); return 2; }
+    if (isKwd(src, buf, "bool")) { nextTok(src, buf); return 3; }
+    if (isKwd(src, buf, "void")) { nextTok(src, buf); return 5; }
+    return 0;
+}
+function parseFnDef(src: string, buf: string, retTy: int): int {
+    nextTok(src, buf);
+    if (tokType(buf) != 3) { return 0; }
+    set nameOff: int = tokStrOff(buf); set nameLen: int = tokStrLen(buf);
+    nextTok(src, buf);
+    if (expectTok(src, buf, 5) == 0) { return 0; }
+    set paramCount: int = 0;
+    set pBuf: string = getOutbuf();
+    if (tokType(buf) != 6) {
+        while (1 == 1) {
+            if (tokType(buf) != 3) { return 0; }
+            set pOff: int = tokStrOff(buf); set pLen: int = tokStrLen(buf);
+            nextTok(src, buf);
+            if (expectTok(src, buf, 25) == 0) { return 0; }
+            set pTy: int = parseType(src, buf);
+            setInt(pBuf, paramCount * 24, pOff);
+            setInt(pBuf, paramCount * 24 + 8, pLen);
+            setInt(pBuf, paramCount * 24 + 16, pTy);
+            paramCount = paramCount + 1;
+            if (tokType(buf) != 10) { break; }
+            nextTok(src, buf);
+        }
+    }
+    if (expectTok(src, buf, 6) == 0) { return 0; }
+    set rt: int = 5;
+    if (expectTok(src, buf, 25) == 1) { rt = parseType(src, buf); }
+    set fnOff: int = hFn(buf, nameOff, nameLen, rt, paramCount);
+    set pi: int = 0;
+    while (pi < paramCount) {
+        bw(buf, fnOff + 5 + pi * 3, getInt(pBuf, pi * 24));
+        bw(buf, fnOff + 6 + pi * 3, getInt(pBuf, pi * 24 + 8));
+        bw(buf, fnOff + 7 + pi * 3, getInt(pBuf, pi * 24 + 16));
+        pi = pi + 1;
+    }
+    if (expectTok(src, buf, 7) == 0) { return 0; }
+    set body: int = parseBlockBody(src, buf, rt);
+    bw(buf, fnOff + 5 + paramCount * 3, body);
+    if (expectTok(src, buf, 8) == 0) { return 0; }
+    return fnOff;
+}
+function parseBlockBody(src: string, buf: string, retTy: int): int {
+    set stmtCount: int = 0;
+    while (tokType(buf) != 8 && tokType(buf) != 0) {
+        set stmt: int = parseStmt(src, buf);
+        if (stmt != 0) {
+            bw(buf, 400 + stmtCount, stmt);
+            stmtCount = stmtCount + 1;
+        }
+    }
+    set blk: int = hBlock(buf, stmtCount);
+    set sj: int = 0;
+    while (sj < stmtCount) {
+        bw(buf, blk + 2 + sj, br(buf, 400 + sj));
+        sj = sj + 1;
+    }
+    return blk;
+}
+function parseBlock(src: string, buf: string): int {
+    if (expectTok(src, buf, 7) == 0) { return 0; }
+    if (tokType(buf) == 8) { nextTok(src, buf); return hBlock(buf, 0); }
+    set sc2: int = 0;
+    while (tokType(buf) != 8 && tokType(buf) != 0) {
+        set sOff: int = parseStmt(src, buf);
+        if (sOff != 0) { bw(buf, 250 + sc2, sOff); sc2 = sc2 + 1; }
+    }
+    expectTok(src, buf, 8);
+    set blk: int = hBlock(buf, sc2);
+    set sj2: int = 0;
+    while (sj2 < sc2) { bw(buf, blk + 2 + sj2, br(buf, 250 + sj2)); sj2 = sj2 + 1; }
+    return blk;
+}
+function parseSetStmt(src: string, buf: string): int {
+    nextTok(src, buf);
+    if (tokType(buf) != 3) { return 0; }
+    set no: int = tokStrOff(buf); set nl: int = tokStrLen(buf);
+    nextTok(src, buf);
+    set ty: int = 0;
+    if (expectTok(src, buf, 25) == 1) { ty = parseType(src, buf); }
+    if (expectTok(src, buf, 15) == 0) { return 0; }
+    set v: int = parseExpr(src, buf);
+    if (expectTok(src, buf, 9) == 0) { return 0; }
+    return hSet(buf, no, nl, ty, v);
+}
+function parseReturnStmt(src: string, buf: string): int {
+    nextTok(src, buf);
+    set v: int = 0;
+    if (tokType(buf) != 9) { v = parseExpr(src, buf); }
+    if (expectTok(src, buf, 9) == 0) { return 0; }
+    return hReturn(buf, v, 0);
+}
+function parseIfStmt(src: string, buf: string): int {
+    nextTok(src, buf);
+    if (expectTok(src, buf, 5) == 0) { return 0; }
+    set cond: int = parseExpr(src, buf);
+    if (expectTok(src, buf, 6) == 0) { return 0; }
+    set thenBlock: int = parseBlock(src, buf);
+    set elseBlock: int = 0;
+    if (isKwd(src, buf, "else")) { nextTok(src, buf); elseBlock = parseBlock(src, buf); }
+    return hIf(buf, cond, thenBlock, elseBlock);
+}
+function parseWhileStmt(src: string, buf: string): int {
+    nextTok(src, buf);
+    if (expectTok(src, buf, 5) == 0) { return 0; }
+    set cond: int = parseExpr(src, buf);
+    if (expectTok(src, buf, 6) == 0) { return 0; }
+    set body: int = parseBlock(src, buf);
+    return hWhile(buf, cond, body);
+}
+function parseIntFromSrc(src: string, off: int, ln: int): int {
+    set v: int = 0; set i: int = 0;
+    while (i < ln) { v = v * 10 + (charCode(src, off + i) - 48); i = i + 1; }
+    return v;
+}
+function parseAtom(src: string, buf: string): int {
+    set tt: int = tokType(buf);
+    if (tt == 1) { set so: int = tokStrOff(buf); set sl: int = tokStrLen(buf); nextTok(src, buf); return hInt(buf, parseIntFromSrc(src, so, sl)); }
+    if (tt == 2) { set so: int = tokStrOff(buf); set sl: int = tokStrLen(buf); nextTok(src, buf); return hStr(buf, so, sl); }
+    if (tt == 3) { set so: int = tokStrOff(buf); set sl: int = tokStrLen(buf); nextTok(src, buf); 
+        if (tokType(buf) == 5) { 
+            set argBuf: string = getOutbuf(); set ac: int = 0;
+            nextTok(src, buf);
+            while (tokType(buf) != 6) {
+                set arg: int = parseExpr(src, buf);
+                setInt(argBuf, 5000 + ac * 8, arg); ac = ac + 1;
+                if (tokType(buf) == 10) { nextTok(src, buf); }
+            }
+            expectTok(src, buf, 6);
+            set callNode: int = hCall(buf, so, sl, ac);
+            set j: int = 0;
+            while (j < ac) { bw(buf, callNode + 4 + j, getInt(argBuf, 5000 + j * 8)); j = j + 1; }
+            return callNode;
+        }
+        if (tokType(buf) == 26) {
+            nextTok(src, buf); parseExpr(src, buf); expectTok(src, buf, 27);
+        }
+        return hIdent(buf, so, sl); 
+    }
+    if (tt == 26) {
+        nextTok(src, buf);
+        while (tokType(buf) != 27) {
+            parseExpr(src, buf);
+            if (tokType(buf) == 10) { nextTok(src, buf); }
+        }
+        expectTok(src, buf, 27);
+        return hInt(buf, 0);
+    }
+    if (tt == 5) { nextTok(src, buf); set e: int = parseExpr(src, buf); expectTok(src, buf, 6); return e; }
+    return 0;
+}
+function parseForStmt(src: string, buf: string): int {
+    nextTok(src, buf);
+    if (expectTok(src, buf, 5) == 0) { return 0; }
+    set init: int = 0;
+    if (tokType(buf) != 9) {
+        if (isKwd(src, buf, "set")) { init = parseSetStmt(src, buf); }
+        else { init = parseExpr(src, buf); expectTok(src, buf, 9); }
+    } else { nextTok(src, buf); }
+    set cond: int = 0;
+    if (tokType(buf) != 9) { cond = parseExpr(src, buf); }
+    expectTok(src, buf, 9);
+    set update: int = 0;
+    if (tokType(buf) != 6) { update = parseExpr(src, buf); }
+    expectTok(src, buf, 6);
+    set body: int = parseBlock(src, buf);
+    set stmtCount: int = 1;
+    if (update != 0) { stmtCount = 2; }
+    set combinedBody: int = hBlock(buf, stmtCount);
+    bw(buf, combinedBody + 2, body);
+    if (update != 0) { bw(buf, combinedBody + 3, update); }
+    set whileNode: int = hWhile(buf, cond, combinedBody);
+    set outerCount: int = 1;
+    if (init != 0) { outerCount = 2; }
+    set outerBlk: int = hBlock(buf, outerCount);
+    set idx: int = 0;
+    if (init != 0) { bw(buf, outerBlk + 2, init); idx = 1; }
+    bw(buf, outerBlk + 2 + idx, whileNode);
+    return outerBlk;
+}
+function parseExpr(src: string, buf: string): int {
+    set left: int = parseAtom(src, buf);
+    while (1 == 1) {
+        set tt: int = tokType(buf);
+        if (tt == 11) { nextTok(src, buf); set right: int = parseAtom(src, buf); left = hBinop(buf, left, 1, right); }
+        else if (tt == 12) { nextTok(src, buf); set right: int = parseAtom(src, buf); left = hBinop(buf, left, 2, right); }
+        else if (tt == 13) { nextTok(src, buf); set right: int = parseAtom(src, buf); left = hBinop(buf, left, 3, right); }
+        else if (tt == 14) { nextTok(src, buf); set right: int = parseAtom(src, buf); left = hBinop(buf, left, 4, right); }
+        else if (tt == 16) { nextTok(src, buf); set right: int = parseAtom(src, buf); left = hBinop(buf, left, 5, right); }
+        else if (tt == 17) { nextTok(src, buf); set right: int = parseAtom(src, buf); left = hBinop(buf, left, 6, right); }
+        else if (tt == 18) { nextTok(src, buf); set right: int = parseAtom(src, buf); left = hBinop(buf, left, 7, right); }
+        else if (tt == 19) { nextTok(src, buf); set right: int = parseAtom(src, buf); left = hBinop(buf, left, 8, right); }
+        else if (tt == 20) { nextTok(src, buf); set right: int = parseAtom(src, buf); left = hBinop(buf, left, 9, right); }
+        else if (tt == 21) { nextTok(src, buf); set right: int = parseAtom(src, buf); left = hBinop(buf, left, 10, right); }
+        else if (tt == 22) { nextTok(src, buf); set right: int = parseAtom(src, buf); left = hBinop(buf, left, 11, right); }
+        else if (tt == 23) { nextTok(src, buf); set right: int = parseAtom(src, buf); left = hBinop(buf, left, 12, right); }
+        else { break; }
+    }
+    if (tokType(buf) == 15) {
+        set lt: int = br(buf, left);
+        if (lt == 14) {
+            set no: int = br(buf, left + 1); set nl: int = br(buf, left + 2);
+            nextTok(src, buf);
+            set v: int = parseExpr(src, buf);
+            return hAssign(buf, no, nl, v);
+        }
+    }
+    return left;
+}
+function parseStmt(src: string, buf: string): int {
+    if (isKwd(src, buf, "set")) { return parseSetStmt(src, buf); }
+    if (isKwd(src, buf, "return")) { return parseReturnStmt(src, buf); }
+    if (isKwd(src, buf, "if")) { return parseIfStmt(src, buf); }
+    if (isKwd(src, buf, "while")) { return parseWhileStmt(src, buf); }
+    if (isKwd(src, buf, "for")) { return parseForStmt(src, buf); }
+    if (isKwd(src, buf, "function")) {
+        set fno: int = parseFnDef(src, buf, 5);
+        return fno;
+    }
+    set expr: int = parseExpr(src, buf);
+    expectTok(src, buf, 9);
+    return expr;
+}
+function parseProgram(src: string, buf: string): int {
+    lexInit(buf);
+    nextTok(src, buf);
+    set stmtCount: int = 0;
+    set stmtBuf: string = getStateBuf();
+    while (tokType(buf) != 0) {
+        set stmt: int = parseStmt(src, buf);
+        if (stmt != 0) {
+            setInt(stmtBuf, stmtCount * 8, stmt);
+            stmtCount = stmtCount + 1;
+        }
+    }
+    set prog: int = halloc(buf, 2 + stmtCount);
+    bw(buf, prog, 0); bw(buf, prog + 1, stmtCount);
+    set sj3: int = 0;
+    while (sj3 < stmtCount) {
+        bw(buf, prog + 2 + sj3, getInt(stmtBuf, sj3 * 8));
+        sj3 = sj3 + 1;
+    }
+    return prog;
+}
+
+// MIR helpers (write head at 510)
+function minit(buf: string): void { bw(buf, 510, 1024); }
+function mInstr(buf: string, op: int, dst: int, s1: int, s2: int, ext: int): void {
+    set blk: int = br(buf, 506); set ic: int = br(buf, 504);
+    set io: int = blk + 6 + ic * 6; bw(buf, io, 3); bw(buf, io + 1, op);
+    bw(buf, io + 2, dst); bw(buf, io + 3, s1); bw(buf, io + 4, s2); bw(buf, io + 5, ext);
+}
+function mBlock(buf: string, id: int, ic: int, tt: int, t0: int, t1: int): int {
+    set o: int = mallac(buf, 6); bw(buf, o, 2); bw(buf, o + 1, id);
+    bw(buf, o + 2, ic); bw(buf, o + 3, tt); bw(buf, o + 4, t0); bw(buf, o + 5, t1);
+    return o;
+}
+function mFn(buf: string, no: int, nl: int, rt: int, bc: int, lc: int, pc: int): int {
+    set o: int = mallac(buf, 7 + bc); bw(buf, o, 1); bw(buf, o + 1, no);
+    bw(buf, o + 2, nl); bw(buf, o + 3, rt); bw(buf, o + 4, bc); bw(buf, o + 5, lc);
+    bw(buf, o + 6, pc);
+    return o;
+}
+function mProgram(buf: string, fnc: int): int {
+    set o: int = mallac(buf, 2 + fnc); bw(buf, o, 0); bw(buf, o + 1, fnc); return o;
+}
+function mInstrOp(bbuf: string, io: int): int { return br(bbuf, io + 1); }
+function mInstrDst(bbuf: string, io: int): int { return br(bbuf, io + 2); }
+function mInstrS1(bbuf: string, io: int): int { return br(bbuf, io + 3); }
+function mInstrS2(bbuf: string, io: int): int { return br(bbuf, io + 4); }
+function mInstrExt(bbuf: string, io: int): int { return br(bbuf, io + 5); }
+function mBlockInstrCount(bbuf: string, bo: int): int { return br(bbuf, bo + 2); }
+function mBlockTermTy(bbuf: string, bo: int): int { return br(bbuf, bo + 3); }
+function mBlockTerm0(bbuf: string, bo: int): int { return br(bbuf, bo + 4); }
+function mBlockTerm1(bbuf: string, bo: int): int { return br(bbuf, bo + 5); }
+function mBlockInstr(bbuf: string, bo: int, i: int): int { return bo + 6 + i * 6; }
+function mFnBlock(bbuf: string, fo: int, i: int): int { return br(bbuf, fo + 7 + i); }
+function mFnNameOff(bbuf: string, fo: int): int { return br(bbuf, fo + 1); }
+function mFnNameLen(bbuf: string, fo: int): int { return br(bbuf, fo + 2); }
+function mFnRetTy(bbuf: string, fo: int): int { return br(bbuf, fo + 3); }
+function mFnBlockCount(bbuf: string, fo: int): int { return br(bbuf, fo + 4); }
+function mFnLocalCount(bbuf: string, fo: int): int { return br(bbuf, fo + 5); }
+function mFnParamCount(bbuf: string, fo: int): int { return br(bbuf, fo + 6); }
+
+// Scope table (slots 128-383)
+function scInit(buf: string): void {
+    set k: int = 0; while (k < 256) { bw(buf, 128 + k, 0); k = k + 1; }
+    bw(buf, 256, 0); bw(buf, 257, 0);
+}
+function scCnt(buf: string): int { return br(buf, 256); }
+function scSetCnt(buf: string, v: int): void { bw(buf, 256, v); }
+function scNP(buf: string, i: int): int { return br(buf, 128 + i * 4); }
+function scNL(buf: string, i: int): int { return br(buf, 129 + i * 4); }
+function scTy(buf: string, i: int): int { return br(buf, 130 + i * 4); }
+function scTmp(buf: string, i: int): int { return br(buf, 131 + i * 4); }
+function scSetNP(buf: string, i: int, v: int): void { bw(buf, 128 + i * 4, v); }
+function scSetNL(buf: string, i: int, v: int): void { bw(buf, 129 + i * 4, v); }
+function scSetTy(buf: string, i: int, v: int): void { bw(buf, 130 + i * 4, v); }
+function scSetTmp(buf: string, i: int, v: int): void { bw(buf, 131 + i * 4, v); }
+function scDefine(buf: string, no: int, nl: int, ty: int): int {
+    set i: int = scCnt(buf); scSetCnt(buf, i + 1);
+    scSetNP(buf, i, no); scSetNL(buf, i, nl); scSetTy(buf, i, ty); scSetTmp(buf, i, 0);
+    return i;
+}
+function scLookup(buf: string, src: string, no: int, nl: int): int {
+    set c: int = scCnt(buf); set i: int = c - 1;
+    while (i >= 0) {
+        if (nameEq(src, scNP(buf, i), scNL(buf, i), no, nl) == 1) { return i; }
+        i = i - 1;
+    }
+    return -1;
+}
+
+// MIR building helpers
+function freshTemp(buf: string): int {
+    set t: int = br(buf, 508); bw(buf, 508, t + 1); return t;
+}
+function startMirBlock(buf: string): void {
+    set blkOff: int = mBlock(buf, 0, 0, 0, 0, 0);
+    bw(buf, 506, blkOff); bw(buf, 504, 0);
+    bw(buf, 400 + br(buf, 502), blkOff);
+}
+function appendInstr(buf: string, op: int, dst: int, s1: int, s2: int, ext: int): void {
+    mallac(buf, 6);
+    mInstr(buf, op, dst, s1, s2, ext);
+    set ic: int = br(buf, 504);
+    bw(buf, 504, ic + 1); bw(buf, br(buf, 506) + 2, ic + 1);
+}
+function finishMirBlock(buf: string, tt: int, t0: int, t1: int): int {
+    set blk: int = br(buf, 506); bw(buf, blk + 1, br(buf, 502));
+    bw(buf, blk + 3, tt); bw(buf, blk + 4, t0); bw(buf, blk + 5, t1);
+    bw(buf, 502, br(buf, 502) + 1); bw(buf, 506, 0);
+    return blk;
+}
+
+// MIR lowering
+function lowerExpr(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src: string): int {
+    set tag: int = br(hirBuf, hOff);
+    if (tag == 15) { set v: int = br(hirBuf, hOff + 1); set t: int = freshTemp(mirBuf); appendInstr(mirBuf, 2, t, v, 0, 1); return t; }
+    if (tag == 16) { set so: int = br(hirBuf, hOff + 1); set sl: int = br(hirBuf, hOff + 2); set t: int = freshTemp(mirBuf); appendInstr(mirBuf, 2, t, so, sl, 2); return t; }
+    if (tag == 17) { set v: int = br(hirBuf, hOff + 1); set t: int = freshTemp(mirBuf); appendInstr(mirBuf, 2, t, v, 0, 3); return t; }
+    if (tag == 14) {
+        set so: int = br(hirBuf, hOff + 1); set sl: int = br(hirBuf, hOff + 2);
+        set si: int = scLookup(scBuf, src, so, sl);
+        if (si >= 0) { set t: int = scTmp(scBuf, si); return t; }
+        return 0;
+    }
+    if (tag == 12) {
+        set l: int = br(hirBuf, hOff + 1); set op: int = br(hirBuf, hOff + 2); set r: int = br(hirBuf, hOff + 3);
+        set lt: int = lowerExpr(hirBuf, l, mirBuf, scBuf, src);
+        set rt: int = lowerExpr(hirBuf, r, mirBuf, scBuf, src);
+        set t: int = freshTemp(mirBuf);
+        if (op == 1 && (br(hirBuf, l) == 16 || br(hirBuf, r) == 16)) {
+            appendInstr(mirBuf, 12, t, lt, rt, 0);
+        } else {
+            appendInstr(mirBuf, 2, t, lt, rt, op);
+        }
+        return t;
+    }
+    if (tag == 11) {
+        set co: int = br(hirBuf, hOff + 1); set cl: int = br(hirBuf, hOff + 2); set ac: int = br(hirBuf, hOff + 3);
+        set t: int = freshTemp(mirBuf);
+        set j: int = 0; set args: int = 0; set mul: int = 1;
+        while (j < ac) {
+            set aOff: int = br(hirBuf, hOff + 4 + j);
+            set aTmp: int = lowerExpr(hirBuf, aOff, mirBuf, scBuf, src);
+            args = args + (aTmp + 1) * mul; mul = mul * 1000;
+            j = j + 1;
+        }
+        appendInstr(mirBuf, 4, t, co, cl, args); return t;
+    }
+    return 0;
+}
+
+function lowerStmt(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src: string, fnRetTy: int): int {
+    set tag: int = br(hirBuf, hOff);
+    if (tag == 0 || tag == 2) { // Program or Block
+        set ic: int = br(hirBuf, hOff + 1);
+        set j: int = 0; set retSeen: int = 0;
+        while (j < ic) {
+            set sOff: int = br(hirBuf, hOff + 2 + j);
+            retSeen = lowerStmt(hirBuf, sOff, mirBuf, scBuf, src, fnRetTy);
+            j = j + 1;
+        }
+        return retSeen;
+    }
+    if (tag == 3) { // Set
+        set no: int = br(hirBuf, hOff + 1); set nl: int = br(hirBuf, hOff + 2);
+        set ty: int = br(hirBuf, hOff + 3); set vOff: int = br(hirBuf, hOff + 4);
+        set vTmp: int = lowerExpr(hirBuf, vOff, mirBuf, scBuf, src);
+        set si: int = scLookup(scBuf, src, no, nl);
+        if (si < 0) {
+            si = scDefine(scBuf, no, nl, ty);
+            scSetTmp(scBuf, si, vTmp);
+        }
+        return 0;
+    }
+    if (tag == 4) { // Assign
+        set no: int = br(hirBuf, hOff + 1); set nl: int = br(hirBuf, hOff + 2);
+        set vOff: int = br(hirBuf, hOff + 3);
+        set vTmp: int = lowerExpr(hirBuf, vOff, mirBuf, scBuf, src);
+        set si: int = scLookup(scBuf, src, no, nl);
+        if (si >= 0) { set t: int = scTmp(scBuf, si); appendInstr(mirBuf, 2, t, vTmp, 0, 101); }
+        return 0;
+    }
+    if (tag == 8) { // Return
+        set vOff: int = br(hirBuf, hOff + 1);
+        set vTmp: int = 0;
+        if (vOff != 0) { vTmp = lowerExpr(hirBuf, vOff, mirBuf, scBuf, src); }
+        appendInstr(mirBuf, 5, 0, vTmp, fnRetTy, 0);
+        finishMirBlock(mirBuf, 3, vTmp, fnRetTy);
+        return 1;
+    }
+    if (tag == 5) { // If
+        set cOff: int = br(hirBuf, hOff + 1); set tOff: int = br(hirBuf, hOff + 2); set eOff: int = br(hirBuf, hOff + 3);
+        set cTmp: int = lowerExpr(hirBuf, cOff, mirBuf, scBuf, src);
+        set thenBlk: int = br(mirBuf, 502) + 1;
+        set elseBlk: int = br(mirBuf, 502) + 2;
+        appendInstr(mirBuf, 7, cTmp, thenBlk, elseBlk, 0);
+        finishMirBlock(mirBuf, 0, 0, 0);
+        startMirBlock(mirBuf);
+        set tRet: int = lowerStmt(hirBuf, tOff, mirBuf, scBuf, src, fnRetTy);
+        set hasElse: int = 0;
+        if (eOff != 0) { hasElse = 1; }
+        set mergeBlk: int = thenBlk + 1;
+        if (hasElse == 1) { mergeBlk = thenBlk + 2; }
+        if (tRet == 0 && br(mirBuf, 506) != 0) {
+            appendInstr(mirBuf, 6, 0, mergeBlk, 0, 0);
+            finishMirBlock(mirBuf, 0, 0, 0);
+        } else if (br(mirBuf, 506) == 0 && tRet == 1) {
+            // Then block was already finalized by return
+        } else {
+            if (br(mirBuf, 506) != 0) { finishMirBlock(mirBuf, 0, 0, 0); }
+        }
+        if (eOff != 0) {
+            startMirBlock(mirBuf);
+            set eRet: int = lowerStmt(hirBuf, eOff, mirBuf, scBuf, src, fnRetTy);
+            if (eRet == 0 && br(mirBuf, 506) != 0) {
+                appendInstr(mirBuf, 6, 0, mergeBlk, 0, 0);
+                finishMirBlock(mirBuf, 0, 0, 0);
+            }
+            startMirBlock(mirBuf);
+        } else {
+            if (tRet == 0) { startMirBlock(mirBuf); }
+        }
+        return 0;
+    }
+    if (tag == 6) { // While
+        set cOff: int = br(hirBuf, hOff + 1); set bOff: int = br(hirBuf, hOff + 2);
+        finishMirBlock(mirBuf, 0, 0, 0);
+        startMirBlock(mirBuf);
+        set condBlkOff: int = br(mirBuf, 506);
+        set cTmp: int = lowerExpr(hirBuf, cOff, mirBuf, scBuf, src);
+        set bodyBlk: int = br(mirBuf, 502) + 1;
+        set exitBlk: int = br(mirBuf, 502) + 2;
+        appendInstr(mirBuf, 7, cTmp, bodyBlk, exitBlk, 0);
+        set branchIc: int = br(mirBuf, 504);
+        finishMirBlock(mirBuf, 0, 0, 0);
+        set headerBlk: int = br(mirBuf, 502) - 1;
+        startMirBlock(mirBuf);
+        lowerStmt(hirBuf, bOff, mirBuf, scBuf, src, fnRetTy);
+        if (br(mirBuf, 506) != 0) {
+            appendInstr(mirBuf, 6, 0, headerBlk, 0, 0);
+            finishMirBlock(mirBuf, 0, 0, 0);
+        }
+        set newExitBlk: int = br(mirBuf, 502);
+        set branchOff: int = condBlkOff + 6 + (branchIc - 1) * 6;
+        bw(mirBuf, branchOff + 4, newExitBlk);
+        startMirBlock(mirBuf);
+        return 0;
+    }
+    if (tag == 11) { // Call expr as statement
+        lowerExpr(hirBuf, hOff, mirBuf, scBuf, src);
+        return 0;
+    }
+    return 0;
+}
+
+function lowerFnDef(hirBuf: string, fnOff: int, mirBuf: string, scBuf: string, src: string): int {
+    set no: int = br(hirBuf, fnOff + 1); set nl: int = br(hirBuf, fnOff + 2);
+    set rt: int = br(hirBuf, fnOff + 3); set pc: int = br(hirBuf, fnOff + 4);
+    set bodyOff: int = br(hirBuf, fnOff + 5 + pc * 3);
+    bw(mirBuf, 508, 0); bw(mirBuf, 506, 0); bw(mirBuf, 504, 0); bw(mirBuf, 502, 0);
+    startMirBlock(mirBuf);
+    // Define params in scope and emit PARAM instructions
+    set pi: int = 0;
+    while (pi < pc) {
+        set pNo: int = br(hirBuf, fnOff + 5 + pi * 3);
+        set pNl: int = br(hirBuf, fnOff + 6 + pi * 3);
+        set pTy: int = br(hirBuf, fnOff + 7 + pi * 3);
+        set si: int = scDefine(scBuf, pNo, pNl, pTy);
+        set pTemp: int = freshTemp(mirBuf);
+        appendInstr(mirBuf, 11, pTemp, pi, 0, 0);
+        scSetTmp(scBuf, si, pTemp);
+        pi = pi + 1;
+    }
+    lowerStmt(hirBuf, bodyOff, mirBuf, scBuf, src, rt);
+    set blkOff: int = br(mirBuf, 506);
+    if (blkOff != 0) { finishMirBlock(mirBuf, 3, 0, rt); }
+    set blockCount: int = br(mirBuf, 502);
+    set lc: int = br(mirBuf, 508);
+    set mirFnOff: int = mFn(mirBuf, no, nl, rt, blockCount, lc, pc);
+    set bi: int = 0;
+    while (bi < blockCount) {
+        set blk: int = br(mirBuf, 400 + bi);
+        bw(mirBuf, mirFnOff + 7 + bi, blk);
+        bi = bi + 1;
+    }
+    return mirFnOff;
+}
+
+function lowerProgram(hirBuf: string, progOff: int, mirBuf: string, scBuf: string, src: string): int {
+    set cnt: int = br(hirBuf, progOff + 1);
+    set fnCount: int = 0;
+    set fnList: string = getStateBuf();
+    set j: int = 0;
+    while (j < cnt) {
+        set sOff: int = br(hirBuf, progOff + 2 + j);
+        set stmtTag: int = br(hirBuf, sOff);
+        if (stmtTag == 1) {
+            set mirFn: int = lowerFnDef(hirBuf, sOff, mirBuf, scBuf, src);
+            setInt(fnList, fnCount * 8, mirFn);
+            fnCount = fnCount + 1;
+        }
+        j = j + 1;
+    }
+    set prog: int = mProgram(mirBuf, fnCount);
+    set k: int = 0;
+    while (k < fnCount) {
+        bw(mirBuf, prog + 2 + k, getInt(fnList, k * 8));
+        k = k + 1;
+    }
+    return prog;
+}
+
+// MIR optimizer
+function constantFoldBlock(buf: string, boff: int): void {
+    set ic: int = mBlockInstrCount(buf, boff);
+    set j: int = 0;
+    while (j < ic) {
+        set ioff: int = mBlockInstr(buf, boff, j);
+        set op: int = mInstrOp(buf, ioff);
+        set s1: int = mInstrS1(buf, ioff);
+        set s2: int = mInstrS2(buf, ioff);
+        set ext: int = mInstrExt(buf, ioff);
+        if (op == 2 && s2 != 0) {
+            set val1: int = -1; set val2: int = -1;
+            set k: int = 0;
+            while (k < ic) {
+                set koff: int = mBlockInstr(buf, boff, k);
+                if (mInstrOp(buf, koff) == 2 && mInstrExt(buf, koff) == 1) {
+                    if (mInstrDst(buf, koff) == s1) { val1 = mInstrS1(buf, koff); }
+                    if (mInstrDst(buf, koff) == s2) { val2 = mInstrS1(buf, koff); }
+                }
+                k = k + 1;
+            }
+            if (val1 >= 0 && val2 >= 0) {
+                set res: int = 0;
+                if (ext == 1) { res = val1 + val2; }
+                else if (ext == 2) { res = val1 - val2; }
+                else if (ext == 3) { res = val1 * val2; }
+                else if (ext == 4) { if (val2 != 0) { res = val1 / val2; } }
+                else if (ext == 5) { if (val1 == val2) { res = 1; } }
+                else if (ext == 6) { if (val1 != val2) { res = 1; } }
+                else if (ext == 7) { if (val1 < val2) { res = 1; } }
+                else if (ext == 8) { if (val1 > val2) { res = 1; } }
+                else if (ext == 9) { if (val1 <= val2) { res = 1; } }
+                else if (ext == 10) { if (val1 >= val2) { res = 1; } }
+                set dst: int = mInstrDst(buf, ioff);
+                bw(buf, ioff + 1, 2); bw(buf, ioff + 2, dst); bw(buf, ioff + 3, res); bw(buf, ioff + 4, 0); bw(buf, ioff + 5, 1);
+            }
+        }
+        j = j + 1;
+    }
+}
+function deadCodeElimBlock(buf: string, boff: int): void {
+    set ic: int = mBlockInstrCount(buf, boff);
+    set j: int = 0; set newIc: int = 0;
+    while (j < ic) {
+        set ioff: int = mBlockInstr(buf, boff, j);
+        set op: int = mInstrOp(buf, ioff);
+        set keep: int = 1;
+        if (op == 2) {
+            set dst: int = mInstrDst(buf, ioff);
+            keep = 0;
+            set k: int = 0;
+            while (k < ic) {
+                set koff: int = mBlockInstr(buf, boff, k);
+                if (k != j && (mInstrS1(buf, koff) == dst || mInstrS2(buf, koff) == dst)) { keep = 1; }
+                k = k + 1;
+            }
+        }
+        if (op == 4 || op == 5 || op == 1 || op == 11) { keep = 1; }
+        if (keep == 1 && newIc != j) {
+            set dstOff: int = boff + 6 + newIc * 6;
+            set srcOff: int = ioff;
+            bw(buf, dstOff, br(buf, srcOff));
+            bw(buf, dstOff + 1, br(buf, srcOff + 1));
+            bw(buf, dstOff + 2, br(buf, srcOff + 2));
+            bw(buf, dstOff + 3, br(buf, srcOff + 3));
+            bw(buf, dstOff + 4, br(buf, srcOff + 4));
+            bw(buf, dstOff + 5, br(buf, srcOff + 5));
+        }
+        if (keep == 1) { newIc = newIc + 1; }
+        j = j + 1;
+    }
+    bw(buf, boff + 2, newIc);
+}
+function optimizeMirFn(buf: string, foff: int): void {
+    set bc: int = mFnBlockCount(buf, foff);
+    set j: int = 0;
+    while (j < bc) { set blkOff: int = mFnBlock(buf, foff, j); constantFoldBlock(buf, blkOff); j = j + 1; }
+    j = 0;
+    while (j < bc) { set blkOff: int = mFnBlock(buf, foff, j); deadCodeElimBlock(buf, blkOff); j = j + 1; }
+}
+function optimizeMirProgram(buf: string, progOff: int): void {
+    set cnt: int = br(buf, progOff + 1);
+    set j: int = 0;
+    while (j < cnt) { set fnOff: int = br(buf, progOff + 2 + j); optimizeMirFn(buf, fnOff); j = j + 1; }
+}
+
+// C codegen — writeAppend writes to file
+function emitCOut(out: string, s: string): void { writeAppend(out, s); }
+function emitNewline(out: string): void { writeAppend(out, "\n"); }
+function emitCInt(out: string, val: int): void { writeAppend(out, itoa(val)); }
+function emitCBlockCode(buf: string, boff: int, out: string, src: string): void {
+    set ic: int = mBlockInstrCount(buf, boff);
+    set j: int = 0;
+    while (j < ic) {
+        set ioff: int = mBlockInstr(buf, boff, j);
+        set op: int = mInstrOp(buf, ioff);
+        set dst: int = mInstrDst(buf, ioff);
+        set s1: int = mInstrS1(buf, ioff);
+        set s2: int = mInstrS2(buf, ioff);
+        set ext: int = mInstrExt(buf, ioff);
+        emitCOut(out, "    // #"); emitCInt(out, j);
+        emitCOut(out, " op="); emitCInt(out, op);
+        emitCOut(out, " d="); emitCInt(out, dst);
+        emitCOut(out, " s1="); emitCInt(out, s1);
+        emitCOut(out, " s2="); emitCInt(out, s2);
+        emitCOut(out, " e="); emitCInt(out, ext);
+        emitNewline(out);
+        if (op == 2 && ext == 2) {
+            set strVal: string = substring(src, s1, s1 + s2);
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = (intptr_t)\"");
+            set k: int = 0;
+            while (k < len(strVal)) { writeByte(out, charCode(strVal, k)); k = k + 1; }
+            emitCOut(out, "\";"); emitNewline(out);
+        } else if (op == 2 && s2 == 0 && ext == 101) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 2 && s2 == 0 && (ext == 1 || ext == 3)) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = "); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 2 && s2 != 0) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            if (ext == 1) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " + t"); emitCInt(out, s2); }
+            else if (ext == 2) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " - t"); emitCInt(out, s2); }
+            else if (ext == 3) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " * t"); emitCInt(out, s2); }
+            else if (ext == 4) { emitCOut(out, " = t"); emitCInt(out, s2); emitCOut(out, " == 0 ? 0 : t"); emitCInt(out, s1); emitCOut(out, " / t"); emitCInt(out, s2); }
+            else if (ext == 5) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " == t"); emitCInt(out, s2); }
+            else if (ext == 6) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " != t"); emitCInt(out, s2); }
+            else if (ext == 7) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " < t"); emitCInt(out, s2); }
+            else if (ext == 8) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " > t"); emitCInt(out, s2); }
+            else if (ext == 9) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " <= t"); emitCInt(out, s2); }
+            else if (ext == 10) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " >= t"); emitCInt(out, s2); }
+            else if (ext == 11) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " && t"); emitCInt(out, s2); }
+            else if (ext == 12) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " || t"); emitCInt(out, s2); }
+            emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 11) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = p"); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 4) {
+            set callee: string = substring(src, s1, s1 + s2);
+            set tmpA: int = ext; set ac2: int = 0;
+            set tmpC: int = ext; while (tmpC > 0) { ac2 = ac2 + 1; tmpC = tmpC / 1000; }
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = "); emitCOut(out, callee); emitCOut(out, "(");
+            set ak: int = 0; set aT: int = tmpA;
+            while (ak < ac2) {
+                if (ak > 0) { emitCOut(out, ", "); }
+                set r: int = aT; while (r >= 1000) { r = r - 1000; }
+                emitCOut(out, "t"); emitCInt(out, r - 1); aT = aT / 1000;
+                ak = ak + 1;
+            }
+            emitCOut(out, ");"); emitNewline(out);
+        } else if (op == 5) {
+            emitCOut(out, "    return t"); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 9) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = p"); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 6) {
+            emitCOut(out, "    goto block_"); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 7) {
+            emitCOut(out, "    if (t"); emitCInt(out, dst);
+            emitCOut(out, ") { goto block_"); emitCInt(out, s1);
+            emitCOut(out, "; } else { goto block_"); emitCInt(out, s2);
+            emitCOut(out, "; }"); emitNewline(out);
+        } else if (op == 12) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = str_concat(t"); emitCInt(out, s1);
+            emitCOut(out, ", t"); emitCInt(out, s2);
+            emitCOut(out, ");"); emitNewline(out);
+        }
+        j = j + 1;
+    }
+}
+function emitCHeader(out: string): void {
+    emitCOut(out, "#include <stdint.h>"); emitNewline(out);
+    emitCOut(out, "#include <string.h>"); emitNewline(out);
+    emitCOut(out, "#include <stdio.h>"); emitNewline(out);
+    emitNewline(out);
+    emitCOut(out, "intptr_t getStateBuf(void);"); emitNewline(out);
+    emitCOut(out, "intptr_t getOutbuf(void);"); emitNewline(out);
+    emitCOut(out, "intptr_t getInt(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "void setInt(intptr_t, intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t len(intptr_t);"); emitNewline(out);
+    emitCOut(out, "void strSet(intptr_t, intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t charCode(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t str_concat(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t substring(intptr_t, intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t indexOf(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t contains(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t itoa(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t println(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t readArg(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t readFile(intptr_t);"); emitNewline(out);
+    emitCOut(out, "void writeFile(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "void writeAppend(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "void writeByte(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t strcmp_ajeeb(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t trim(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t toUpperCase(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t toLowerCase(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t startsWith(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t endsWith(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t replace(intptr_t, intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t array_to_string(intptr_t, intptr_t);"); emitNewline(out);
+    emitNewline(out);
+    emitCOut(out, "char __ajeeb_buf[16384];"); emitNewline(out);
+    emitCOut(out, "char __ajeeb_outbuf[65536];"); emitNewline(out);
+    emitNewline(out);
+}
+function emitCFn(buf: string, foff: int, out: string, src: string, isEntryMain: int): void {
+    set no: int = mFnNameOff(buf, foff);
+    set nl: int = mFnNameLen(buf, foff);
+    set fnName: string = substring(src, no, no + nl);
+    set bc: int = mFnBlockCount(buf, foff);
+    set lc: int = mFnLocalCount(buf, foff);
+    set pc: int = mFnParamCount(buf, foff);
+    set maxT: int = lc - 1;
+    set j: int = 0;
+    if (isEntryMain == 1) { emitCOut(out, "int main(void) {"); }
+    else { emitCOut(out, "intptr_t "); emitCOut(out, fnName); emitCOut(out, "(");
+        j = 0;
+        while (j < pc) {
+            if (j > 0) { emitCOut(out, ", "); }
+            emitCOut(out, "intptr_t p"); emitCInt(out, j);
+            j = j + 1;
+        }
+        emitCOut(out, ") {"); }
+    emitNewline(out);
+    if (maxT >= 0) {
+        emitCOut(out, "    intptr_t ");
+        j = 0;
+        while (j <= maxT) {
+            if (j > 0) { emitCOut(out, ", "); }
+            emitCOut(out, "t"); emitCInt(out, j);
+            j = j + 1;
+        }
+        emitCOut(out, ";"); emitNewline(out);
+    }
+    emitNewline(out);
+    if (bc > 0) { emitCOut(out, "    goto block_0;"); emitNewline(out); }
+    j = 0;
+    while (j < bc) {
+        set blkOff: int = mFnBlock(buf, foff, j);
+        emitCOut(out, "block_"); emitCInt(out, j); emitCOut(out, ":");
+        emitCOut(out, " // ic="); emitCInt(out, mBlockInstrCount(buf, blkOff));
+        emitNewline(out);
+        emitCBlockCode(buf, blkOff, out, src);
+        emitNewline(out);
+        j = j + 1;
+    }
+    emitCOut(out, "}"); emitNewline(out); emitNewline(out);
+}
+function emitCProg(buf: string, progOff: int, outPath: string, src: string): void {
+    set out: string = outPath;
+    emitCHeader(out);
+    set cnt: int = br(buf, progOff + 1);
+    set j: int = 0;
+    // Find the function named "main" to determine the entry point
+    set entryFnOff: int = 0; set entryNo: int = 0; set entryNl: int = 0;
+    set entryIsMain: int = 0;
+    j = 0;
+    while (j < cnt) {
+        set fnOff: int = br(buf, progOff + 2 + j);
+        set no: int = mFnNameOff(buf, fnOff);
+        set nl: int = mFnNameLen(buf, fnOff);
+        if (nl == 4) {
+            set c0: int = charCode(src, no);
+            set c1: int = charCode(src, no + 1);
+            set c2: int = charCode(src, no + 2);
+            set c3: int = charCode(src, no + 3);
+            if (c0 == 109 && c1 == 97 && c2 == 105 && c3 == 110) {
+                entryFnOff = fnOff; entryNo = no; entryNl = nl; entryIsMain = 1;
+            }
+        }
+        j = j + 1;
+    }
+    // Forward-declare all functions with param info
+    j = 0;
+    while (j < cnt) {
+        set fnOff: int = br(buf, progOff + 2 + j);
+        set no: int = mFnNameOff(buf, fnOff);
+        set nl: int = mFnNameLen(buf, fnOff);
+        set pc: int = mFnParamCount(buf, fnOff);
+        if (entryIsMain == 1 && fnOff == entryFnOff) { j = j + 1; continue; }
+        set fnName: string = substring(src, no, no + nl);
+        emitCOut(out, "intptr_t "); emitCOut(out, fnName); emitCOut(out, "(");
+        set k: int = 0;
+        while (k < pc) {
+            if (k > 0) { emitCOut(out, ", "); }
+            emitCOut(out, "intptr_t");
+            k = k + 1;
+        }
+        emitCOut(out, ");"); emitNewline(out);
+        j = j + 1;
+    }
+    emitNewline(out);
+    if (entryFnOff != 0 && entryIsMain == 0) {
+        set entryName: string = substring(src, entryNo, entryNo + entryNl);
+        emitCOut(out, "int main(void) {"); emitNewline(out);
+        emitCOut(out, "    return (int)"); emitCOut(out, entryName); emitCOut(out, "();"); emitNewline(out);
+        emitCOut(out, "}"); emitNewline(out); emitNewline(out);
+    }
+    j = 0;
+    while (j < cnt) {
+        set fnOff: int = br(buf, progOff + 2 + j);
+        set isEntry: int = 0;
+        if (entryIsMain == 1 && fnOff == entryFnOff) { isEntry = 1; }
+        emitCFn(buf, fnOff, out, src, isEntry);
+        j = j + 1;
+    }
+}
+
+// Entry point and tests
+function compileFile(inPath: string, outPath: string): int {
+    set src: string = readFile(inPath);
+    if (len(src) == 0) { return 1; }
+    set state: string = getStateBuf();
+    set outStr: string = getOutbuf();
+    hinit(state);
+    set hirProg: int = parseProgram(src, state);
+    minit(state);
+    scInit(state);
+    set mirProg: int = lowerProgram(state, hirProg, state, state, src);
+    set fc: int = br(state, mirProg + 1);
+    if (fc > 0) {
+        set fnoff2: int = br(state, mirProg + 2 + 0);
+        if (mFnBlockCount(state, fnoff2) > 0) {
+            set blkoff2: int = mFnBlock(state, fnoff2, 0);
+        }
+    }
+    // optimizeMirProgram(state, mirProg);
+    emitCProg(state, mirProg, outPath, src);
+    return 0;
+}
+
+function main(): int {
+    set cliIn: string = readArg(1);
+    if (len(cliIn) > 0) {
+        set cliOut: string = readArg(2);
+        if (len(cliOut) == 0) { cliOut = str_concat(cliIn, ".c"); }
+        compileFile(cliIn, cliOut);
+    } else {
+        set src: string = "function foo(): int { return 42; }";
+        set buf: string = getStateBuf();
+        setInt(buf, 0, 0);
+        hinit(buf);
+        set hirProg: int = parseProgram(src, buf);
+        set mirBuf: string = getOutbuf();
+        minit(mirBuf);
+        scInit(mirBuf);
+        set mirProg: int = lowerProgram(buf, hirProg, mirBuf, mirBuf, src);
+        optimizeMirProgram(mirBuf, mirProg);
+        set outPath: string = "build/test_main_output.c";
+        writeFile(outPath, "");
+        emitCProg(mirBuf, mirProg, outPath, src);
+        set out: string = readFile(outPath);
+        set testSrc: string = "build/test_input.ajb";
+        writeFile(testSrc, "function add(a: int, b: int): int { return a + b; }");
+        set result: int = compileFile(testSrc, "build/test_pipeline.c");
+        set pipOut: string = readFile("build/test_pipeline.c");
+    }
+    return 0;
+}
+
+

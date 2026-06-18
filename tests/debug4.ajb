@@ -1,0 +1,8 @@
+function add(a: int, b: int): int {
+    return a + b;
+}
+
+function main(): int {
+    set r: int = add(10, 32);
+    return r;
+}
