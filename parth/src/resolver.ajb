@@ -33,7 +33,7 @@ function resolveAll(buf: string, src: string): int {
         return 0;
     }
     set missing: int = 0;
-    println(str_concat(itoa(dc), str_concat(" dependency(ies) resolve kar rahe hain...", "")));
+    println(str_concat(itoa(dc), " dependency(ies) resolve kar rahe hain..."));
     set j: int = 0;
     while (j < dc) {
         set dn: string = getDepName(buf, src, j);
@@ -50,7 +50,7 @@ function resolveAll(buf: string, src: string): int {
     }
     if (missing > 0) {
         println("");
-        println(str_concat(itoa(missing), str_concat(" dependency(ies) missing hai!", "")));
+        println(str_concat(itoa(missing), " dependency(ies) missing hai!"));
         println("Package add karo: parth add <package-name>");
         return 1;
     }

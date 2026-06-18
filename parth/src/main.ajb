@@ -1,5 +1,5 @@
 // main.ajb — Parth CLI: project manager for Ajeeb
-// Commands: init, new, build, run
+// Commands: init, build, run
 // All errors in Hinglish!
 
 import parser;
@@ -7,54 +7,37 @@ import resolver;
 import builder;
 import runner;
 
-function cmdInit(): int {
-    set src: string = readFile("parth.das");
-    if (len(src) > 0) {
-        println("Error: parth.das pehle se hai! 'parth new <name>' try karo.");
-        return 1;
-    }
-
-    writeFile("src/main.ajb", "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n");
-
-    set name: string = "";
-    set cwd: string = readArg(0);
-    set i: int = len(cwd) - 1;
-    while (i >= 0) {
-        if (charCode(cwd, i) == 47) {
-            name = substring(cwd, i + 1, len(cwd));
-            break;
-        }
-        i = i - 1;
-        if (i < 0) { name = cwd; }
-    }
+function cmdInit(name: string): int {
     if (len(name) == 0) { name = "project"; }
 
-    set das: string = str_concat("[package]\nname = \"", str_concat(name, str_concat("\"\nversion = \"0.1.0\"\nauthor = \"\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n", "")));
+    set srcContent: string = "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n";
+    writeFile("src/main.ajb", srcContent);
+
+    set das: string = str_concat("[package]\nname = \"", name);
+    das = str_concat(das, "\"\nversion = \"0.1.0\"\nauthor = \"\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
     writeFile("parth.das", das);
     writeFile("build/.gitkeep", "");
 
     println(str_concat("✓ Project initialize ho gaya: ", name));
+    println("Pehle 'mkdir -p src build' karo, phir 'parth init' chalao.");
     return 0;
 }
 
-function cmdNew(args: string): int {
-    if (len(args) == 0) {
+function cmdNew(name: string): int {
+    if (len(name) == 0) {
         println("Usage: parth new <project-name>");
         return 1;
     }
-
-    set dir: string = args;
-    set srcDir: string = str_concat(dir, "/src");
-    set buildDir: string = str_concat(dir, "/build");
-
-    writeFile(str_concat(srcDir, "/main.ajb"), "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n");
-
-    set das: string = str_concat("[package]\nname = \"", str_concat(dir, str_concat("\"\nversion = \"0.1.0\"\nauthor = \"\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n", "")));
-    writeFile(str_concat(dir, "/parth.das"), das);
-    writeFile(str_concat(buildDir, "/.gitkeep"), "");
-
-    println(str_concat("✓ Project bana: ", dir));
-    println(str_concat("  cd ", str_concat(dir, " && parth build")));
+    set srcContent: string = "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n";
+    writeFile(str_concat(name, "/src/main.ajb"), srcContent);
+    set das: string = str_concat("[package]\nname = \"", name);
+    das = str_concat(das, "\"\nversion = \"0.1.0\"\nauthor = \"\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    writeFile(str_concat(name, "/parth.das"), das);
+    writeFile(str_concat(name, "/build/.gitkeep"), "");
+    println(str_concat("✓ Project files bana: ", name));
+    println(str_concat("  mkdir -p ", str_concat(name, "/src")));
+    println(str_concat("  mkdir -p ", str_concat(name, "/build")));
+    println(str_concat("  cd ", str_concat(name, " && parth init")));
     return 0;
 }
 
@@ -72,8 +55,8 @@ function main(): int {
         println("Usage: parth <init|new|build|run>");
         println("");
         println("Commands:");
-        println("  init           Project initialize karo current dir mein");
-        println("  new <name>     Naya project banao");
+        println("  init [name]    Project initialize karo current dir mein");
+        println("  new <name>     Naya project banao (mkdir pehle karo)");
         println("  build          Project build karo");
         println("  run            Build + binary chalao");
         return 1;
@@ -82,7 +65,8 @@ function main(): int {
     set cmd: string = readArg(1);
 
     if (strcmp_ajeeb(cmd, "init") == 0) {
-        return cmdInit();
+        set projName: string = readArg(2);
+        return cmdInit(projName);
     }
 
     if (strcmp_ajeeb(cmd, "new") == 0) {
@@ -98,7 +82,7 @@ function main(): int {
         return runProject();
     }
 
-    println(str_concat("Unknown command: ", cmd));
+    println(str_concat("Error: '", str_concat(cmd, "' — yeh command nahi hai bhai!")));
     println("Usage: parth <init|new|build|run>");
     return 1;
 }
