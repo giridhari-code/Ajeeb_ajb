@@ -1,0 +1,7 @@
+function main(): int {
+    set name: string = "Ajeeb";
+    println("Namaste ");
+    println(name);
+    println("!\n");
+    return 0;
+}

@@ -544,6 +544,13 @@ void setInt(intptr_t buf, intptr_t off, intptr_t v) {
     *(int64_t*)((char*)buf + off) = v;
 }
 
+intptr_t allocBuf(intptr_t size) {
+    Arena* a = get_arena();
+    char* buf = (char*)arena_alloc(a, (size_t)size + 1);
+    memset(buf, 0, (size_t)size + 1);
+    return (intptr_t)buf;
+}
+
 AjeebValue ajeeb_charCode(AjeebValue s, AjeebValue idx) {
     if (s.tag != AJB_STRING || idx.tag != AJB_INT) return ajb_int(0);
     if ((size_t)idx.data.as_int >= s.string_len) return ajb_int(0);
@@ -620,6 +627,8 @@ intptr_t readFile(intptr_t path) {
     AjeebValue result = ajeeb_readFile(vpath);
     return (intptr_t)result.string;
 }
+
+int64_t getStr(int64_t ptr) { return ptr; }
 
 int64_t exec(int64_t cmd_ptr) {
     return system((const char*)cmd_ptr);

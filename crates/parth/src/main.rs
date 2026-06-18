@@ -331,6 +331,20 @@ fn cmd_run_file(args: &[String]) {
     }
 
     let root = find_ajeeb_root();
+    let parthi_bin = root.join("build/parthi");
+
+    // Check if ParthI is available
+    if parthi_bin.exists() {
+        println!("🚀 Running with ParthI (MIR interpreter)...\n");
+        let extra_args: Vec<&str> = args[1..].iter().map(|s| s.as_str()).collect();
+        let mut cmd = Command::new(&parthi_bin);
+        cmd.arg(file_path);
+        cmd.args(&extra_args);
+        let run_status = cmd.status().expect("Failed to run parthi");
+        std::process::exit(run_status.code().unwrap_or(0));
+    }
+
+    // Fallback: compile to native binary
     let stem = Path::new(file_path)
         .file_stem()
         .unwrap()
@@ -340,12 +354,10 @@ fn cmd_run_file(args: &[String]) {
 
     fs::create_dir_all("build").ok();
 
-    // Step 1 — Choose compiler: self-hosted or cargo
     let native = root.join("build/ajeeb_native");
     let output_c = "build/output.c";
 
     if native.exists() {
-        // Self-hosted path: compile to C, GCC, then run
         println!("⚡ Compiling with ajeeb_native...");
         let compile_status = Command::new(&native)
             .args([file_path, output_c])
@@ -376,7 +388,6 @@ fn cmd_run_file(args: &[String]) {
             std::process::exit(1);
         }
     } else {
-        // Use Rust compiler with auto-detected backend
         let status = Command::new("cargo")
             .args([
                 "run", "-p", "ajeeb-compiler", "--bin", "ajeeb_compiler",
@@ -391,7 +402,6 @@ fn cmd_run_file(args: &[String]) {
         }
     }
 
-    // Step 2 — Auto-execute the compiled binary
     if Path::new(&bin_path).exists() {
         println!("🚀 Running {}...\n", bin_path);
         let extra_args: Vec<&str> = args[1..].iter().map(|s| s.as_str()).collect();

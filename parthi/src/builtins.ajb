@@ -1,0 +1,154 @@
+// builtins.ajb — Built-in function dispatch for ParthI
+// All errors in Hinglish!
+
+function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
+function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
+function callArgAt(ext: int, idx: int): int {
+    set tmp: int = ext; set j: int = 0;
+    while (j < idx) { tmp = tmp / 1000; j = j + 1; }
+    return (tmp % 1000) - 1;
+}
+function callArgCount(ext: int): int {
+    set tmp: int = ext; set c: int = 0;
+    while (tmp > 0) { c = c + 1; tmp = tmp / 1000; }
+    return c;
+}
+function getRegInt(buf: string, i: int): int { return br(buf, i * 3 + 1); }
+function getRegType(buf: string, i: int): int { return br(buf, i * 3); }
+function getRegStr(buf: string, sp: string, i: int): string {
+    set pos: int = br(buf, i * 3 + 1);
+    set slen: int = br(buf, i * 3 + 2);
+    return substring(sp, pos, pos + slen);
+}
+function setRegInt(buf: string, i: int, val: int): void {
+    bw(buf, i * 3, 0); bw(buf, i * 3 + 1, val); bw(buf, i * 3 + 2, 0);
+}
+function setRegStr(buf: string, sp: string, i: int, val: string): void {
+    bw(buf, i * 3, 1);
+    set pos: int = br(buf, 9998);
+    set slen: int = len(val);
+    set j: int = 0;
+    while (j < slen) { strSet(sp, pos + j, charCode(val, j)); j = j + 1; }
+    bw(buf, i * 3 + 1, pos);
+    bw(buf, i * 3 + 2, slen);
+    bw(buf, 9998, pos + slen);
+}
+
+function isBuiltin(name: string): int {
+    if (strcmp_ajeeb(name, "println") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "itoa") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "len") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "readFile") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "writeFile") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "exec") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "mkdir") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "str_concat") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "substring") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "strcmp_ajeeb") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "charCode") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "indexOf") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "contains") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "getInt") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "setInt") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "writeAppend") == 0) { return 1; }
+    if (strcmp_ajeeb(name, "writeByte") == 0) { return 1; }
+    return 0;
+}
+
+function callBuiltin(regBuf: string, strPool: string, name: string, dst: int, ext: int): void {
+    set ac: int = callArgCount(ext);
+    set a0: int = -1; set a1: int = -1; set a2: int = -1;
+    if (ac >= 1) { a0 = callArgAt(ext, 0); }
+    if (ac >= 2) { a1 = callArgAt(ext, 1); }
+    if (ac >= 3) { a2 = callArgAt(ext, 2); }
+
+    if (strcmp_ajeeb(name, "println") == 0) {
+        if (a0 >= 0) { println(getRegStr(regBuf, strPool, a0)); }
+        setRegInt(regBuf, dst, 0); return;
+    }
+    if (strcmp_ajeeb(name, "itoa") == 0) {
+        if (a0 >= 0) { setRegStr(regBuf, strPool, dst, itoa(getRegInt(regBuf, a0))); }
+        return;
+    }
+    if (strcmp_ajeeb(name, "len") == 0) {
+        if (a0 >= 0) { setRegInt(regBuf, dst, len(getRegStr(regBuf, strPool, a0))); }
+        return;
+    }
+    if (strcmp_ajeeb(name, "readFile") == 0) {
+        if (a0 >= 0) { set s: string = readFile(getRegStr(regBuf, strPool, a0));
+            if (len(s) == 0) { setRegInt(regBuf, dst, 0); }
+            else { setRegStr(regBuf, strPool, dst, s); } }
+        return;
+    }
+    if (strcmp_ajeeb(name, "writeFile") == 0) {
+        if (a0 >= 0 && a1 >= 0) { writeFile(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1)); }
+        setRegInt(regBuf, dst, 0); return;
+    }
+    if (strcmp_ajeeb(name, "exec") == 0) {
+        if (a0 >= 0) { setRegInt(regBuf, dst, exec(getRegStr(regBuf, strPool, a0))); }
+        return;
+    }
+    if (strcmp_ajeeb(name, "mkdir") == 0) {
+        if (a0 >= 0) { setRegInt(regBuf, dst, mkdir(getRegStr(regBuf, strPool, a0))); }
+        return;
+    }
+    if (strcmp_ajeeb(name, "str_concat") == 0) {
+        if (a0 >= 0 && a1 >= 0) {
+            setRegStr(regBuf, strPool, dst, str_concat(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1)));
+        }
+        return;
+    }
+    if (strcmp_ajeeb(name, "substring") == 0) {
+        if (a0 >= 0 && a1 >= 0) {
+            set s: string = getRegStr(regBuf, strPool, a0);
+            set start: int = getRegInt(regBuf, a1);
+            if (ac >= 3) { setRegStr(regBuf, strPool, dst, substring(s, start, getRegInt(regBuf, a2))); }
+            else { setRegStr(regBuf, strPool, dst, substring(s, start, start + 1)); }
+        }
+        return;
+    }
+    if (strcmp_ajeeb(name, "strcmp_ajeeb") == 0) {
+        if (a0 >= 0 && a1 >= 0) {
+            setRegInt(regBuf, dst, strcmp_ajeeb(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1)));
+        }
+        return;
+    }
+    if (strcmp_ajeeb(name, "charCode") == 0) {
+        if (a0 >= 0 && a1 >= 0) {
+            setRegInt(regBuf, dst, charCode(getRegStr(regBuf, strPool, a0), getRegInt(regBuf, a1)));
+        }
+        return;
+    }
+    if (strcmp_ajeeb(name, "indexOf") == 0) {
+        if (a0 >= 0 && a1 >= 0) {
+            setRegInt(regBuf, dst, indexOf(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1)));
+        }
+        return;
+    }
+    if (strcmp_ajeeb(name, "contains") == 0) {
+        if (a0 >= 0 && a1 >= 0) {
+            setRegInt(regBuf, dst, contains(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1)));
+        }
+        return;
+    }
+    if (strcmp_ajeeb(name, "getInt") == 0) {
+        if (a0 >= 0 && a1 >= 0) {
+            setRegInt(regBuf, dst, getInt(getRegStr(regBuf, strPool, a0), getRegInt(regBuf, a1)));
+        }
+        return;
+    }
+    if (strcmp_ajeeb(name, "setInt") == 0) {
+        if (a0 >= 0 && a1 >= 0 && a2 >= 0) {
+            setInt(getRegStr(regBuf, strPool, a0), getRegInt(regBuf, a1), getRegInt(regBuf, a2));
+        }
+        setRegInt(regBuf, dst, 0); return;
+    }
+    if (strcmp_ajeeb(name, "writeAppend") == 0) {
+        if (a0 >= 0 && a1 >= 0) { writeAppend(getRegStr(regBuf, strPool, a0), getRegStr(regBuf, strPool, a1)); }
+        setRegInt(regBuf, dst, 0); return;
+    }
+    if (strcmp_ajeeb(name, "writeByte") == 0) {
+        if (a0 >= 0 && a1 >= 0) { writeByte(getRegStr(regBuf, strPool, a0), getRegInt(regBuf, a1)); }
+        setRegInt(regBuf, dst, 0); return;
+    }
+}

@@ -55,7 +55,8 @@ Key test files: test_simple, test_small, test_strings, test_math, test_for, test
 
 ## LLVM Codegen Runtime Functions
 Known to codegen: `getInt`, `setInt`, `getStateBuf`, `getOutbuf`, `charCode`, `len`, `strSet`, `writeFile`, `writeAppend`, `writeByte`, `itoa`, `println`, `readFile`, `strcmp_ajeeb`, `str_concat`, `substring`, `indexOf`, `contains`, `toUpperCase`, `toLowerCase`, `trim`, `startsWith`, `endsWith`, `replace`, `array_to_string`, `exec`, `mkdir`.
-NOT known: `chr`, `rdPos`, `wrPos` (evaluator-only).
+NOT known: `chr`, `rdPos`, `wrPos` (evaluator-only).  
+Added: `allocBuf` — `declare i64 @allocBuf(i64)`, allocates N+1 zero-initialized bytes from arena.
 
 ## exec() / mkdir() — Ajeeb Runtime Functions
 - `exec(cmd: string): int` — runs a shell command via `system()`, returns exit code

@@ -1382,10 +1382,11 @@ impl SemanticAnalyzer {
                 | "writeByte" | "wrPos" => TypeAnnot::Void,
                 "len" | "arr_len" | "charCode" | "strcmp" | "strcmp_ajeeb"
                 | "rdB" | "getInt" | "rdPos" | "indexOf"
-                | "isDigit" | "isAlpha" | "isAlphaNum" | "isSpace" => TypeAnnot::Int,
+                | "isDigit" | "isAlpha" | "isAlphaNum" | "isSpace"
+                | "exec" | "mkdir" => TypeAnnot::Int,
                 "chr_str" | "itoa" | "readFile" | "readArg" | "getStateBuf" | "getOutbuf"
                 | "substring" | "toUpperCase" | "toLowerCase"
-                | "trim" | "replace" | "str_concat" => TypeAnnot::String,
+                | "trim" | "replace" | "str_concat" | "getStr" => TypeAnnot::String,
                 "split" => TypeAnnot::Array(Box::new(TypeAnnot::String)),
                 "contains" | "startsWith" | "endsWith" => TypeAnnot::Bool,
                 "chr" => TypeAnnot::Int,
@@ -1617,6 +1618,9 @@ fn builtin_functions() -> Vec<(&'static str, TypeAnnot)> {
     ("replace", TypeAnnot::String),
     ("startsWith", TypeAnnot::Bool),
     ("endsWith", TypeAnnot::Bool),
+    ("getStr", TypeAnnot::String),
+    ("exec", TypeAnnot::Int),
+    ("mkdir", TypeAnnot::Int),
     ("getStateBuf", TypeAnnot::String),
     ("getOutbuf", TypeAnnot::String),
     ("rdB", TypeAnnot::Int),

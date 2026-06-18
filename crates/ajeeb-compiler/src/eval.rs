@@ -1018,6 +1018,30 @@ impl Evaluator {
                 }
                 RuntimeValue::Void
             }
+            "exec" => {
+                if let Some(RuntimeValue::String(cmd)) = arg_vals.first() {
+                    let cmd_clean: String = cmd.borrow().chars().take_while(|&c| c != '\0').collect();
+                    let exit_code = std::process::Command::new("sh")
+                        .args(["-c", &cmd_clean])
+                        .status()
+                        .map(|s| s.code().unwrap_or(-1))
+                        .unwrap_or(-1);
+                    return RuntimeValue::Int(exit_code as i64);
+                }
+                RuntimeValue::Int(0)
+            }
+            "mkdir" => {
+                if let Some(RuntimeValue::String(path)) = arg_vals.first() {
+                    let path_clean: String = path.borrow().chars().take_while(|&c| c != '\0').collect();
+                    let exit_code = std::process::Command::new("mkdir")
+                        .args(["-p", &path_clean])
+                        .status()
+                        .map(|s| s.code().unwrap_or(-1))
+                        .unwrap_or(-1);
+                    return RuntimeValue::Int(exit_code as i64);
+                }
+                RuntimeValue::Int(0)
+            }
             "readArg" => {
                 let idx = if let Some(RuntimeValue::Int(n)) = arg_vals.first() {
                     *n as usize
@@ -1155,6 +1179,14 @@ impl Evaluator {
                 } else {
                     RuntimeValue::Int(0)
                 }
+            }
+            "getStr" => {
+                if let Some(RuntimeValue::Int(ptr)) = arg_vals.first() {
+                    if let Some(s) = self.int_to_string.get(ptr) {
+                        return RuntimeValue::String(s.clone());
+                    }
+                }
+                RuntimeValue::String(Rc::new(RefCell::new(String::new())))
             }
             "rdPos" => {
                 if let Some(RuntimeValue::String(buf_name)) = arg_vals.first() {

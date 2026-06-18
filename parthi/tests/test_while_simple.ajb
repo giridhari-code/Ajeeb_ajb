@@ -1,0 +1,13 @@
+function main(): int {
+    println("start");
+    println("");
+    set i: int = 0;
+    while (i < 3) {
+        println("body");
+        println("");
+        i = i + 1;
+    }
+    println("end");
+    println("");
+    return 0;
+}

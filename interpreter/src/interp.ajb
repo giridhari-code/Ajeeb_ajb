@@ -1,0 +1,1052 @@
+// interp.ajb — Ajeeb Interpreter in Ajeeb
+// All errors in Hinglish!
+
+// ── Value types ──────────────────────────────────────────────────────
+function makeInt(v: int): int { return v; }
+
+// ── Buffer helpers ───────────────────────────────────────────────────
+function rdPos(buf: string): int { return getInt(buf, 0); }
+function wrPos(buf: string, v: int): void { setInt(buf, 0, v); }
+function rdSrc(buf: string): int { return getInt(buf, 32); }
+function wrSrc(buf: string, v: int): void { setInt(buf, 32, v); }
+
+// ── Token state ──────────────────────────────────────────────────────
+function tokType(buf: string): int { return getInt(buf, 48); }
+function tokVal(buf: string): int { return getInt(buf, 56); }
+function tokStrOff(buf: string): int { return getInt(buf, 64); }
+function tokStrLen(buf: string): int { return getInt(buf, 72); }
+function setTok(buf: string, typ: int, val: int, soff: int, slen: int): void {
+    setInt(buf, 48, typ); setInt(buf, 56, val);
+    setInt(buf, 64, soff); setInt(buf, 72, slen);
+}
+
+// ── Eval stack (starts at offset 200) ────────────────────────────────
+function evalPush(buf: string, typ: int, val: int): void {
+    set sp: int = getInt(buf, 24);
+    setInt(buf, sp, typ);
+    setInt(buf, sp + 8, val);
+    setInt(buf, 24, sp + 16);
+}
+function evalPop(buf: string, typPtr: string): int {
+    set sp: int = getInt(buf, 24);
+    if (sp <= 200) { setInt(typPtr, 0, 5); return 0; }
+    sp = sp - 16;
+    setInt(buf, 24, sp);
+    setInt(typPtr, 0, getInt(buf, sp));
+    return getInt(buf, sp + 8);
+}
+function evalClear(buf: string): void { setInt(buf, 24, 200); }
+
+// ── Arg stack (starts at 2000) ───────────────────────────────────────
+function argPush(buf: string, val: int): void {
+    set sp: int = getInt(buf, 136);
+    setInt(buf, sp, val);
+    setInt(buf, 136, sp + 8);
+}
+function argPop(buf: string): int {
+    set sp: int = getInt(buf, 136);
+    sp = sp - 8;
+    setInt(buf, 136, sp);
+    return getInt(buf, sp);
+}
+function argClear(buf: string): void { setInt(buf, 136, 2000); }
+
+// ── Scope (offset 80 = depth) ────────────────────────────────────────
+function scopeDepth(buf: string): int { return getInt(buf, 80); }
+function scopeSet(buf: string, v: int): void { setInt(buf, 80, v); }
+function scopeEnter(buf: string): void { scopeSet(buf, scopeDepth(buf) + 1); }
+function scopeExit(buf: string): void {
+    set depth: int = scopeDepth(buf);
+    set cnt: int = getInt(buf, 144);
+    set base: int = 6000;
+    while (cnt > 0) {
+        set sc: int = getInt(buf, base + (cnt - 1) * 40 + 32);
+        if (sc == depth) { cnt = cnt - 1; }
+        else { break; }
+    }
+    setInt(buf, 144, cnt);
+    scopeSet(buf, depth - 1);
+}
+
+// ── Variable table (starts at 6000, 40 bytes/entry) ──────────────────
+function varSet(src: string, buf: string, nameOff: int, nameLen: int, valType: int, valInt: int): void {
+    set cnt: int = getInt(buf, 144);
+    set base: int = 6000;
+    set depth: int = scopeDepth(buf);
+    set i: int = 0;
+    while (i < cnt) {
+        set off: int = getInt(buf, base + i * 40);
+        set len: int = getInt(buf, base + i * 40 + 8);
+        if (len == nameLen) {
+            set existing: string = substring(src, off, off + len);
+            set wanted: string = substring(src, nameOff, nameOff + nameLen);
+            if (strcmp_ajeeb(existing, wanted) == 0) {
+                setInt(buf, base + i * 40 + 16, valType);
+                setInt(buf, base + i * 40 + 24, valInt);
+                return;
+            }
+        }
+        i = i + 1;
+    }
+    set off2: int = base + cnt * 40;
+    setInt(buf, off2, nameOff);
+    setInt(buf, off2 + 8, nameLen);
+    setInt(buf, off2 + 16, valType);
+    setInt(buf, off2 + 24, valInt);
+    setInt(buf, off2 + 32, depth);
+    setInt(buf, 144, cnt + 1);
+}
+function varGet(src: string, buf: string, nameOff: int, nameLen: int, typPtr: string): int {
+    set cnt: int = getInt(buf, 144);
+    set base: int = 6000;
+    set i: int = 0;
+    while (i < cnt) {
+        set off: int = getInt(buf, base + i * 40);
+        set len: int = getInt(buf, base + i * 40 + 8);
+        if (len == nameLen) {
+            set existing: string = substring(src, off, off + len);
+            set wanted: string = substring(src, nameOff, nameOff + nameLen);
+            if (strcmp_ajeeb(existing, wanted) == 0) {
+                setInt(typPtr, 0, getInt(buf, base + i * 40 + 16));
+                return getInt(buf, base + i * 40 + 24);
+            }
+        }
+        i = i + 1;
+    }
+    setInt(typPtr, 0, 5);
+    return 0;
+}
+
+// ── Function table (starts at 3000, 32 bytes/entry) ──────────────────
+function fnCount(buf: string): int { return getInt(buf, 16); }
+function fnAdd(buf: string, nameOff: int, nameLen: int, bodyPos: int, paramCount: int): void {
+    set cnt: int = fnCount(buf);
+    set base: int = 3000 + cnt * 32;
+    setInt(buf, base, nameOff);
+    setInt(buf, base + 8, nameLen);
+    setInt(buf, base + 16, bodyPos);
+    setInt(buf, base + 24, paramCount);
+    setInt(buf, 16, cnt + 1);
+}
+function fnFind(src: string, buf: string, nameOff: int, nameLen: int, outBody: string): int {
+    set cnt: int = fnCount(buf);
+    set i: int = 0;
+    while (i < cnt) {
+        set off: int = getInt(buf, 3000 + i * 32);
+        set len: int = getInt(buf, 3000 + i * 32 + 8);
+        if (len == nameLen) {
+            set existing: string = substring(src, off, off + len);
+            set wanted: string = substring(src, nameOff, nameOff + nameLen);
+            if (strcmp_ajeeb(existing, wanted) == 0) {
+                setInt(outBody, 0, getInt(buf, 3000 + i * 32 + 16));
+                return getInt(buf, 3000 + i * 32 + 24);
+            }
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// ── State save/restore ───────────────────────────────────────────────
+function saveState(buf: string): void {
+    setInt(buf, 8, getInt(buf, 0));
+    setInt(buf, 88, getInt(buf, 48));
+    setInt(buf, 96, getInt(buf, 56));
+    setInt(buf, 104, getInt(buf, 64));
+    setInt(buf, 112, getInt(buf, 72));
+}
+function restoreState(buf: string): void {
+    setInt(buf, 0, getInt(buf, 8));
+    setInt(buf, 48, getInt(buf, 88));
+    setInt(buf, 56, getInt(buf, 96));
+    setInt(buf, 64, getInt(buf, 104));
+    setInt(buf, 72, getInt(buf, 112));
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// LEXER
+// ══════════════════════════════════════════════════════════════════════
+
+function chr(s: string, p: int): int { return charCode(s, p); }
+
+function skipWS(src: string, buf: string): void {
+    set pos: int = rdPos(buf);
+    set done: int = 0;
+    while (done == 0) {
+        set c: int = chr(src, pos);
+        if (c == 32 || c == 10 || c == 13 || c == 9) { pos = pos + 1; }
+        else if (c == 47 && chr(src, pos+1) == 47) {
+            pos = pos + 2;
+            while (chr(src, pos) != 10 && chr(src, pos) != 0) { pos = pos + 1; }
+        }
+        else if (c == 47 && chr(src, pos+1) == 42) {
+            pos = pos + 2;
+            while (1) {
+                if (chr(src, pos) == 0) { break; }
+                if (chr(src, pos) == 42 && chr(src, pos+1) == 47) { pos = pos + 2; break; }
+                pos = pos + 1;
+            }
+        }
+        else { done = 1; }
+    }
+    wrPos(buf, pos);
+}
+
+function matchKwd(src: string, buf: string, off: int, len: int): int {
+    set kw: string = substring(src, off, off + len);
+    if (strcmp_ajeeb(kw, "set") == 0) { return 4; }
+    else if (strcmp_ajeeb(kw, "const") == 0) { return 5; }
+    else if (strcmp_ajeeb(kw, "if") == 0) { return 6; }
+    else if (strcmp_ajeeb(kw, "else") == 0) { return 7; }
+    else if (strcmp_ajeeb(kw, "while") == 0) { return 8; }
+    else if (strcmp_ajeeb(kw, "function") == 0) { return 9; }
+    else if (strcmp_ajeeb(kw, "fn") == 0) { return 9; }
+    else if (strcmp_ajeeb(kw, "return") == 0) { return 10; }
+    else if (strcmp_ajeeb(kw, "true") == 0) { return 11; }
+    else if (strcmp_ajeeb(kw, "false") == 0) { return 12; }
+    else if (strcmp_ajeeb(kw, "int") == 0) { return 13; }
+    else if (strcmp_ajeeb(kw, "string") == 0) { return 14; }
+    else if (strcmp_ajeeb(kw, "bool") == 0) { return 15; }
+    else if (strcmp_ajeeb(kw, "void") == 0) { return 16; }
+    else if (strcmp_ajeeb(kw, "class") == 0) { return 42; }
+    else if (strcmp_ajeeb(kw, "self") == 0) { return 43; }
+    else if (strcmp_ajeeb(kw, "new") == 0) { return 44; }
+    else if (strcmp_ajeeb(kw, "break") == 0) { return 45; }
+    else if (strcmp_ajeeb(kw, "continue") == 0) { return 46; }
+    else if (strcmp_ajeeb(kw, "for") == 0) { return 47; }
+    return 1;
+}
+
+function readString(src: string, buf: string): void {
+    set pos: int = rdPos(buf);
+    set strStart: int = pos;
+    pos = pos + 1;
+    while (chr(src, pos) != 34 && chr(src, pos) != 0) {
+        if (chr(src, pos) == 92 && chr(src, pos+1) != 0) { pos = pos + 1; }
+        pos = pos + 1;
+    }
+    if (chr(src, pos) == 34) { pos = pos + 1; }
+    setTok(buf, 3, 0, strStart + 1, pos - strStart - 2);
+    wrPos(buf, pos);
+}
+
+function readNumber(src: string, buf: string): void {
+    set pos: int = rdPos(buf);
+    set val: int = 0;
+    while (1) {
+        set c: int = chr(src, pos);
+        if (c >= 48 && c <= 57) { val = val * 10 + (c - 48); pos = pos + 1; }
+        else { break; }
+    }
+    setTok(buf, 2, val, 0, 0);
+    wrPos(buf, pos);
+}
+
+function nextTok(src: string, buf: string): void {
+    skipWS(src, buf);
+    set pos: int = rdPos(buf);
+    set c: int = chr(src, pos);
+    if (c == 0) { setTok(buf, 0, 0, 0, 0); return; }
+    if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95) {
+        set start: int = pos;
+        while (1) {
+            c = chr(src, pos);
+            if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95) { pos = pos + 1; }
+            else { break; }
+        }
+        set kw: int = matchKwd(src, buf, start, pos - start);
+        setTok(buf, kw, 0, start, pos - start);
+        wrPos(buf, pos);
+        return;
+    }
+    if (c >= 48 && c <= 57) { readNumber(src, buf); return; }
+    if (c == 34) { readString(src, buf); return; }
+    if (c == 45 && chr(src, pos+1) == 62) { setTok(buf, 33, 0, 0, 0); wrPos(buf, pos+2); return; }
+    if (c == 61 && chr(src, pos+1) == 61) { setTok(buf, 21, 0, 0, 0); wrPos(buf, pos+2); return; }
+    if (c == 33 && chr(src, pos+1) == 61) { setTok(buf, 22, 0, 0, 0); wrPos(buf, pos+2); return; }
+    if (c == 38 && chr(src, pos+1) == 38) { setTok(buf, 27, 0, 0, 0); wrPos(buf, pos+2); return; }
+    if (c == 124 && chr(src, pos+1) == 124) { setTok(buf, 28, 0, 0, 0); wrPos(buf, pos+2); return; }
+    if (c == 60 && chr(src, pos+1) == 61) { setTok(buf, 25, 0, 0, 0); wrPos(buf, pos+2); return; }
+    if (c == 62 && chr(src, pos+1) == 61) { setTok(buf, 26, 0, 0, 0); wrPos(buf, pos+2); return; }
+    if (c == 43) { setTok(buf, 17, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 45) { setTok(buf, 18, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 42) { setTok(buf, 19, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 47) { setTok(buf, 20, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 61) { setTok(buf, 41, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 33) { setTok(buf, 29, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 60) { setTok(buf, 23, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 62) { setTok(buf, 24, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 59) { setTok(buf, 30, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 58) { setTok(buf, 31, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 44) { setTok(buf, 32, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 46) { setTok(buf, 34, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 40) { setTok(buf, 35, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 41) { setTok(buf, 36, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 123) { setTok(buf, 37, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 125) { setTok(buf, 38, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 91) { setTok(buf, 39, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 93) { setTok(buf, 40, 0, 0, 0); wrPos(buf, pos+1); return; }
+    if (c == 38 || c == 124) { setTok(buf, 0, 0, 0, 0); return; }
+    setTok(buf, 0, c, 0, 0);
+    wrPos(buf, pos+1);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// EXPRESSION EVALUATOR
+// ══════════════════════════════════════════════════════════════════════
+
+function expectSemi(src: string, buf: string): void {
+    if (tokType(buf) == 30) { nextTok(src, buf); }
+}
+function skipBlock(src: string, buf: string): void {
+    set depth: int = 1;
+    while (depth > 0 && tokType(buf) != 0) {
+        nextTok(src, buf);
+        if (tokType(buf) == 37) { depth = depth + 1; }
+        else if (tokType(buf) == 38) { depth = depth - 1; }
+    }
+    if (tokType(buf) == 38) { nextTok(src, buf); }
+}
+
+function callBuiltin(src: string, buf: string, idOff: int, idLen: int, argCount: int): int {
+    set name: string = substring(src, idOff, idOff + idLen);
+    set sp: string = getOutbuf();
+
+    if (strcmp_ajeeb(name, "println") == 0) {
+        if (argCount >= 1) {
+            setInt(sp, 0, 0);
+            set val: int = evalPop(buf, sp);
+            set typ: int = getInt(sp, 0);
+            if (typ == 0) { println(itoa(val)); }
+            else if (typ == 1) { set s: string = getStr(val); println(s); }
+            else { println(itoa(val)); }
+        } else { println(""); }
+        evalPush(buf, 3, 0);
+        return 1;
+    }
+    if (strcmp_ajeeb(name, "len") == 0) {
+        if (argCount >= 1) {
+            setInt(sp, 0, 0);
+            set val: int = evalPop(buf, sp);
+            set s: string = getStr(val);
+            evalPush(buf, 0, len(s));
+        } else { evalPush(buf, 0, 0); }
+        return 1;
+    }
+    if (strcmp_ajeeb(name, "itoa") == 0) {
+        if (argCount >= 1) {
+            setInt(sp, 0, 0);
+            set val: int = evalPop(buf, sp);
+            evalPush(buf, 1, itoa(val));
+        } else { evalPush(buf, 1, "0"); }
+        return 1;
+    }
+    if (strcmp_ajeeb(name, "readFile") == 0) {
+        if (argCount >= 1) {
+            setInt(sp, 0, 0);
+            set val: int = evalPop(buf, sp);
+            set path: string = getStr(val);
+            evalPush(buf, 1, readFile(path));
+        } else { evalPush(buf, 1, ""); }
+        return 1;
+    }
+    if (strcmp_ajeeb(name, "writeFile") == 0) {
+        if (argCount >= 2) {
+            setInt(sp, 0, 0);
+            set content: int = evalPop(buf, sp);
+            set typC: int = getInt(sp, 0);
+            setInt(sp, 0, 0);
+            set path: int = evalPop(buf, sp);
+            set typP: int = getInt(sp, 0);
+            set contentS: string = ""; set pathS: string = "";
+            if (typC == 1) { contentS = getStr(content); }
+            if (typP == 1) { pathS = getStr(path); }
+            writeFile(pathS, contentS);
+        }
+        evalPush(buf, 3, 0);
+        return 1;
+    }
+    if (strcmp_ajeeb(name, "exec") == 0) {
+        if (argCount >= 1) {
+            setInt(sp, 0, 0);
+            set val: int = evalPop(buf, sp);
+            set cmd: string = getStr(val);
+            evalPush(buf, 0, exec(cmd));
+        } else { evalPush(buf, 0, 0); }
+        return 1;
+    }
+    if (strcmp_ajeeb(name, "mkdir") == 0) {
+        if (argCount >= 1) {
+            setInt(sp, 0, 0);
+            set val: int = evalPop(buf, sp);
+            set path: string = getStr(val);
+            evalPush(buf, 0, mkdir(path));
+        } else { evalPush(buf, 0, 0); }
+        return 1;
+    }
+    if (strcmp_ajeeb(name, "strcmp_ajeeb") == 0) {
+        if (argCount >= 2) {
+            setInt(sp, 0, 0);
+            set b: int = evalPop(buf, sp);
+            setInt(sp, 0, 0);
+            set a: int = evalPop(buf, sp);
+            set aS: string = getStr(a); set bS: string = getStr(b);
+            evalPush(buf, 0, strcmp_ajeeb(aS, bS));
+        } else { evalPush(buf, 0, 0); }
+        return 1;
+    }
+    if (strcmp_ajeeb(name, "str_concat") == 0) {
+        if (argCount >= 2) {
+            setInt(sp, 0, 0);
+            set b: int = evalPop(buf, sp);
+            setInt(sp, 0, 0);
+            set a: int = evalPop(buf, sp);
+            set aS: string = getStr(a); set bS: string = getStr(b);
+            evalPush(buf, 1, str_concat(aS, bS));
+        } else { evalPush(buf, 1, ""); }
+        return 1;
+    }
+    if (strcmp_ajeeb(name, "substring") == 0) {
+        if (argCount >= 3) {
+            setInt(sp, 0, 0);
+            set end: int = evalPop(buf, sp);
+            setInt(sp, 0, 0);
+            set start: int = evalPop(buf, sp);
+            setInt(sp, 0, 0);
+            set s: int = evalPop(buf, sp);
+            set sS: string = getStr(s);
+            evalPush(buf, 1, substring(sS, start, end));
+        } else { evalPush(buf, 1, ""); }
+        return 1;
+    }
+    if (strcmp_ajeeb(name, "charCode") == 0) {
+        if (argCount >= 2) {
+            setInt(sp, 0, 0);
+            set p: int = evalPop(buf, sp);
+            setInt(sp, 0, 0);
+            set s: int = evalPop(buf, sp);
+            set sS: string = getStr(s);
+            evalPush(buf, 0, charCode(sS, p));
+        } else { evalPush(buf, 0, 0); }
+        return 1;
+    }
+    if (strcmp_ajeeb(name, "indexOf") == 0) {
+        if (argCount >= 2) {
+            setInt(sp, 0, 0);
+            set search: int = evalPop(buf, sp);
+            setInt(sp, 0, 0);
+            set s: int = evalPop(buf, sp);
+            set sS: string = getStr(s); set searchS: string = getStr(search);
+            evalPush(buf, 0, indexOf(sS, searchS));
+        } else { evalPush(buf, 0, 0); }
+        return 1;
+    }
+    if (strcmp_ajeeb(name, "contains") == 0) {
+        if (argCount >= 2) {
+            setInt(sp, 0, 0);
+            set search: int = evalPop(buf, sp);
+            setInt(sp, 0, 0);
+            set s: int = evalPop(buf, sp);
+            set sS: string = getStr(s); set searchS: string = getStr(search);
+            if (contains(sS, searchS)) { evalPush(buf, 0, 1); } else { evalPush(buf, 0, 0); }
+        } else { evalPush(buf, 0, 0); }
+        return 1;
+    }
+    return 0;
+}
+
+// ── Expression parsing ───────────────────────────────────────────────
+function parseUnary(src: string, buf: string): void {
+    if (tokType(buf) == 18) {
+        nextTok(src, buf);
+        parseUnary(src, buf);
+        set sp: string = getOutbuf();
+        setInt(sp, 0, 0);
+        set val: int = evalPop(buf, sp);
+        set typ: int = getInt(sp, 0);
+        evalPush(buf, typ, -val);
+    } else if (tokType(buf) == 29) {
+        nextTok(src, buf);
+        parseUnary(src, buf);
+        set sp: string = getOutbuf();
+        setInt(sp, 0, 0);
+        set val: int = evalPop(buf, sp);
+        if (val == 0) { evalPush(buf, 0, 1); }
+        else { evalPush(buf, 0, 0); }
+    } else {
+        parsePrimary(src, buf);
+    }
+}
+
+function parseMul(src: string, buf: string): void {
+    set op: int = 0; set sp: string = getOutbuf(); set val: int = 0; set right: int = 0; set left: int = 0;
+    parseUnary(src, buf);
+    while (tokType(buf) == 19 || tokType(buf) == 20) {
+        op = tokType(buf);
+        nextTok(src, buf);
+        parseUnary(src, buf);
+        setInt(sp, 0, 0); right = evalPop(buf, sp);
+        setInt(sp, 0, 0); left = evalPop(buf, sp);
+        if (op == 19) { evalPush(buf, 0, left * right); }
+        else {
+            if (right == 0) { println("Bhaio! Zero se divide nahi kar sakte."); evalPush(buf, 0, 0); }
+            else { evalPush(buf, 0, left / right); }
+        }
+    }
+}
+
+function parseAdd(src: string, buf: string): void {
+    set op: int = 0; set sp: string = getOutbuf(); set right: int = 0; set left: int = 0; set rt: int = 0; set lt: int = 0;
+    parseMul(src, buf);
+    while (tokType(buf) == 17 || tokType(buf) == 18) {
+        op = tokType(buf);
+        nextTok(src, buf);
+        parseMul(src, buf);
+        setInt(sp, 0, 0); right = evalPop(buf, sp); rt = getInt(sp, 0);
+        setInt(sp, 0, 0); left = evalPop(buf, sp); lt = getInt(sp, 0);
+        if (op == 17 && lt == 1 && rt == 1) { evalPush(buf, 1, str_concat(left, right)); }
+        else if (op == 17) { evalPush(buf, 0, left + right); }
+        else { evalPush(buf, 0, left - right); }
+    }
+}
+
+function parseCmp(src: string, buf: string): void {
+    set op: int = 0; set sp: string = getOutbuf(); set right: int = 0; set left: int = 0;
+    set cmpR: int = 0;
+    parseAdd(src, buf);
+    while (tokType(buf) == 23 || tokType(buf) == 24 || tokType(buf) == 25 || tokType(buf) == 26) {
+        op = tokType(buf);
+        nextTok(src, buf);
+        parseAdd(src, buf);
+        setInt(sp, 0, 0); right = evalPop(buf, sp);
+        setInt(sp, 0, 0); left = evalPop(buf, sp);
+        cmpR = 0;
+        if (op == 23) { if (left < right) { cmpR = 1; } }
+        else if (op == 24) { if (left > right) { cmpR = 1; } }
+        else if (op == 25) { if (left <= right) { cmpR = 1; } }
+        else if (op == 26) { if (left >= right) { cmpR = 1; } }
+        evalPush(buf, 0, cmpR);
+    }
+}
+
+function parseEq(src: string, buf: string): void {
+    set op: int = 0; set sp: string = getOutbuf(); set right: int = 0; set left: int = 0;
+    set rt: int = 0; set lt: int = 0; set eqR: int = 0;
+    parseCmp(src, buf);
+    while (tokType(buf) == 21 || tokType(buf) == 22) {
+        op = tokType(buf);
+        nextTok(src, buf);
+        parseCmp(src, buf);
+        setInt(sp, 0, 0); right = evalPop(buf, sp); rt = getInt(sp, 0);
+        setInt(sp, 0, 0); left = evalPop(buf, sp); lt = getInt(sp, 0);
+        eqR = 0;
+        if (op == 21) {
+            if (lt == 1 && rt == 1) { if (strcmp_ajeeb(left, right) == 0) { eqR = 1; } }
+            else { if (left == right) { eqR = 1; } }
+        } else {
+            if (lt == 1 && rt == 1) { if (strcmp_ajeeb(left, right) != 0) { eqR = 1; } }
+            else { if (left != right) { eqR = 1; } }
+        }
+        evalPush(buf, 0, eqR);
+    }
+}
+
+function parseAnd(src: string, buf: string): void {
+    set sp: string = getOutbuf(); set right: int = 0; set left: int = 0;
+    parseEq(src, buf);
+    while (tokType(buf) == 27) {
+        nextTok(src, buf);
+        parseEq(src, buf);
+        setInt(sp, 0, 0); right = evalPop(buf, sp);
+        setInt(sp, 0, 0); left = evalPop(buf, sp);
+        if (left != 0 && right != 0) { evalPush(buf, 0, 1); }
+        else { evalPush(buf, 0, 0); }
+    }
+}
+
+function parseOr(src: string, buf: string): void {
+    set sp: string = getOutbuf(); set right: int = 0; set left: int = 0;
+    parseAnd(src, buf);
+    while (tokType(buf) == 28) {
+        nextTok(src, buf);
+        parseAnd(src, buf);
+        setInt(sp, 0, 0); right = evalPop(buf, sp);
+        setInt(sp, 0, 0); left = evalPop(buf, sp);
+        if (left != 0) { evalPush(buf, 0, 1); }
+        else if (right != 0) { evalPush(buf, 0, 1); }
+        else { evalPush(buf, 0, 0); }
+    }
+}
+
+function parseAssign(src: string, buf: string): void {
+    parseOr(src, buf);
+    if (tokType(buf) == 41) {
+        set sp: string = getOutbuf();
+        set peekVal: int = getInt(buf, 152);
+        set peekTyp: int = getInt(buf, 160);
+        setInt(sp, 0, 0);
+        evalPop(buf, sp);
+        nextTok(src, buf);
+        parseExpr(src, buf);
+        setInt(sp, 0, 0);
+        set rhsVal: int = evalPop(buf, sp);
+        set rhsType: int = getInt(sp, 0);
+        set savedOff: int = peekVal;
+        set savedLen: int = peekTyp;
+        varSet(src, buf, savedOff, savedLen, rhsType, rhsVal);
+        evalPush(buf, rhsType, rhsVal);
+    }
+}
+
+function parsePrimary(src: string, buf: string): void {
+    set sp: string = getOutbuf();
+    set idOff: int = 0; set idLen: int = 0; set argCount: int = 0;
+    set off: int = 0; set slen: int = 0; set strVal: string = "";
+    set isBuiltin: int = 0;
+
+    if (tokType(buf) == 2) {
+        evalPush(buf, 0, tokVal(buf));
+        nextTok(src, buf);
+    } else if (tokType(buf) == 3) {
+        off = tokStrOff(buf); slen = tokStrLen(buf);
+        strVal = substring(src, off, off + slen);
+        evalPush(buf, 1, strVal);
+        nextTok(src, buf);
+    } else if (tokType(buf) == 11) {
+        evalPush(buf, 0, 1);
+        nextTok(src, buf);
+    } else if (tokType(buf) == 12) {
+        evalPush(buf, 0, 0);
+        nextTok(src, buf);
+    } else if (tokType(buf) == 35) {
+        nextTok(src, buf);
+        parseExpr(src, buf);
+        if (tokType(buf) == 36) { nextTok(src, buf); }
+    } else if (tokType(buf) == 1) {
+        idOff = tokStrOff(buf); idLen = tokStrLen(buf);
+        nextTok(src, buf);
+        if (tokType(buf) == 35) {
+            nextTok(src, buf); argCount = 0;
+            while (tokType(buf) != 36 && tokType(buf) != 0) {
+                parseExpr(src, buf); argCount = argCount + 1;
+                if (tokType(buf) == 32) { nextTok(src, buf); }
+            }
+            if (tokType(buf) == 36) { nextTok(src, buf); }
+            isBuiltin = callBuiltin(src, buf, idOff, idLen, argCount);
+            if (isBuiltin == 0) {
+                // User function call
+                set bodyPosPtr: string = getOutbuf();
+                setInt(bodyPosPtr, 0, 0);
+                set foundParams: int = fnFind(src, buf, idOff, idLen, bodyPosPtr);
+                set bodyPos: int = getInt(bodyPosPtr, 0);
+                if (foundParams < 0) {
+                    println("Bhai! Function define nahi hai!");
+                    evalPush(buf, 0, 0); return;
+                }
+                // Pop args into arg stack
+                set j: int = 0;
+                while (j < argCount) {
+                    setInt(sp, 0, 0);
+                    set av: int = evalPop(buf, sp);
+                    set at: int = getInt(sp, 0);
+                    argPush(buf, av); argPush(buf, at);
+                    j = j + 1;
+                }
+                saveState(buf);
+                wrPos(buf, bodyPos);
+                nextTok(src, buf);
+                if (tokType(buf) == 35) {
+                    nextTok(src, buf);
+                    while (tokType(buf) != 36 && tokType(buf) != 0) {
+                        if (tokType(buf) == 1) {
+                            set pOff: int = tokStrOff(buf); set pLen: int = tokStrLen(buf);
+                            nextTok(src, buf);
+                            if (tokType(buf) == 31) { nextTok(src, buf); nextTok(src, buf); }
+                            set at2: int = argPop(buf); set av2: int = argPop(buf);
+                            varSet(src, buf, pOff, pLen, at2, av2);
+                        }
+                        if (tokType(buf) == 32) { nextTok(src, buf); }
+                    }
+                    if (tokType(buf) == 36) { nextTok(src, buf); }
+                }
+                if (tokType(buf) == 31) { nextTok(src, buf); if (tokType(buf) >= 13 && tokType(buf) <= 16) { nextTok(src, buf); } }
+                setInt(buf, 120, 5); scopeEnter(buf); nextTok(src, buf);
+                while (tokType(buf) != 38 && tokType(buf) != 0) {
+                    parseStmt(src, buf);
+                    set retType: int = getInt(buf, 120);
+                    if (retType != 5) { break; }
+                }
+                scopeExit(buf);
+                while (tokType(buf) != 38 && tokType(buf) != 0) { nextTok(src, buf); }
+                if (tokType(buf) == 38) { nextTok(src, buf); }
+                set retType2: int = getInt(buf, 120);
+                set retVal2: int = getInt(buf, 128);
+                if (retType2 != 5) {
+                    evalPush(buf, retType2, retVal2);
+                    setInt(buf, 120, 5); setInt(buf, 128, 0);
+                } else { evalPush(buf, 3, 0); }
+                restoreState(buf);
+            }
+        } else {
+            setInt(buf, 152, idOff); setInt(buf, 160, idLen);
+            setInt(sp, 0, 0);
+            set val: int = varGet(src, buf, idOff, idLen, sp);
+            set typ: int = getInt(sp, 0);
+            if (typ == 5) { println("Bhai ye variable exist nahi karta!"); evalPush(buf, 0, 0); }
+            else { evalPush(buf, typ, val); }
+        }
+    } else if (tokType(buf) == 39) {
+        nextTok(src, buf); evalPush(buf, 4, 0);
+        while (tokType(buf) != 40 && tokType(buf) != 0) {
+            parseExpr(src, buf);
+            if (tokType(buf) == 32) { nextTok(src, buf); }
+        }
+        if (tokType(buf) == 40) { nextTok(src, buf); }
+    } else {
+        println(str_concat("Expression mein unexpected token: ", itoa(tokType(buf))));
+        evalPush(buf, 0, 0);
+    }
+    // Postfix
+    while (tokType(buf) == 34 || tokType(buf) == 39) {
+        if (tokType(buf) == 34) {
+            nextTok(src, buf);
+            if (tokType(buf) == 1) {
+                nextTok(src, buf);
+                if (tokType(buf) == 35) {
+                    nextTok(src, buf);
+                    while (tokType(buf) != 36 && tokType(buf) != 0) {
+                        parseExpr(src, buf);
+                        if (tokType(buf) == 32) { nextTok(src, buf); }
+                    }
+                    if (tokType(buf) == 36) { nextTok(src, buf); }
+                    println("Method calls abhi supported nahi hain.");
+                    evalPush(buf, 0, 0);
+                } else { println("Field access abhi supported nahi hai."); evalPush(buf, 0, 0); }
+            }
+        } else if (tokType(buf) == 39) {
+            nextTok(src, buf); parseExpr(src, buf);
+            if (tokType(buf) == 40) { nextTok(src, buf); }
+            println("Array indexing abhi supported nahi hai.");
+        }
+    }
+}
+
+function parseExpr(src: string, buf: string): void {
+    parseAssign(src, buf);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// STATEMENT EXECUTOR
+// ══════════════════════════════════════════════════════════════════════
+
+function skipBlockOrStmt(src: string, buf: string): void {
+    if (tokType(buf) == 37) { nextTok(src, buf); skipBlock(src, buf); }
+    else { parseStmt(src, buf); }
+}
+
+function parseStmt(src: string, buf: string): void {
+    set tt: int = tokType(buf);
+    set sp: string = getOutbuf();
+    set idOff: int = 0; set idLen: int = 0; set initVal: int = 0; set initType: int = 0;
+    set condVal: int = 0; set condPos: int = 0; set savedTT: int = 0; set savedTV: int = 0;
+    set savedSOff: int = 0; set savedSLen: int = 0; set condVal2: int = 0;
+    set fnOff: int = 0; set fnLen: int = 0; set pCount: int = 0; set retVal: int = 0; set retType: int = 0;
+    set cv2: int = 0; set condPos2: int = 0; set incPos: int = 0;
+    set afterLoopPos: int = 0;
+    set incTT: int = 0; set incTV: int = 0; set incSOff: int = 0; set incSLen: int = 0;
+
+    if (tt == 4 || tt == 5) {
+        nextTok(src, buf);
+        if (tokType(buf) == 1) {
+            idOff = tokStrOff(buf); idLen = tokStrLen(buf);
+            nextTok(src, buf);
+            if (tokType(buf) == 31) { nextTok(src, buf); nextTok(src, buf); }
+            if (tokType(buf) == 41) {
+                nextTok(src, buf);
+                parseExpr(src, buf);
+                setInt(sp, 0, 0); initVal = evalPop(buf, sp); initType = getInt(sp, 0);
+                varSet(src, buf, idOff, idLen, initType, initVal);
+            } else { varSet(src, buf, idOff, idLen, 0, 0); }
+            expectSemi(src, buf);
+        }
+    } else if (tt == 6) {
+        nextTok(src, buf);
+        if (tokType(buf) == 35) { nextTok(src, buf); }
+        parseExpr(src, buf);
+        if (tokType(buf) == 36) { nextTok(src, buf); }
+        setInt(sp, 0, 0); condVal = evalPop(buf, sp);
+        if (condVal != 0) {
+            if (tokType(buf) == 37) { nextTok(src, buf); scopeEnter(buf);
+                while (tokType(buf) != 38 && tokType(buf) != 0) { parseStmt(src, buf); }
+                scopeExit(buf); if (tokType(buf) == 38) { nextTok(src, buf); }
+            } else { parseStmt(src, buf); }
+            if (tokType(buf) == 7) { nextTok(src, buf); skipBlockOrStmt(src, buf); }
+        } else {
+            skipBlockOrStmt(src, buf);
+            if (tokType(buf) == 7) {
+                nextTok(src, buf);
+                if (tokType(buf) == 6) { parseStmt(src, buf); }
+                else {
+                    if (tokType(buf) == 37) { nextTok(src, buf); scopeEnter(buf);
+                        while (tokType(buf) != 38 && tokType(buf) != 0) { parseStmt(src, buf); }
+                        scopeExit(buf); if (tokType(buf) == 38) { nextTok(src, buf); }
+                    } else { parseStmt(src, buf); }
+                }
+            }
+        }
+    } else if (tt == 8) {
+        nextTok(src, buf);
+        if (tokType(buf) == 35) { nextTok(src, buf); }
+        condPos = rdPos(buf); savedTT = tokType(buf); savedTV = tokVal(buf);
+        savedSOff = tokStrOff(buf); savedSLen = tokStrLen(buf);
+        parseExpr(src, buf);
+        if (tokType(buf) == 36) { nextTok(src, buf); }
+        setInt(sp, 0, 0); condVal2 = evalPop(buf, sp);
+        while (condVal2 != 0) {
+            if (tokType(buf) == 37) { nextTok(src, buf); scopeEnter(buf);
+                while (tokType(buf) != 38 && tokType(buf) != 0) {
+                    if (tokType(buf) == 45) { nextTok(src, buf); expectSemi(src, buf); scopeExit(buf); if (tokType(buf) == 38) { nextTok(src, buf); } return; }
+                    if (tokType(buf) == 46) { nextTok(src, buf); expectSemi(src, buf); scopeExit(buf); if (tokType(buf) == 38) { nextTok(src, buf); } break; }
+                    parseStmt(src, buf);
+                } scopeExit(buf); if (tokType(buf) == 38) { nextTok(src, buf); }
+                if (afterLoopPos == 0) { afterLoopPos = rdPos(buf); }
+            } else { parseStmt(src, buf); afterLoopPos = rdPos(buf); }
+            wrPos(buf, condPos); setTok(buf, savedTT, savedTV, savedSOff, savedSLen);
+            parseExpr(src, buf);
+            if (tokType(buf) == 36) { nextTok(src, buf); }
+            setInt(sp, 0, 0); condVal2 = evalPop(buf, sp);
+        }
+        if (afterLoopPos != 0) { wrPos(buf, afterLoopPos); nextTok(src, buf); }
+    } else if (tt == 47) {
+        nextTok(src, buf);
+        if (tokType(buf) == 35) { nextTok(src, buf); }
+        if (tokType(buf) != 30) { parseStmt(src, buf); } else { nextTok(src, buf); }
+        condPos2 = rdPos(buf);
+        cv2 = 1;
+        if (tokType(buf) != 30) { parseExpr(src, buf); setInt(sp, 0, 0); cv2 = evalPop(buf, sp); }
+        if (tokType(buf) == 30) { nextTok(src, buf); }
+        incPos = rdPos(buf); incTT = tokType(buf); incTV = tokVal(buf);
+        incSOff = tokStrOff(buf); incSLen = tokStrLen(buf);
+        while (tokType(buf) != 36 && tokType(buf) != 0) { nextTok(src, buf); }
+        if (tokType(buf) == 36) { nextTok(src, buf); }
+        while (cv2 != 0) {
+            if (tokType(buf) == 37) { nextTok(src, buf); scopeEnter(buf);
+                while (tokType(buf) != 38 && tokType(buf) != 0) {
+                    if (tokType(buf) == 45) { nextTok(src, buf); expectSemi(src, buf); scopeExit(buf); if (tokType(buf) == 38) { nextTok(src, buf); } return; }
+                    if (tokType(buf) == 46) { nextTok(src, buf); expectSemi(src, buf); scopeExit(buf); if (tokType(buf) == 38) { nextTok(src, buf); } break; }
+                    parseStmt(src, buf);
+                } scopeExit(buf); if (tokType(buf) == 38) { nextTok(src, buf); }
+                if (afterLoopPos == 0) { afterLoopPos = rdPos(buf); }
+            } else { parseStmt(src, buf); afterLoopPos = rdPos(buf); }
+            wrPos(buf, incPos); setTok(buf, incTT, incTV, incSOff, incSLen);
+            parseExpr(src, buf);
+            if (tokType(buf) == 30) { nextTok(src, buf); }
+            wrPos(buf, condPos2);
+            parseExpr(src, buf);
+            if (tokType(buf) == 30) { nextTok(src, buf); }
+            setInt(sp, 0, 0); cv2 = evalPop(buf, sp);
+        }
+        if (afterLoopPos != 0) { wrPos(buf, afterLoopPos); nextTok(src, buf); }
+    } else if (tt == 9) {
+            nextTok(src, buf);
+            if (tokType(buf) == 1) {
+                fnOff = tokStrOff(buf); fnLen = tokStrLen(buf);
+                nextTok(src, buf); pCount = 0;
+            if (tokType(buf) == 35) { nextTok(src, buf);
+                while (tokType(buf) != 36 && tokType(buf) != 0) {
+                    if (tokType(buf) == 1) { pCount = pCount + 1; nextTok(src, buf);
+                        if (tokType(buf) == 31) { nextTok(src, buf); nextTok(src, buf); } }
+                    if (tokType(buf) == 32) { nextTok(src, buf); }
+                }
+                if (tokType(buf) == 36) { nextTok(src, buf); }
+            }
+            if (tokType(buf) == 31) { nextTok(src, buf); if (tokType(buf) >= 13 && tokType(buf) <= 16) { nextTok(src, buf); } }
+            if (tokType(buf) == 37) { nextTok(src, buf); skipBlock(src, buf); }
+        }
+    } else if (tt == 10) {
+        nextTok(src, buf);
+        if (tokType(buf) != 30 && tokType(buf) != 0) {
+            parseExpr(src, buf);
+            setInt(sp, 0, 0); retVal = evalPop(buf, sp); retType = getInt(sp, 0);
+            setInt(buf, 120, retType); setInt(buf, 128, retVal);
+        } else { setInt(buf, 120, 3); setInt(buf, 128, 0); }
+        if (tokType(buf) == 30) { nextTok(src, buf); }
+    } else if (tt == 42) {
+        nextTok(src, buf);
+        if (tokType(buf) == 1) { nextTok(src, buf); }
+        if (tokType(buf) == 37) { nextTok(src, buf);
+            while (tokType(buf) != 38 && tokType(buf) != 0) { parseStmt(src, buf); }
+            if (tokType(buf) == 38) { nextTok(src, buf); }
+        }
+    } else {
+        parseExpr(src, buf); expectSemi(src, buf);
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// PASS 1: Collect function definitions
+// ══════════════════════════════════════════════════════════════════════
+
+function collectFns(src: string, buf: string): void {
+    set pos: int = 0; set flen: int = len(src); set c: int = 0;
+    set fnStart: int = 0; set fnLen: int = 0; set paramCount: int = 0; set depth: int = 0;
+    set fc: int = 0;
+    while (pos < flen) {
+        c = charCode(src, pos);
+        if (c == 32 || c == 10 || c == 13 || c == 9) { pos = pos + 1; }
+        else if (c == 47 && charCode(src, pos+1) == 47) { pos = pos + 2;
+            while (charCode(src, pos) != 10 && charCode(src, pos) != 0) { pos = pos + 1; } }
+        else if (c == 47 && charCode(src, pos+1) == 42) { pos = pos + 2;
+            while (1) { if (charCode(src, pos) == 0) { break; }
+                if (charCode(src, pos) == 42 && charCode(src, pos+1) == 47) { pos = pos + 2; break; }
+                pos = pos + 1; } }
+        else if (c == 102 && charCode(src, pos+1) == 117 && charCode(src, pos+2) == 110 &&
+                 charCode(src, pos+3) == 99 && charCode(src, pos+4) == 116 && charCode(src, pos+5) == 105 &&
+                 charCode(src, pos+6) == 111 && charCode(src, pos+7) == 110) {
+            pos = pos + 8;
+            while (charCode(src, pos) == 32 || charCode(src, pos) == 10 || charCode(src, pos) == 13 || charCode(src, pos) == 9) { pos = pos + 1; }
+            fnStart = pos; fc = charCode(src, pos);
+            while ((fc >= 65 && fc <= 90) || (fc >= 97 && fc <= 122) || (fc >= 48 && fc <= 57) || fc == 95) { pos = pos + 1; fc = charCode(src, pos); }
+            fnLen = pos - fnStart;
+            while (charCode(src, pos) != 40 && charCode(src, pos) != 0) { pos = pos + 1; }
+            println(str_concat("DEBUG collectFns bodyPos at ( = ", itoa(pos)));
+            set fnBodyPos_func: int = pos;
+            paramCount = 0;
+            if (charCode(src, pos) == 40) { pos = pos + 1;
+                while (charCode(src, pos) != 41 && charCode(src, pos) != 0) {
+                    fc = charCode(src, pos);
+                    if ((fc >= 65 && fc <= 90) || (fc >= 97 && fc <= 122) || fc == 95) {
+                        // peek past identifier to check if it's a param name (followed by ':')
+                        set pk: int = fc; set peekPos: int = pos;
+                        while ((pk >= 65 && pk <= 90) || (pk >= 97 && pk <= 122) || (pk >= 48 && pk <= 57) || pk == 95) {
+                            peekPos = peekPos + 1; pk = charCode(src, peekPos); }
+                        while (pk == 32 || pk == 10 || pk == 13 || pk == 9) { peekPos = peekPos + 1; pk = charCode(src, peekPos); }
+                        if (pk == 58) { paramCount = paramCount + 1; }
+                        while ((fc >= 65 && fc <= 90) || (fc >= 97 && fc <= 122) || (fc >= 48 && fc <= 57) || fc == 95) {
+                            pos = pos + 1; fc = charCode(src, pos); } }
+                    else { pos = pos + 1; } }
+                if (charCode(src, pos) == 41) { pos = pos + 1; } }
+            while (charCode(src, pos) != 123 && charCode(src, pos) != 0) { pos = pos + 1; }
+            if (charCode(src, pos) == 123) { pos = pos + 1; }
+            fnAdd(buf, fnStart, fnLen, fnBodyPos_func, paramCount);
+            depth = 1;
+            while (depth > 0 && pos < flen) {
+                if (charCode(src, pos) == 123) { depth = depth + 1; }
+                else if (charCode(src, pos) == 125) { depth = depth - 1; }
+                pos = pos + 1; }
+        }
+        else if (c == 102 && charCode(src, pos+1) == 110) {
+            pos = pos + 2;
+            while (charCode(src, pos) == 32 || charCode(src, pos) == 10 || charCode(src, pos) == 13 || charCode(src, pos) == 9) { pos = pos + 1; }
+            fnStart = pos; fc = charCode(src, pos);
+            while ((fc >= 65 && fc <= 90) || (fc >= 97 && fc <= 122) || (fc >= 48 && fc <= 57) || fc == 95) { pos = pos + 1; fc = charCode(src, pos); }
+            fnLen = pos - fnStart;
+            while (charCode(src, pos) != 40 && charCode(src, pos) != 0) { pos = pos + 1; }
+            paramCount = 0;
+            set fnBodyPos_fn: int = pos;
+            if (charCode(src, pos) == 40) { pos = pos + 1;
+                while (charCode(src, pos) != 41 && charCode(src, pos) != 0) {
+                    fc = charCode(src, pos);
+                    if ((fc >= 65 && fc <= 90) || (fc >= 97 && fc <= 122) || fc == 95) {
+                        set pk: int = fc; set peekPos: int = pos;
+                        while ((pk >= 65 && pk <= 90) || (pk >= 97 && pk <= 122) || (pk >= 48 && pk <= 57) || pk == 95) {
+                            peekPos = peekPos + 1; pk = charCode(src, peekPos); }
+                        while (pk == 32 || pk == 10 || pk == 13 || pk == 9) { peekPos = peekPos + 1; pk = charCode(src, peekPos); }
+                        if (pk == 58) { paramCount = paramCount + 1; }
+                        while ((fc >= 65 && fc <= 90) || (fc >= 97 && fc <= 122) || (fc >= 48 && fc <= 57) || fc == 95) {
+                            pos = pos + 1; fc = charCode(src, pos); } }
+                    else { pos = pos + 1; } }
+                if (charCode(src, pos) == 41) { pos = pos + 1; } }
+            while (charCode(src, pos) != 123 && charCode(src, pos) != 0) { pos = pos + 1; }
+            if (charCode(src, pos) == 123) { pos = pos + 1; }
+            fnAdd(buf, fnStart, fnLen, fnBodyPos_fn, paramCount);
+            depth = 1;
+            while (depth > 0 && pos < flen) {
+                if (charCode(src, pos) == 123) { depth = depth + 1; }
+                else if (charCode(src, pos) == 125) { depth = depth - 1; }
+                pos = pos + 1; }
+        }
+        else { pos = pos + 1; }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// ENTRY POINT
+// ══════════════════════════════════════════════════════════════════════
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set i: int = 0;
+    while (i < 2000) { setInt(buf, i * 8, 0); i = i + 1; }
+
+    // args: binary, --interpret, interp.ajb, target.ajb
+    // program_args built from args[2..] skipping flags: [interp.ajb, target.ajb]
+    // So readArg(1) = interp.ajb, readArg(2) = target.ajb
+    set inPath: string = readArg(2);
+    if (len(inPath) == 0) { inPath = readArg(1); }
+    if (len(inPath) == 0) { println("Bhai! File ka naam toh do."); return 1; }
+
+    set src: string = readFile(inPath);
+    if (len(src) == 0) { println("File nahi mili ya khaali hai!"); return 1; }
+
+    wrSrc(buf, src);
+    setInt(buf, 80, 0);    // scope depth 0
+    setInt(buf, 120, 5);   // no return pending
+    setInt(buf, 144, 0);   // var count 0
+    evalClear(buf);
+    argClear(buf);
+
+    // Pass 1: collect function definitions
+    collectFns(src, buf);
+    println(str_concat("Collected functions: ", itoa(fnCount(buf))));
+
+    // Pass 2: execute top-level
+    wrPos(buf, 0);
+    setTok(buf, 0, 0, 0, 0);
+    nextTok(src, buf);
+    while (tokType(buf) != 0) {
+        parseStmt(src, buf);
+    }
+
+    // Find and call main()
+    set fnCnt: int = fnCount(buf);
+    set mainFound: int = 0;
+    set mainOff: int = 0; set mainLen: int = 0;
+    i = 0;
+    while (i < fnCnt) {
+        set fOff: int = getInt(buf, 3000 + i * 32);
+        set fLen: int = getInt(buf, 3000 + i * 32 + 8);
+        set fnName: string = substring(src, fOff, fOff + fLen);
+        if (strcmp_ajeeb(fnName, "main") == 0) {
+            mainFound = 1; mainOff = fOff; mainLen = fLen;
+            break;
+        }
+        i = i + 1;
+    }
+
+    if (mainFound != 0) {
+        set bodyPosPtr: string = getOutbuf();
+        setInt(bodyPosPtr, 0, 0);
+        set pCount: int = fnFind(src, buf, mainOff, mainLen, bodyPosPtr);
+        set bodyPos: int = getInt(bodyPosPtr, 0);
+        if (pCount >= 0) {
+            saveState(buf);
+            wrPos(buf, bodyPos);
+            setTok(buf, 0, 0, 0, 0);
+            nextTok(src, buf);
+            scopeEnter(buf);
+            while (tokType(buf) != 38 && tokType(buf) != 0) {
+                set retType: int = getInt(buf, 120);
+                if (retType != 5) { break; }
+                parseStmt(src, buf);
+            }
+            scopeExit(buf);
+            set retType: int = getInt(buf, 120);
+            set retVal: int = getInt(buf, 128);
+            setInt(buf, 120, 5); setInt(buf, 128, 0);
+            restoreState(buf);
+        } else { println("Bhai! main() function define nahi hai!"); return 1; }
+    }
+
+    return 0;
+}

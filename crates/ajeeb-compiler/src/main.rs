@@ -63,11 +63,16 @@ fn main() -> io::Result<()> {
     }
 
     // --- Parse arguments ---
-    let file_path = &args[1];
     let positional: Vec<&String> = args[1..]
         .iter()
         .filter(|a| !a.starts_with("--"))
         .collect();
+    let file_path = if !positional.is_empty() {
+        positional[0].as_str()
+    } else {
+        println!("Arre Bhai! File ka naam toh do. Example: cargo run test.ajb");
+        return Ok(());
+    };
     let output_path = if positional.len() >= 2 {
         positional[1].as_str()
     } else {
@@ -77,8 +82,8 @@ fn main() -> io::Result<()> {
     let force_llvm = args.iter().any(|a| a == "--llvm");
     let force_gcc = args.iter().any(|a| a == "--gcc");
     let skip_run = args.iter().any(|a| a == "--skip-run");
-    let skip_compile = args.iter().any(|a| a == "--skip-compile");
-    let force_run = args.iter().any(|a| a == "--run");
+    let skip_compile = args.iter().any(|a| a == "--skip-compile") || args.iter().any(|a| a == "--interpret");
+    let force_run = args.iter().any(|a| a == "--run") || args.iter().any(|a| a == "--interpret");
 
     // --- Detect backend ---
     let backend = if force_llvm {

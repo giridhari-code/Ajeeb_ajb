@@ -1,0 +1,11 @@
+function add(a: int, b: int): int {
+    return a + b;
+}
+
+function main(): int {
+    set x: int = 10;
+    set y: int = 20;
+    set sum: int = add(x, y);
+    println(itoa(sum));
+    return 0;
+}

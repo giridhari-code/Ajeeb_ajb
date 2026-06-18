@@ -252,7 +252,7 @@ impl Codegen {
             // 1-arg functions
             "len" | "itoa" | "readArg" | "readFile"
             | "toUpperCase" | "toLowerCase" | "trim"
-            | "exec" | "mkdir"
+            | "exec" | "mkdir" | "getStr"
                 => Some(format!("declare i64 @{}(i64)", name)),
             // 2-arg functions
             "str_concat" | "indexOf" | "contains"
@@ -264,7 +264,7 @@ impl Codegen {
             "replace" => Some("declare i64 @replace(i64, i64, i64)".into()),
             "lib_open" => Some(format!("declare i64 @lib_open(i64)")),
             "lib_sym" => Some(format!("declare i64 @lib_sym(i64, i64)")),
-            "tcp_listen" | "tcp_accept" | "tls_connect" => Some(format!("declare i64 @{}(i64)", name)),
+            "tcp_listen" | "tcp_accept" | "tls_connect" | "allocBuf" => Some(format!("declare i64 @{}(i64)", name)),
             "tcp_connect" => Some(format!("declare i64 @tcp_connect(i64, i64)")),
             "tcp_read" => Some(format!("declare i64 @tcp_read(i64, i64)")),
             "dns_lookup" | "tls_read" => Some(format!("declare i64 @{}(i64)", name)),

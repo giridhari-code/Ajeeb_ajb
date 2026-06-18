@@ -1,0 +1,9 @@
+function main(): int {
+    set x: int = 0;
+    println(x);
+    x = x + 1;
+    println(x);
+    x = x + 1;
+    println(x);
+    return 0;
+}

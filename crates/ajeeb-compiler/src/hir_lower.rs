@@ -34,6 +34,9 @@ impl HirLowering {
             ("str_concat", vec![("a".to_string(), HirType::Str), ("b".to_string(), HirType::Str)], HirType::Str),
             ("readArg", vec![("n".to_string(), HirType::Int)], HirType::Str),
             ("exit", vec![("code".to_string(), HirType::Int)], HirType::Void),
+            ("getStr", vec![("ptr".to_string(), HirType::Int)], HirType::Str),
+            ("exec", vec![("cmd".to_string(), HirType::Str)], HirType::Int),
+            ("mkdir", vec![("path".to_string(), HirType::Str)], HirType::Int),
         ];
         for (name, params, ret) in builtins {
             self.fn_signatures.insert(name.to_string(), (params, ret));
