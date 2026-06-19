@@ -137,14 +137,14 @@ impl Codegen {
             "getStateBuf" | "getOutbuf"
                 => Some(format!("declare i64 @{}()", name)),
             // 1-arg functions
-            "len" | "itoa" | "readArg" | "readFile"
+            "len" | "arr_len" | "itoa" | "readArg" | "readFile"
             | "toUpperCase" | "toLowerCase" | "trim"
             | "exec" | "mkdir" | "getStr"
                 => Some(format!("declare i64 @{}(i64)", name)),
             // 2-arg functions
             "str_concat" | "indexOf" | "contains"
             | "getInt" | "startsWith" | "endsWith"
-            | "charCode" | "strcmp_ajeeb"
+            | "charCode" | "strcmp_ajeeb" | "chr"
                 => Some(format!("declare i64 @{}(i64, i64)", name)),
             // 3-arg functions
             "substring" => Some("declare i64 @substring(i64, i64, i64)".into()),

@@ -45,6 +45,12 @@ impl SemanticAnalyzer {
                         self.declare_var(pname, pty.clone(), 0, 0);
                     }
                 }
+                // Auto-declare 'self' for class methods that don't have explicit self param
+                if self.current_class.is_some() && !params.iter().any(|(n, _)| n == "self") {
+                    if let Some(ref cn) = self.current_class {
+                        self.declare_var("self", TypeAnnot::Class(cn.clone()), 0, 0);
+                    }
+                }
                 let lookup_name = if let Some(ref class) = self.current_class {
                     format!("{}_{}", class, name)
                 } else if let Some((ref tn, ref trait_n)) = self.current_impl {
@@ -404,10 +410,11 @@ impl SemanticAnalyzer {
                     let mangled = format!("{}_{}", base_tn, method);
                     if let Some((params, return_ty)) = self.functions.get(&mangled).cloned() {
                         let pcount = params.len();
+                        let expected_no_self = if pcount > 0 { pcount - 1 } else { 0 };
                         if pcount != args.len() + 1 {
                             self.errors.push(self.err(
                                 *line, *col,
-                                format!("Method '{}' expects {} arguments but got {}", method, pcount - 1, args.len()),
+                                format!("Method '{}' expects {} arguments but got {}", method, expected_no_self, args.len()),
                             ));
                         }
                         return return_ty;
@@ -869,7 +876,7 @@ impl SemanticAnalyzer {
                 | "trim" | "replace" | "str_concat" | "getStr" => TypeAnnot::String,
                 "split" => TypeAnnot::Array(Box::new(TypeAnnot::String)),
                 "contains" | "startsWith" | "endsWith" => TypeAnnot::Bool,
-                "chr" => TypeAnnot::Int,
+                "chr" => TypeAnnot::String,
                 _ => TypeAnnot::Int,
             }
         }

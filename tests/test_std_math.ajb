@@ -1,0 +1,10 @@
+// test_std_math.ajb
+import math;
+
+function main(): int {
+    println(itoa(abs(-42)) + "\n");
+    println(itoa(max(10, 20)) + "\n");
+    println(itoa(pow(2, 10)) + "\n");
+    println(itoa(factorial(5)) + "\n");
+    return 0;
+}

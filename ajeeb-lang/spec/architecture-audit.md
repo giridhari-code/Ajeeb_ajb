@@ -154,7 +154,7 @@
 - **`CompileError`** (24 lines): `{ line, col, message }` — no error codes, no error recovery, no suggestions, no spans, no note/help/warning levels
 - **Semantic errors are non-fatal**: compiler prints errors but continues to execution; runtime runs even with type errors
 - **Runtime errors**: `eprintln!("[ERROR] ...")` and return `Int(0)` — division by zero returns 0, unknown variable returns 0, unknown function returns `Void`
-- **No `Result[T, E]` integration at compiler level**: `std/result.ajb` is a library enum with no compiler support; there's no `?` operator, no `try`, no error propagation
+- **No `Result[T, E]` integration at compiler level**: `packages/ajeeb-std/result.ajb` is a library enum with no compiler support; there's no `?` operator, no `try`, no error propagation
 - **No panic/unwind mechanism**: no `catch`, no stack unwinding, no `defer`
 
 ### Comparison
@@ -351,5 +351,5 @@
 | `crates/parth/src/config.rs` | 203 | parth.das config reader |
 | `crates/parth/src/types.rs` | 337 | Version/Semver/Constraint/LockEntry types |
 | `crates/ajeeb-fmt/src/main.rs` | 105 | CLI for formatter |
-| `std/` | 11 files | Standard library (collections, fs, io, json, option, path, process, result, string, test, time) |
+| `packages/ajeeb-std/` | 8 files | Standard library (collections, fs, io, math, string, array, result) |
 | `docs/` | ~5 docs | Architecture docs |

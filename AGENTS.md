@@ -104,5 +104,26 @@ Verification: `cargo test` ✓, `bash tests/bootstrap_check.sh` ✓ (bootstrap s
    Omit `;` — Ajeeb resolves function references across the entire file at runtime.
 3. **`set` requires initializer:** `set x: int;` is invalid. Must write `set x: int = 0;`.
 4. **Duplicate `set` in same function:** Multiple `set` with the same variable name
-   (even in different if-branches) is a duplicate variable error. Declare once at the
-   function top, use plain assignments (`x = value;`) in branches.
+    (even in different if-branches) is a duplicate variable error. Declare once at the
+    function top, use plain assignments (`x = value;`) in branches.
+
+## Standard Library (packages/ajeeb-std/)
+
+| File | Description |
+|------|-------------|
+| `packages/ajeeb-std/io.ajb` | Input/output — print, readLine, readFileLines, writeFileLines |
+| `packages/ajeeb-std/math.ajb` | Math — abs, max, min, pow, factorial, gcd, lcm, isPrime, clamp |
+| `packages/ajeeb-std/string.ajb` | String utilities — strEq, strEmpty, strRepeat, strReverse, strPadLeft/Right, strJoin, strCount |
+| `packages/ajeeb-std/array.ajb` | Array utilities — arraySum, arrayMax, arrayMin, arrayContains, arrayReverse, arraySort |
+| `packages/ajeeb-std/fs.ajb` | File system — fileExists, appendLine, copyFile, mkdirP, listDir |
+| `packages/ajeeb-std/result.ajb` | Result/Option types — ok, err, some, none, isOk, isErr, isSome, isNone, unwrap |
+| `packages/ajeeb-std/collections.ajb` | Data structures — Stack (push/pop/peek), Queue (enqueue/dequeue/peek) |
+
+**Use:** `import math;` (resolves to `packages/ajeeb-std/math.ajb` via built-in `./packages/ajeeb-std` search path).
+
+**Notes:**
+- `struct`-based (not `class`) — `class` has a semantic analyzer bug (first pass doesn't register class in `struct_defs`)
+- `len()` is string-only; arrays use `arr_len()`
+- LLVM codegen has `__index` limitation for non-constant index expressions
+- Test files: `tests/test_std_math.ajb`, `tests/test_std_string.ajb`, `tests/test_std_array.ajb`
+- Run tests: `cargo run -p ajeeb-compiler --bin ajeeb_compiler -- --interpret tests/test_std_<module>.ajb`

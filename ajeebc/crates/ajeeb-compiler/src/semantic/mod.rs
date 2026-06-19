@@ -84,13 +84,15 @@ impl SemanticAnalyzer {
                         }
                     }
                 }
-                Stmt::Class { name, methods, .. } => {
+                Stmt::Class { name, fields, methods, .. } => {
                     for m in methods {
                         if let Stmt::FnDef { name: mname, params, return_type, .. } = m {
                             let mangled = format!("{}_{}", name, mname);
                             self.functions.insert(mangled, (params.clone(), return_type.clone()));
                         }
                     }
+                    let ft: Vec<(String, TypeAnnot)> = fields.iter().map(|f| (f.name.clone(), f.type_ann.clone())).collect();
+                    self.struct_defs.insert(name.clone(), ft);
                 }
                 Stmt::StructDef { name, type_params, type_param_bounds, fields, line, col, .. } => {
                     // Check for duplicate struct name
@@ -482,7 +484,7 @@ fn builtin_functions() -> Vec<(&'static str, TypeAnnot)> {
     ("setInt", TypeAnnot::Void),
     ("strcpy", TypeAnnot::Void),
     ("strSet", TypeAnnot::Void),
-    ("chr", TypeAnnot::Int),
+    ("chr", TypeAnnot::String),
     ("chr_str", TypeAnnot::String),
     ("writeByte", TypeAnnot::Void),
     ("rdPos", TypeAnnot::Int),

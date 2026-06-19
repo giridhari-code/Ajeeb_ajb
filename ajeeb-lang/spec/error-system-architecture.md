@@ -5,7 +5,7 @@ Add built-in `Option[T]` and `Result[T,E]` types, pattern exhaustiveness checkin
 
 ## Part A: Option[T] and Result[T,E] as Standard Library Types
 
-### Option[T] (std/option.ajb)
+### Option[T] (packages/ajeeb-std/option.ajb)
 ```
 pub enum Option[T] {
     Some(T),
@@ -13,7 +13,7 @@ pub enum Option[T] {
 }
 ```
 
-### Result[T,E] (std/result.ajb)
+### Result[T,E] (packages/ajeeb-std/result.ajb)
 ```
 pub enum Result[T,E] {
     Ok(T),
@@ -158,7 +158,7 @@ Tests that missing a variant in a match produces a semantic error.
 Tests that a runtime error prints a stack trace with function names and line numbers.
 
 ## Migration Path
-1. Create `std/option.ajb` and `std/result.ajb` as standard library files
+1. Create `packages/ajeeb-std/option.ajb` and `packages/ajeeb-std/result.ajb` as standard library files
 2. Add exhaustiveness checking in semantic analyzer
 3. Add stack trace support in evaluator
 4. Write tests for all three features

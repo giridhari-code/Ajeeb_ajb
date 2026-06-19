@@ -106,6 +106,8 @@ impl Evaluator {
             "len" => {
                 if let Some(RuntimeValue::String(s)) = arg_vals.first() {
                     RuntimeValue::Int(s.borrow().len() as i64)
+                } else if let Some(RuntimeValue::Array(arr)) = arg_vals.first() {
+                    RuntimeValue::Int(arr.borrow().len() as i64)
                 } else {
                     RuntimeValue::Int(0)
                 }
@@ -339,12 +341,12 @@ impl Evaluator {
                         let idx = *i as usize;
                         let b = s.borrow();
                         if idx < b.len() {
-                            let val = b.as_bytes()[idx] as i64;
-                            return RuntimeValue::Int(val);
+                            let c = b.as_bytes()[idx] as char;
+                            return RuntimeValue::String(Rc::new(RefCell::new(c.to_string())));
                         }
                     }
                 }
-                RuntimeValue::Int(0)
+                RuntimeValue::String(Rc::new(RefCell::new("".to_string())))
             }
             "chr_str" => {
                 if let Some(RuntimeValue::Int(code)) = arg_vals.first() {

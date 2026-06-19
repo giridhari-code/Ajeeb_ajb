@@ -268,8 +268,82 @@ impl Codegen {
                         }
                     }
                     _ => {
-                        if !self.declare_extern(func) && !self.user_fns.contains(func.as_str()) {
-                            let func_name = func.clone();
+                        let call_func = if func == "len" && compiled_args.len() == 1
+                            && self.array_regs.contains(&compiled_args[0]) {
+                            "arr_len".to_string()
+                        } else {
+                            func.clone()
+                        };
+                        // __index: array/string indexing with non-constant index
+                        if call_func == "__index" && compiled_args.len() == 2 {
+                            let obj = &compiled_args[0];
+                            let idx = &compiled_args[1];
+                            if self.string_regs.contains(obj) {
+                                // String indexing → charCode
+                                self.declare_extern("charCode");
+                                let reg = self.fresh();
+                                write!(self.body, "  {} = call i64 @charCode(i64 {}, i64 {})\n", reg, obj, idx).unwrap();
+                                if let Some(ref dest_name) = dest {
+                                    if let Some(var_reg) = self.variables.get(dest_name).cloned() {
+                                        write!(self.body, "  store i64 {}, ptr {}\n", reg, var_reg).unwrap();
+                                    } else {
+                                        self.mir_temps.insert(dest_name.clone(), reg);
+                                    }
+                                }
+                            } else {
+                                // Array indexing → GEP + load (offset = idx + 1 for length prefix)
+                                let ptr = self.fresh();
+                                write!(self.body, "  {} = inttoptr i64 {} to ptr\n", ptr, obj).unwrap();
+                                let offset = self.fresh();
+                                let one = self.fresh();
+                                write!(self.body, "  {} = add i64 1, {}\n", one, idx).unwrap();
+                                write!(self.body, "  {} = add i64 0, {}\n", offset, one).unwrap();
+                                let elem_ptr = self.fresh();
+                                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, ptr, offset).unwrap();
+                                let val = self.fresh();
+                                write!(self.body, "  {} = load i64, ptr {}\n", val, elem_ptr).unwrap();
+                                if let Some(ref dest_name) = dest {
+                                    if let Some(var_reg) = self.variables.get(dest_name).cloned() {
+                                        write!(self.body, "  store i64 {}, ptr {}\n", val, var_reg).unwrap();
+                                    } else {
+                                        self.mir_temps.insert(dest_name.clone(), val);
+                                    }
+                                }
+                            }
+                            return Ok(());
+                        }
+                        // __index_assign: array/string index assignment
+                        if call_func == "__index_assign" && compiled_args.len() == 3 {
+                            let obj = &compiled_args[0];
+                            let idx = &compiled_args[1];
+                            let val = &compiled_args[2];
+                            if self.string_regs.contains(obj) {
+                                // String index assign → strSet
+                                self.declare_extern("strSet");
+                                write!(self.body, "  call void @strSet(i64 {}, i64 {}, i64 {})\n", obj, idx, val).unwrap();
+                            } else {
+                                // Array index assign → GEP + store (offset = idx + 1 for length prefix)
+                                let ptr = self.fresh();
+                                write!(self.body, "  {} = inttoptr i64 {} to ptr\n", ptr, obj).unwrap();
+                                let offset = self.fresh();
+                                let one = self.fresh();
+                                write!(self.body, "  {} = add i64 1, {}\n", one, idx).unwrap();
+                                write!(self.body, "  {} = add i64 0, {}\n", offset, one).unwrap();
+                                let elem_ptr = self.fresh();
+                                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, ptr, offset).unwrap();
+                                write!(self.body, "  store i64 {}, ptr {}\n", val, elem_ptr).unwrap();
+                            }
+                            if let Some(ref dest_name) = dest {
+                                if let Some(var_reg) = self.variables.get(dest_name).cloned() {
+                                    write!(self.body, "  store i64 {}, ptr {}\n", val, var_reg).unwrap();
+                                } else {
+                                    self.mir_temps.insert(dest_name.clone(), val.clone());
+                                }
+                            }
+                            return Ok(());
+                        }
+                        if !self.declare_extern(&call_func) && !self.user_fns.contains(call_func.as_str()) {
+                            let func_name = call_func.clone();
                             if let Some(field_name) = func_name.strip_prefix("__struct_get_") {
                                 if let Some(underscore) = field_name.rfind('_') {
                                     let sname = &field_name[..underscore];
@@ -310,12 +384,12 @@ impl Codegen {
                                 } else {
                                     return Err(format!("MIR codegen: unknown function '{}'", func));
                                 }
-                            } else {
-                                return Err(format!("MIR codegen: unknown function '{}'", func));
-                             }
-                         }
-                          if let Some(dest_name) = dest {
-                             let final_args_str = if func == "itoa" && compiled_args.len() == 1 {
+                             } else {
+                                 return Err(format!("MIR codegen: unknown function '{}'", func));
+                              }
+                           }
+                            if let Some(dest_name) = dest {
+                              let final_args_str = if call_func == "itoa" && compiled_args.len() == 1 {
                                  let a = &compiled_args[0];
                                  if self.float_regs.contains(a) {
                                      let f_bits = self.fresh();
@@ -329,26 +403,26 @@ impl Codegen {
                              } else {
                                  args_str.clone()
                              };
-                             let reg = self.fresh();
-                             write!(self.body, "  {} = call i64 @{}({})\n", reg, func, final_args_str).unwrap();
-                             let is_string_ret = matches!(func.as_str(),
+                              let reg = self.fresh();
+                              write!(self.body, "  {} = call i64 @{}({})\n", reg, call_func, final_args_str).unwrap();
+                             let is_string_ret = matches!(call_func.as_str(),
                                  "str_concat" | "itoa" | "substring" | "toUpperCase" | "toLowerCase"
-                                 | "trim" | "readFile" | "readArg" | "replace"
-                             ) || self.fn_return_types.get(func.as_str())
+                                 | "trim" | "readFile" | "readArg" | "replace" | "chr"
+                             ) || self.fn_return_types.get(call_func.as_str())
                                  .map(|rt| matches!(rt, TypeAnnot::String))
                                  .unwrap_or(false);
-                             if is_string_ret {
-                                 self.string_regs.insert(reg.clone());
-                                 self.string_vars.insert(dest_name.clone());
-                             }
-                             if let Some(var_reg) = self.variables.get(dest_name).cloned() {
-                                 write!(self.body, "  store i64 {}, ptr {}\n", reg, var_reg).unwrap();
-                             } else {
-                                 self.mir_temps.insert(dest_name.clone(), reg);
-                             }
-                         } else {
-                             write!(self.body, "  call i64 @{}({})\n", func, args_str).unwrap();
-                         }
+                              if is_string_ret {
+                                  self.string_regs.insert(reg.clone());
+                                  self.string_vars.insert(dest_name.clone());
+                              }
+                              if let Some(var_reg) = self.variables.get(dest_name).cloned() {
+                                  write!(self.body, "  store i64 {}, ptr {}\n", reg, var_reg).unwrap();
+                              } else {
+                                  self.mir_temps.insert(dest_name.clone(), reg);
+                              }
+                          } else {
+                              write!(self.body, "  call i64 @{}({})\n", call_func, args_str).unwrap();
+                          }
                      }
                 }
                 Ok(())

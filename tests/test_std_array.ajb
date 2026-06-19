@@ -1,0 +1,10 @@
+// test_std_array.ajb
+import array;
+
+function main(): int {
+    set arr: int[] = [3, 1, 4, 1, 5];
+    println(itoa(arraySum(arr)) + "\n");
+    println(itoa(arrayMax(arr)) + "\n");
+    println(itoa(arrayMin(arr)) + "\n");
+    return 0;
+}

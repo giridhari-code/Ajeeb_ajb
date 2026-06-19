@@ -207,7 +207,7 @@ link_flags = "-lsqlite3 -lcurl"
 
 1. Rewrite `sqlite_*` builtins to use dynamic loading (with compile-time fallback)
 2. Add `curl_*` builtins for HTTP requests
-3. Create Ajeeb library wrappers in `std/` or `packages/`
+3. Create Ajeeb library wrappers in `packages/ajeeb-std/` or `packages/`
 4. Integration tests: SQLite query, HTTP GET via libcurl
 
 ---

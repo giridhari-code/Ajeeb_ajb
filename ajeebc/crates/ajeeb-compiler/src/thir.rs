@@ -240,7 +240,7 @@ impl ThirChecker {
                     self.check_expr(val);
                 }
                 if let Some(def_fields) = self.struct_fields.get(name) {
-                    if def_fields.len() != fields.len() {
+                    if !fields.is_empty() && def_fields.len() != fields.len() {
                         self.errors.push(format!(
                             "Struct '{}' expects {} fields, got {}",
                             name, def_fields.len(), fields.len()

@@ -31,7 +31,7 @@ language syntax is added.
                         │ depends
                         ▼
 ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-│  std/json   │──▶│ ajeeb-json │  │ ajeeb-http  │
+│ ajeeb-std/json │──▶│ ajeeb-json │  │ ajeeb-http  │
 │ (stdlib)    │  │ (wraps      │  │ (server +   │
 │             │  │  std::json) │  │  client)    │
 └─────────────┘  └──────┬──────┘  └──────┬──────┘

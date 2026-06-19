@@ -1,0 +1,9 @@
+// test_std_string.ajb
+import string;
+
+function main(): int {
+    println(strRepeat("ab", 3) + "\n");
+    println(strReverse("hello") + "\n");
+    println(itoa(strCount("hello", "l")) + "\n");
+    return 0;
+}

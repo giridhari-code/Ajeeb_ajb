@@ -5,6 +5,7 @@ author = "Ajeeb Team"
 description = "The Ajeeb self-hosting compiler"
 
 [dependencies]
+ajeeb-std = "0.1.0"
 
 [runtime]
 max_threads = "8"

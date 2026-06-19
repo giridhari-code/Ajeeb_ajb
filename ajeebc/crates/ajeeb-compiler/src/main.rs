@@ -182,16 +182,16 @@ fn main() -> io::Result<()> {
         let entry_dir = entry_path.parent().unwrap_or(Path::new("."));
         loader.add_import_path(entry_dir.to_path_buf());
 
-        if Path::new("std").exists() {
-            loader.add_import_path(Path::new("std").to_path_buf());
+        if Path::new("packages/ajeeb-std").exists() {
+            loader.add_import_path(Path::new("packages/ajeeb-std").to_path_buf());
         }
-        if Path::new("../std").exists() {
-            loader.add_import_path(Path::new("../std").to_path_buf());
+        if Path::new("../packages/ajeeb-std").exists() {
+            loader.add_import_path(Path::new("../packages/ajeeb-std").to_path_buf());
         }
         for dir in [Path::new("."), Path::new("..")] {
             let das_path = dir.join("parth.das");
             if das_path.exists() {
-                let std_path = dir.join("std");
+                let std_path = dir.join("packages/ajeeb-std");
                 if std_path.exists() {
                     loader.add_import_path(std_path);
                 }

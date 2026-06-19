@@ -563,6 +563,20 @@ intptr_t charCode(intptr_t s, intptr_t i) {
     return (intptr_t)ajeeb_charCode(vs, vi).data.as_int;
 }
 
+AjeebValue ajeeb_chr(AjeebValue s, AjeebValue idx) {
+    if (s.tag != AJB_STRING || idx.tag != AJB_INT) return ajb_string("", 0);
+    if ((size_t)idx.data.as_int >= s.string_len) return ajb_string("", 0);
+    char buf[2] = { s.string[idx.data.as_int], '\0' };
+    return ajb_string(buf, 1);
+}
+
+intptr_t chr(intptr_t s, intptr_t i) {
+    AjeebValue vs = ajb_string((const char*)s, strlen((const char*)s));
+    AjeebValue vi = ajb_int((int64_t)i);
+    AjeebValue result = ajeeb_chr(vs, vi);
+    return (intptr_t)result.string;
+}
+
 AjeebValue ajeeb_len(AjeebValue s) {
     if (s.tag != AJB_STRING) return ajb_int(0);
     return ajb_int((int64_t)s.string_len);
@@ -571,6 +585,11 @@ AjeebValue ajeeb_len(AjeebValue s) {
 intptr_t len(intptr_t s) {
     AjeebValue vs = ajb_string((const char*)s, strlen((const char*)s));
     return (intptr_t)ajeeb_len(vs).data.as_int;
+}
+
+intptr_t arr_len(intptr_t arr) {
+    if (arr == 0) return 0;
+    return *(int64_t*)arr;
 }
 
 void strSet(intptr_t s, intptr_t i, intptr_t c) {

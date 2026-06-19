@@ -59,6 +59,25 @@ impl HirLowering {
                         self.generic_params.insert(name.clone(), type_params.clone());
                     }
                 }
+                Stmt::Class { name, fields, methods, .. } => {
+                    let hir_fields: Vec<(String, HirType)> = fields.iter()
+                        .map(|f| (f.name.clone(), self.resolve_type(&f.type_ann)))
+                        .collect();
+                    self.struct_fields.insert(name.clone(), hir_fields);
+                    for m in methods {
+                        if let Stmt::FnDef { name: mname, params, return_type, type_params, .. } = m {
+                            let hir_params: Vec<(String, HirType)> = params.iter()
+                                .map(|(n, t)| (n.clone(), self.resolve_type(t)))
+                                .collect();
+                            let hir_ret = self.resolve_type(return_type);
+                            let mangled = format!("{}_{}", name, mname);
+                            self.fn_signatures.insert(mangled.clone(), (hir_params, hir_ret));
+                            if !type_params.is_empty() {
+                                self.generic_params.insert(mangled, type_params.clone());
+                            }
+                        }
+                    }
+                }
                 Stmt::StructDef { name, fields, type_params, .. } => {
                     let hir_fields: Vec<(String, HirType)> = fields.iter()
                         .map(|f| (f.name.clone(), self.resolve_type(&f.type_ann)))
@@ -95,6 +114,23 @@ impl HirLowering {
                     } else {
                         let hir_fn = self.lower_fn(name, params, return_type, body, type_params, type_param_bounds);
                         functions.push(hir_fn);
+                    }
+                }
+                Stmt::Class { name, fields, methods, .. } => {
+                    let hir_fields: Vec<(String, HirType)> = fields.iter()
+                        .map(|f| (f.name.clone(), self.resolve_type(&f.type_ann)))
+                        .collect();
+                    structs.push(HirStructDef {
+                        name: name.clone(),
+                        fields: hir_fields,
+                        type_params: Vec::new(),
+                    });
+                    for m in methods {
+                        if let Stmt::FnDef { name: mname, params, return_type, body, type_params, type_param_bounds, .. } = m {
+                            let mangled = format!("{}_{}", name, mname);
+                            let hir_fn = self.lower_fn(&mangled, params, return_type, body, type_params, type_param_bounds);
+                            functions.push(hir_fn);
+                        }
                     }
                 }
                 Stmt::StructDef { name, fields, type_params, .. } => {
