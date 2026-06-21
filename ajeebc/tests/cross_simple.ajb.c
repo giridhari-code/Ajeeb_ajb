@@ -154,3 +154,117 @@ block_3: // ic=6
 
 }
 
+#include <stdint.h>
+#include <string.h>
+#include <stdio.h>
+
+intptr_t getStateBuf(void);
+intptr_t getOutbuf(void);
+intptr_t getInt(intptr_t, intptr_t);
+void setInt(intptr_t, intptr_t, intptr_t);
+intptr_t len(intptr_t);
+void strSet(intptr_t, intptr_t, intptr_t);
+intptr_t charCode(intptr_t, intptr_t);
+intptr_t str_concat(intptr_t, intptr_t);
+intptr_t substring(intptr_t, intptr_t, intptr_t);
+intptr_t indexOf(intptr_t, intptr_t);
+intptr_t contains(intptr_t, intptr_t);
+intptr_t itoa(intptr_t);
+intptr_t println(intptr_t);
+intptr_t readArg(intptr_t);
+intptr_t readFile(intptr_t);
+void writeFile(intptr_t, intptr_t);
+void writeAppend(intptr_t, intptr_t);
+void writeByte(intptr_t, intptr_t);
+intptr_t strcmp_ajeeb(intptr_t, intptr_t);
+intptr_t trim(intptr_t);
+intptr_t toUpperCase(intptr_t);
+intptr_t toLowerCase(intptr_t);
+intptr_t startsWith(intptr_t, intptr_t);
+intptr_t endsWith(intptr_t, intptr_t);
+intptr_t replace(intptr_t, intptr_t, intptr_t);
+intptr_t array_to_string(intptr_t, intptr_t);
+
+char __ajeeb_buf[16384];
+char __ajeeb_outbuf[65536];
+
+intptr_t add(intptr_t, intptr_t);
+intptr_t factorial(intptr_t);
+
+intptr_t add(intptr_t p0, intptr_t p1) {
+    intptr_t t0, t1, t2;
+
+    goto block_0;
+block_0:    t0 = p0;
+    t1 = p1;
+    t2 = t0 + t1;
+    return t2;
+
+}
+
+intptr_t factorial(intptr_t p0) {
+    intptr_t t0, t1, t2, t3, t4, t5, t6, t7;
+
+    goto block_0;
+block_0:    t0 = p0;
+    t1 = 1;
+    t2 = t0 <= t1;
+    if (t2) { goto block_1; } else { goto block_2; }
+
+block_1:    t3 = 1;
+    return t3;
+
+block_2:    t5 = 1;
+    t6 = t0 - t5;
+    t4 = factorial(t6);
+    t7 = t0 * t4;
+    return t7;
+
+}
+
+int main(void) {
+    intptr_t t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26, t27;
+
+    goto block_0;
+block_0:    t0 = 10;
+    t1 = 20;
+    t2 = add(t0, t1);
+    t4 = itoa(t2);
+    t3 = str_concat(t2, t4);
+    t3 = println(t3);
+    t6 = 5;
+    t5 = factorial(t6);
+    t8 = itoa(t5);
+    t7 = str_concat(t5, t8);
+    t7 = println(t7);
+    t9 = (intptr_t)"Hello";
+    t10 = (intptr_t)"World";
+    t11 = (intptr_t)" ";
+    t12 = str_concat(t9, t11);
+    t13 = t12 + t10;
+    t14 = println(t13);
+    t15 = 0;
+    t16 = 0;
+    t17 = 0;
+
+block_1:    t18 = 5;
+    t19 = t17 < t18;
+    if (t19) { goto block_2; } else { goto block_3; }
+
+block_2:    t20 = t16 + t17;
+    t16 = t20;
+    t21 = 1;
+    t22 = t17 + t21;
+    t17 = t22;
+    goto block_1;
+
+block_3:    t24 = itoa(t16);
+    t23 = str_concat(t16, t24);
+    t23 = println(t23);
+    t26 = (intptr_t)"DONE";
+    t25 = println(t26);
+    t27 = 0;
+    return t27;
+
+}
+

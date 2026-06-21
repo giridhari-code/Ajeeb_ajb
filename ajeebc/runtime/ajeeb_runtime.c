@@ -694,6 +694,11 @@ intptr_t println(intptr_t s) {
     return 0;
 }
 
+intptr_t print(intptr_t s) {
+    printf("%s", (const char*)s);
+    return 0;
+}
+
 AjeebValue ajeeb_println(AjeebValue v) {
     switch (v.tag) {
         case AJB_INT:    printf("%ld", (long)v.data.as_int); break;
