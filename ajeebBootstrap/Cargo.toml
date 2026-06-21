@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ajeeb-compiler",
+    "crates/parth",
+    "crates/ajeeb-fmt",
+    "crates/ajeeb-registry",
+    "crates/ajeeb-lsp",
+]

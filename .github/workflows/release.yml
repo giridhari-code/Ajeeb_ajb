@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-linux-x86_64:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install LLVM + GCC
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq llvm-dev gcc libc-dev
+
+      - name: Build ajeebc (Rust bootstrap)
+        run: |
+          mkdir -p build
+          cd ajeebBootstrap
+          cargo build --release -p ajeeb-compiler --bin ajeeb_compiler
+          cp target/release/ajeeb_compiler ../build/ajeebc
+
+      - name: Build parthi
+        env:
+          AJEEBC_PATH: ${{ github.workspace }}/build/ajeebc
+        run: bash parthi/build.sh
+
+      - name: Build parth
+        env:
+          AJEEBC_PATH: ${{ github.workspace }}/build/ajeebc
+        run: |
+          cd parth
+          bash build.sh
+
+      - name: Bootstrap check
+        run: |
+          # Quick bootstrap check: compile compiler.ajb with ajeebc, then run a test
+          mkdir -p ajeebc/build
+          build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
+          llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          gcc -no-pie ajeebc/build/compiler.s \
+            ajeebc/runtime/ajeeb_runtime.c \
+            -o ajeebc/build/compiler -lm -ldl -Wno-int-to-pointer-cast
+          echo "✓ Self-hosted compiler built: $(ls -lh ajeebc/build/compiler | awk '{print $5}')"
+          # Verify it works: compile + run test_math
+          build/ajeebc --emit-llvm-only ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll
+          llc ajeebc/build/test_simple.ll -o ajeebc/build/test_simple.s
+          gcc -no-pie ajeebc/build/test_simple.s \
+            ajeebc/runtime/ajeeb_runtime.c \
+            -o ajeebc/build/test_simple -lm -ldl -Wno-int-to-pointer-cast
+          OUTPUT=$(./ajeebc/build/test_simple 2>/dev/null)
+          if [ "$OUTPUT" != "Hello World" ]; then
+            echo "FAIL: expected 'Hello World', got '$OUTPUT'"
+            exit 1
+          fi
+          echo "✓ Bootstrap check: Ajeeb compiler compiles itself and runs tests"
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p release
+          cp build/ajeebc release/ajeebc-linux-x86_64
+          cp parthi/build/parthi release/parthi-linux-x86_64
+          cp parth/build/parth release/parth-linux-x86_64
+          cp ajeebc/runtime/ajeeb_runtime.c release/
+          ls -lh release/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ajeeb-linux-x86_64
+          path: release/
+
+  create-release:
+    needs: [build-linux-x86_64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ajeeb-linux-x86_64
+          path: release/
+
+      - name: Get tag name
+        id: tag
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Ajeeb ${{ steps.tag.outputs.tag }}
+          body: |
+            ## Ajeeb ${{ steps.tag.outputs.tag }}
+
+            Bhar le bhai! Ajeeb compiler ka naya version ready hai.
+
+            ### Shamil hain:
+            - **ajeebc** — Ajeeb compiler (MIR → LLVM → native binary)
+            - **parthi** — MIR interpreter
+            - **parth** — Project manager CLI
+            - **ajeeb_runtime.c** — Runtime library (gcc ke saath link karna)
+
+            ### Install karo:
+            ```bash
+            curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/install.sh | bash
+            ```
+
+            ### Zaroorat hai:
+            - `gcc` (ya `clang`)
+            - `llc` (LLVM)
+
+            > 💡 Binary sirf linux-x86_64 ke liye hai.
+          files: |
+            release/ajeebc-linux-x86_64
+            release/parthi-linux-x86_64
+            release/parth-linux-x86_64
+            release/ajeeb_runtime.c

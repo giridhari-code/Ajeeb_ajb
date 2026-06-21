@@ -1,0 +1,5 @@
+function main(): int {
+    set arr: int[] = [1, 2, 3];
+    println(itoa(len(arr)) + "\n");
+    return 0;
+}

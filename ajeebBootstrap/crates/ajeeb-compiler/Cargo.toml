@@ -1,0 +1,10 @@
+[package]
+name = "ajeeb-compiler"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ajeeb_compiler"
+path = "src/main.rs"
+
+
