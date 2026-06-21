@@ -45,12 +45,18 @@ impl Codegen {
         let saved_string_regs = self.string_regs.clone();
         let saved_var_types = self.var_types.clone();
         let saved_bool_regs = self.bool_regs.clone();
+        let saved_bool_vars = self.bool_vars.clone();
+        let saved_float_regs = self.float_regs.clone();
+        let saved_float_vars = self.float_vars.clone();
         let saved_array_regs = self.array_regs.clone();
         let saved_array_vars = self.array_vars.clone();
         let saved_enum_regs = self.enum_regs.clone();
         let saved_enum_vars = self.enum_vars.clone();
         self.string_regs.clear();
         self.bool_regs.clear();
+        self.bool_vars.clear();
+        self.float_regs.clear();
+        self.float_vars.clear();
         self.array_regs.clear();
         self.array_vars.clear();
         self.enum_regs.clear();
@@ -102,6 +108,9 @@ impl Codegen {
         self.string_regs = saved_string_regs;
         self.var_types = saved_var_types;
         self.bool_regs = saved_bool_regs;
+        self.bool_vars = saved_bool_vars;
+        self.float_regs = saved_float_regs;
+        self.float_vars = saved_float_vars;
         self.array_regs = saved_array_regs;
         self.array_vars = saved_array_vars;
         self.enum_regs = saved_enum_regs;

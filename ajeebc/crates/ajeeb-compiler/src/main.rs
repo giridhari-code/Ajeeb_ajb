@@ -1,5 +1,6 @@
 mod ast;
 mod cache;
+mod c_codegen;
 mod hir;
 mod hir_lower;
 mod llvm;
@@ -391,36 +392,73 @@ fn main() -> io::Result<()> {
                     Err(e) => println!("❌ ld error: {}", e),
                 }
             }
-            Err(e) => println!("⚠️  LLVM codegen skipped: {}", e),
+            Err(e) => {
+                println!("⚠️  LLVM codegen failed: {}", e);
+                println!("🔄 Falling back to C backend...");
+                // Fall through to C backend
+                let c_result = self::c_codegen::CCodegen::new().compile(&mir);
+                match c_result {
+                    Ok(c_code) => {
+                        std::fs::write("build/output.c", &c_code).ok();
+                        println!("\n🔨 C Codegen: {} → {}", file_path, bin_path);
+                        let gcc_status = Command::new("gcc")
+                            .args([
+                                "build/output.c",
+                                "runtime/ajeeb_runtime.c",
+                                "-o",
+                                &bin_path,
+                                "-Wno-int-to-pointer-cast",
+                                "-Wno-pointer-to-int-cast",
+                                "-ldl",
+                                "-lm",
+                            ])
+                            .status();
+                        match gcc_status {
+                            Ok(s) if s.success() => {
+                                println!("✅ Ready (C fallback): ./{}", bin_path);
+                                compiled_ok = true;
+                            }
+                            Ok(s) => println!("❌ GCC failed (exit: {})", s),
+                            Err(e) => println!("❌ gcc error: {}", e),
+                        }
+                    }
+                    Err(e2) => println!("❌ C codegen also failed: {}", e2),
+                }
+            }
         }
     } else if backend == "gcc" {
-        // --- GCC FALLBACK: C codegen pipeline ---
-        // Use the C codegen path if available
+        // --- GCC BACKEND: Generate C from MIR, then compile ---
         let output_c = "build/output.c";
-        if Path::new(output_c).exists() {
-            println!("\n🔨 Compiling {} → {}", file_path, bin_path);
-            let gcc_status = Command::new("gcc")
-                .args([
-                    output_c,
-                    "runtime/ajeeb_runtime.c",
-                    "-o",
-                    &bin_path,
-                    "-Wall",
-                    "-Wno-int-to-pointer-cast",
-                    "-Wno-pointer-to-int-cast",
-                    "-ldl",
-                ])
-                .status();
-            match gcc_status {
-                Ok(s) if s.success() => {
-                    println!("✅ Ready: ./{}", bin_path);
-                    compiled_ok = true;
+        // Try to generate C from MIR first
+        let c_result = self::c_codegen::CCodegen::new().compile(&mir);
+        match c_result {
+            Ok(c_code) => {
+                std::fs::write(output_c, &c_code).ok();
+                println!("\n🔨 C Codegen: {} → {}", file_path, bin_path);
+                let gcc_status = Command::new("gcc")
+                    .args([
+                        output_c,
+                        "runtime/ajeeb_runtime.c",
+                        "-o",
+                        &bin_path,
+                        "-Wno-int-to-pointer-cast",
+                        "-Wno-pointer-to-int-cast",
+                        "-ldl",
+                        "-lm",
+                    ])
+                    .status();
+                match gcc_status {
+                    Ok(s) if s.success() => {
+                        println!("✅ Ready: ./{}", bin_path);
+                        compiled_ok = true;
+                    }
+                    Ok(s) => println!("❌ GCC failed (exit: {})", s),
+                    Err(e) => println!("❌ gcc error: {}", e),
                 }
-                Ok(s) => println!("❌ GCC failed (exit: {})", s),
-                Err(e) => println!("❌ gcc error: {}", e),
             }
-        } else {
-            println!("ℹ️  No C output found. Use --llvm or build with self-hosted compiler.");
+            Err(e) => {
+                println!("❌ C codegen failed: {}", e);
+            }
         }
     }
 

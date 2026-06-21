@@ -592,6 +592,19 @@ intptr_t arr_len(intptr_t arr) {
     return *(int64_t*)arr;
 }
 
+#include <stdarg.h>
+intptr_t __array_lit(intptr_t count, ...) {
+    va_list args;
+    va_start(args, count);
+    intptr_t* arr = (intptr_t*)malloc((count + 1) * sizeof(intptr_t));
+    arr[0] = count;
+    for (intptr_t i = 0; i < count; i++) {
+        arr[i + 1] = va_arg(args, intptr_t);
+    }
+    va_end(args);
+    return (intptr_t)arr;
+}
+
 void strSet(intptr_t s, intptr_t i, intptr_t c) {
     ((char*)s)[i] = (char)c;
     ((char*)s)[i + 1] = '\0';

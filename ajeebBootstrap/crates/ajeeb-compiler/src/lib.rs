@@ -1,4 +1,5 @@
 pub mod ast;
+pub mod c_codegen;
 pub mod hir;
 pub mod hir_lower;
 pub mod llvm;

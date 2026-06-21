@@ -65,22 +65,6 @@ impl Codegen {
                         self.enum_regs.insert(reg.clone());
                     }
                     Ok(reg)
-                } else if let Some(gname) = self.globals_map.get(name).cloned() {
-                    let reg = self.fresh();
-                    write!(self.body, "  {} = load i64, ptr @{}\n", reg, gname).unwrap();
-                    if self.string_vars.contains(name) {
-                        self.string_regs.insert(reg.clone());
-                    }
-                    if self.bool_vars.contains(name) {
-                        self.bool_regs.insert(reg.clone());
-                    }
-                    if self.array_vars.contains(name) {
-                        self.array_regs.insert(reg.clone());
-                    }
-                    if self.enum_vars.contains(name) {
-                        self.enum_regs.insert(reg.clone());
-                    }
-                    Ok(reg)
                 } else if name == "__str_ptr" {
                     let reg = self.fresh();
                     write!(self.body, "  {} = add i64 0, 0\n", reg).unwrap();

@@ -646,6 +646,7 @@ impl Codegen {
                     let label = format!("mir_b{}", default);
                     write!(self.body, "  br i1 {}, label %{}, label %{}\n", cond_bool, label, label).unwrap();
                 } else {
+                    // targets[0] is the "true" branch, default is the "false" branch
                     let (_val, target) = &targets[0];
                     let true_label = format!("mir_b{}", target);
                     let false_label = format!("mir_b{}", default);
@@ -688,7 +689,24 @@ impl Codegen {
             }
         } else if args.len() == 1 {
             let arg = &args[0];
-            if self.string_regs.contains(arg) || self.bool_regs.contains(arg) {
+            if self.bool_regs.contains(arg) {
+                let is_zero = self.fresh();
+                write!(self.body, "  {} = icmp eq i64 {}, 0\n", is_zero, arg).unwrap();
+                let true_ptr = self.fresh();
+                let true_str = self.global_str("true");
+                write!(self.body, "  {} = getelementptr inbounds i8, ptr @{}, i64 0\n", true_ptr, true_str).unwrap();
+                let false_ptr = self.fresh();
+                let false_str = self.global_str("false");
+                write!(self.body, "  {} = getelementptr inbounds i8, ptr @{}, i64 0\n", false_ptr, false_str).unwrap();
+                let chosen_ptr = self.fresh();
+                write!(self.body, "  {} = select i1 {}, ptr {}, ptr {}\n", chosen_ptr, is_zero, false_ptr, true_ptr).unwrap();
+                let reg = self.fresh();
+                if is_println {
+                    write!(self.body, "  {} = call i32 @puts(ptr {})\n", reg, chosen_ptr).unwrap();
+                } else {
+                    write!(self.body, "  {} = call i32 (ptr, ...) @printf(ptr {})\n", reg, chosen_ptr).unwrap();
+                }
+            } else if self.string_regs.contains(arg) {
                 let str_ptr = self.fresh();
                 write!(self.body, "  {} = inttoptr i64 {} to ptr\n", str_ptr, arg).unwrap();
                 let reg = self.fresh();

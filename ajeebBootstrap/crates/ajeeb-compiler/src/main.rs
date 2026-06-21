@@ -1,5 +1,6 @@
 mod ast;
 mod cache;
+mod c_codegen;
 mod hir;
 mod hir_lower;
 mod llvm;
@@ -32,7 +33,7 @@ use std::env;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::{exit, Command};
+use std::process::Command;
 use token::Token;
 
 fn detect_backend() -> &'static str {
@@ -58,8 +59,8 @@ fn detect_backend() -> &'static str {
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("Arre Bhai! File ka naam toh do. Example: cargo run test.ajb");
-        exit(1);
+        println!("Arre Bhai! File ka naam toh do. Example: cargo run test.ajb");
+        return Ok(());
     }
 
     // --- Parse arguments ---
@@ -70,8 +71,8 @@ fn main() -> io::Result<()> {
     let file_path = if !positional.is_empty() {
         positional[0].as_str()
     } else {
-        eprintln!("Arre Bhai! File ka naam toh do. Example: cargo run test.ajb");
-        exit(1);
+        println!("Arre Bhai! File ka naam toh do. Example: cargo run test.ajb");
+        return Ok(());
     };
     let output_path = if positional.len() >= 2 {
         positional[1].as_str()
@@ -83,7 +84,6 @@ fn main() -> io::Result<()> {
     let force_gcc = args.iter().any(|a| a == "--gcc");
     let skip_run = args.iter().any(|a| a == "--skip-run");
     let skip_compile = args.iter().any(|a| a == "--skip-compile") || args.iter().any(|a| a == "--interpret");
-    let emit_llvm_only = args.iter().any(|a| a == "--emit-llvm-only");
     let force_run = args.iter().any(|a| a == "--run") || args.iter().any(|a| a == "--interpret");
 
     // --- Detect backend ---
@@ -158,8 +158,8 @@ fn main() -> io::Result<()> {
                     token_cols.push(col);
                 }
                 Err(e) => {
-                    eprintln!("{}\n😡 Lexing error! Tokenize karte waqt problem aayi.", e);
-                    exit(1);
+                    println!("{}\n😡 Lexing error! Tokenize karte waqt problem aayi.", e);
+                    return Ok(());
                 }
             }
         }
@@ -171,8 +171,8 @@ fn main() -> io::Result<()> {
         let ast = match parser.parse_program() {
             Ok(stmts) => stmts,
             Err(e) => {
-                eprintln!("{}\n😤 Parsing error! AST banane me problem aayi.", e);
-                exit(1);
+                println!("{}\n😤 Parsing error! AST banane me problem aayi.", e);
+                return Ok(());
             }
         };
 
@@ -224,8 +224,8 @@ fn main() -> io::Result<()> {
             .insert(module_name.to_string(), entry_module);
 
         if let Err(e) = loader.resolve_imports() {
-            eprintln!("❌ Module resolution error: {}", e);
-            exit(1);
+            println!("❌ Module resolution error: {}", e);
+            return Ok(());
         }
 
         let resolved_stmts = loader.collect_all_stmts();
@@ -250,8 +250,8 @@ fn main() -> io::Result<()> {
         for err in &analyzer.errors {
             println!("{}", err);
         }
-        eprintln!("\n😤 Semantic analysis failed! Code mein type ya scope ki problem hai.");
-        exit(1);
+        println!("\n😤 Semantic analysis failed! Code mein type ya scope ki problem hai.");
+        return Ok(());
     }
     println!("✓ Semantic: OK");
 
@@ -271,8 +271,8 @@ fn main() -> io::Result<()> {
         for e in &type_errors {
             println!("{}", e);
         }
-        eprintln!("❌ Type checking failed!");
-        exit(1);
+        println!("❌ Type checking failed!");
+        return Ok(());
     }
     println!("✓ THIR: Type checking passed");
 
@@ -325,13 +325,6 @@ fn main() -> io::Result<()> {
                 };
                 codegen.write_ir_to_file(&ll_path).ok();
 
-                if emit_llvm_only {
-                    println!("\n🔨 LLVM IR emitted: {}", ll_path);
-                    println!("⏭️  Skipping assemble/link (--emit-llvm-only)");
-                    compiled_ok = true;
-                    return Ok(());
-                }
-
                 println!("\n🔨 Codegen: {} → {}", file_path, bin_path);
 
                 // Step 1: llc — LLVM IR → Assembly
@@ -342,8 +335,8 @@ fn main() -> io::Result<()> {
                     .unwrap_or(false);
 
                 if !llc_ok {
-                    eprintln!("❌ llc failed");
-                    exit(1);
+                    println!("❌ llc failed");
+                    return Ok(());
                 }
 
                 // Step 2: as — Assembly → Object
@@ -354,21 +347,16 @@ fn main() -> io::Result<()> {
                     .unwrap_or(false);
 
                 if !as_ok {
-                    eprintln!("❌ as failed");
-                    exit(1);
+                    println!("❌ as failed");
+                    return Ok(());
                 }
 
                 // Step 3: compile runtime.c to object (if not cached)
                 if !Path::new("build/runtime.o").exists() {
-                    let runtime_c = if Path::new("ajeebc/runtime/ajeeb_runtime.c").exists() {
-                        "ajeebc/runtime/ajeeb_runtime.c"
-                    } else {
-                        "runtime/ajeeb_runtime.c"
-                    };
                     let runtime_ok = Command::new("gcc")
                         .args([
                             "-c",
-                            runtime_c,
+                            "runtime/ajeeb_runtime.c",
                             "-o",
                             "build/runtime.o",
                             "-Wno-int-to-pointer-cast",
@@ -378,8 +366,8 @@ fn main() -> io::Result<()> {
                         .unwrap_or(false);
 
                     if !runtime_ok {
-                        eprintln!("❌ Runtime compilation failed");
-                        exit(1);
+                        println!("❌ Runtime compilation failed");
+                        return Ok(());
                     }
                 }
 
@@ -404,36 +392,73 @@ fn main() -> io::Result<()> {
                     Err(e) => println!("❌ ld error: {}", e),
                 }
             }
-            Err(e) => println!("⚠️  LLVM codegen skipped: {}", e),
+            Err(e) => {
+                println!("⚠️  LLVM codegen failed: {}", e);
+                println!("🔄 Falling back to C backend...");
+                // Fall through to C backend
+                let c_result = self::c_codegen::CCodegen::new().compile(&mir);
+                match c_result {
+                    Ok(c_code) => {
+                        std::fs::write("build/output.c", &c_code).ok();
+                        println!("\n🔨 C Codegen: {} → {}", file_path, bin_path);
+                        let gcc_status = Command::new("gcc")
+                            .args([
+                                "build/output.c",
+                                "runtime/ajeeb_runtime.c",
+                                "-o",
+                                &bin_path,
+                                "-Wno-int-to-pointer-cast",
+                                "-Wno-pointer-to-int-cast",
+                                "-ldl",
+                                "-lm",
+                            ])
+                            .status();
+                        match gcc_status {
+                            Ok(s) if s.success() => {
+                                println!("✅ Ready (C fallback): ./{}", bin_path);
+                                compiled_ok = true;
+                            }
+                            Ok(s) => println!("❌ GCC failed (exit: {})", s),
+                            Err(e) => println!("❌ gcc error: {}", e),
+                        }
+                    }
+                    Err(e2) => println!("❌ C codegen also failed: {}", e2),
+                }
+            }
         }
     } else if backend == "gcc" {
-        // --- GCC FALLBACK: C codegen pipeline ---
-        // Use the C codegen path if available
+        // --- GCC BACKEND: Generate C from MIR, then compile ---
         let output_c = "build/output.c";
-        if Path::new(output_c).exists() {
-            println!("\n🔨 Compiling {} → {}", file_path, bin_path);
-            let gcc_status = Command::new("gcc")
-                .args([
-                    output_c,
-                    "runtime/ajeeb_runtime.c",
-                    "-o",
-                    &bin_path,
-                    "-Wall",
-                    "-Wno-int-to-pointer-cast",
-                    "-Wno-pointer-to-int-cast",
-                    "-ldl",
-                ])
-                .status();
-            match gcc_status {
-                Ok(s) if s.success() => {
-                    println!("✅ Ready: ./{}", bin_path);
-                    compiled_ok = true;
+        // Try to generate C from MIR first
+        let c_result = self::c_codegen::CCodegen::new().compile(&mir);
+        match c_result {
+            Ok(c_code) => {
+                std::fs::write(output_c, &c_code).ok();
+                println!("\n🔨 C Codegen: {} → {}", file_path, bin_path);
+                let gcc_status = Command::new("gcc")
+                    .args([
+                        output_c,
+                        "runtime/ajeeb_runtime.c",
+                        "-o",
+                        &bin_path,
+                        "-Wno-int-to-pointer-cast",
+                        "-Wno-pointer-to-int-cast",
+                        "-ldl",
+                        "-lm",
+                    ])
+                    .status();
+                match gcc_status {
+                    Ok(s) if s.success() => {
+                        println!("✅ Ready: ./{}", bin_path);
+                        compiled_ok = true;
+                    }
+                    Ok(s) => println!("❌ GCC failed (exit: {})", s),
+                    Err(e) => println!("❌ gcc error: {}", e),
                 }
-                Ok(s) => println!("❌ GCC failed (exit: {})", s),
-                Err(e) => println!("❌ gcc error: {}", e),
             }
-        } else {
-            println!("ℹ️  No C output found. Use --llvm or build with self-hosted compiler.");
+            Err(e) => {
+                println!("❌ C codegen failed: {}", e);
+            }
         }
     }
 

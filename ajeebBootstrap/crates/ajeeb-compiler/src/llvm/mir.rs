@@ -76,24 +76,12 @@ impl Codegen {
         let params_ir: Vec<String> = f.params.iter().map(|_| "i64".to_string()).collect();
         let header = format!("define i64 @{}({}) {{\n", f.name, params_ir.join(", "));
 
-        for (i, (pname, ptype)) in f.params.iter().enumerate() {
+        for (i, (pname, _)) in f.params.iter().enumerate() {
             let param_reg = format!("%{}", i);
             let reg = self.fresh();
             write!(fn_body, "  {} = alloca i64, align 8\n", reg).unwrap();
             write!(fn_body, "  store i64 {}, ptr {}\n", param_reg, reg).unwrap();
             fn_vars.insert(pname.clone(), reg);
-            if matches!(ptype, HirType::Array(_)) {
-                self.array_vars.insert(pname.clone());
-            }
-            if *ptype == HirType::Str {
-                self.string_vars.insert(pname.clone());
-            }
-            if *ptype == HirType::Bool {
-                self.bool_vars.insert(pname.clone());
-            }
-            if *ptype == HirType::Float {
-                self.float_vars.insert(pname.clone());
-            }
         }
 
         for (lname, _) in &f.locals {
@@ -226,25 +214,21 @@ impl Codegen {
                 let is_string = self.string_regs.contains(&val);
                 let is_bool = self.bool_regs.contains(&val);
                 let is_float = self.float_regs.contains(&val);
-                let is_array = self.array_regs.contains(&val);
                 if let Some(var_reg) = self.variables.get(dest).cloned() {
                     write!(self.body, "  store i64 {}, ptr {}\n", val, var_reg).unwrap();
                     if is_string { self.string_vars.insert(dest.clone()); }
                     if is_bool { self.bool_vars.insert(dest.clone()); }
                     if is_float { self.float_vars.insert(dest.clone()); }
-                    if is_array { self.array_vars.insert(dest.clone()); }
                 } else if let Some(gname) = self.globals_map.get(dest).cloned() {
                     write!(self.body, "  store i64 {}, ptr @{}\n", val, gname).unwrap();
                     if is_string { self.string_vars.insert(dest.clone()); }
                     if is_bool { self.bool_vars.insert(dest.clone()); }
                     if is_float { self.float_vars.insert(dest.clone()); }
-                    if is_array { self.array_vars.insert(dest.clone()); }
                 } else {
                     self.mir_temps.insert(dest.clone(), val.clone());
                     if is_string { self.string_vars.insert(dest.clone()); }
                     if is_bool { self.bool_vars.insert(dest.clone()); }
                     if is_float { self.float_vars.insert(dest.clone()); }
-                    if is_array { self.array_vars.insert(dest.clone()); }
                 }
                 Ok(())
             }
@@ -283,81 +267,6 @@ impl Codegen {
                             }
                         }
                     }
-                    "__closure_create" => {
-                        let closure_id = compiled_args.get(0).cloned().unwrap_or_default();
-                        let fn_name = format!("__closure_{}", closure_id);
-                        self.user_fns.insert(fn_name);
-                        if let Some(ref dest_name) = dest {
-                            let reg = self.fresh();
-                            write!(self.body, "  {} = add i64 0, {}\n", reg, closure_id).unwrap();
-                            if let Some(var_reg) = self.variables.get(dest_name).cloned() {
-                                write!(self.body, "  store i64 {}, ptr {}\n", reg, var_reg).unwrap();
-                            } else {
-                                self.mir_temps.insert(dest_name.clone(), reg);
-                            }
-                        }
-                    }
-                    "__closure_call" => {
-                        // args[0] is the closure value (register holding closure_id)
-                        // args[1..] are the actual call arguments
-                        let closure_val = compiled_args.first().cloned().unwrap_or_default();
-                        let actual_args: Vec<String> = compiled_args[1..].iter()
-                            .map(|a| format!("i64 {}", a))
-                            .collect();
-                        let call_args_str = actual_args.join(", ");
-                        let closure_reg = self.fresh();
-                        write!(self.body, "  {} = add i64 0, {}\n", closure_reg, closure_val).unwrap();
-                        // Allocate a destination variable upfront so results from
-                        // different dispatch branches can be stored and merged.
-                        let dest_var = dest.as_ref().and_then(|d| {
-                            self.variables.get(d.as_str()).cloned()
-                        });
-                        // Ensure dest_var is defined in entry block for SSA
-                        let dest_var = dest_var.or_else(|| dest.as_ref().map(|_| {
-                            let v = self.fresh();
-                            write!(self.body, "  {} = alloca i64, align 8\n", v).unwrap();
-                            v
-                        }));
-                        let mut dispatched = false;
-                        for cid in 0i64..8i64 {
-                            let fn_name = format!("__closure_{}", cid);
-                            if self.user_fns.contains(&fn_name) || self.fn_return_types.contains_key(&fn_name) {
-                                let cmp = self.fresh();
-                                let then_label = self.fresh_label();
-                                let else_label = self.fresh_label();
-                                write!(self.body, "  {} = icmp eq i64 {}, {}\n", cmp, closure_reg, cid).unwrap();
-                                write!(self.body, "  br i1 {}, label %{}, label %{}\n", cmp, then_label, else_label).unwrap();
-                                write!(self.body, "{}:\n", then_label).unwrap();
-                                if let Some(ref dv) = dest_var {
-                                    let reg = self.fresh();
-                                    write!(self.body, "  {} = call i64 @{}({})\n", reg, fn_name, call_args_str).unwrap();
-                                    write!(self.body, "  store i64 {}, ptr {}\n", reg, dv).unwrap();
-                                } else {
-                                    write!(self.body, "  call i64 @{}({})\n", fn_name, call_args_str).unwrap();
-                                }
-                                write!(self.body, "  br label %{}\n", else_label).unwrap();
-                                write!(self.body, "{}:\n", else_label).unwrap();
-                                dispatched = true;
-                            }
-                        }
-                        if !dispatched {
-                            if let Some(ref dv) = dest_var {
-                                let reg = self.fresh();
-                                write!(self.body, "  {} = add i64 0, 0\n", reg).unwrap();
-                                write!(self.body, "  store i64 {}, ptr {}\n", reg, dv).unwrap();
-                            }
-                        }
-                        // Register dest temp for subsequent use
-                        if let Some(ref dest_name) = dest {
-                            if let Some(ref dv) = dest_var {
-                                if !self.variables.contains_key(dest_name) {
-                                    let load_reg = self.fresh();
-                                    write!(self.body, "  {} = load i64, ptr {}\n", load_reg, dv).unwrap();
-                                    self.mir_temps.insert(dest_name.clone(), load_reg);
-                                }
-                            }
-                        }
-                    }
                     _ => {
                         let call_func = if func == "len" && compiled_args.len() == 1
                             && self.array_regs.contains(&compiled_args[0]) {
@@ -385,8 +294,8 @@ impl Codegen {
                                 // Array indexing → GEP + load (offset = idx + 1 for length prefix)
                                 let ptr = self.fresh();
                                 write!(self.body, "  {} = inttoptr i64 {} to ptr\n", ptr, obj).unwrap();
-                                let one = self.fresh();
                                 let offset = self.fresh();
+                                let one = self.fresh();
                                 write!(self.body, "  {} = add i64 1, {}\n", one, idx).unwrap();
                                 write!(self.body, "  {} = add i64 0, {}\n", offset, one).unwrap();
                                 let elem_ptr = self.fresh();
@@ -416,8 +325,8 @@ impl Codegen {
                                 // Array index assign → GEP + store (offset = idx + 1 for length prefix)
                                 let ptr = self.fresh();
                                 write!(self.body, "  {} = inttoptr i64 {} to ptr\n", ptr, obj).unwrap();
-                                let one = self.fresh();
                                 let offset = self.fresh();
+                                let one = self.fresh();
                                 write!(self.body, "  {} = add i64 1, {}\n", one, idx).unwrap();
                                 write!(self.body, "  {} = add i64 0, {}\n", offset, one).unwrap();
                                 let elem_ptr = self.fresh();
@@ -429,52 +338,6 @@ impl Codegen {
                                     write!(self.body, "  store i64 {}, ptr {}\n", val, var_reg).unwrap();
                                 } else {
                                     self.mir_temps.insert(dest_name.clone(), val.clone());
-                                }
-                            }
-                            return Ok(());
-                        }
-                        // __array_lit: inline array allocation
-                        if call_func == "__array_lit" {
-                            let count = compiled_args.len();
-                            if count == 0 {
-                                let reg = self.fresh();
-                                write!(self.body, "  {} = add i64 0, 0\n", reg).unwrap();
-                                self.array_regs.insert(reg.clone());
-                                if let Some(ref dest_name) = dest {
-                                    if let Some(var_reg) = self.variables.get(dest_name).cloned() {
-                                        write!(self.body, "  store i64 {}, ptr {}\n", reg, var_reg).unwrap();
-                                    } else {
-                                        self.mir_temps.insert(dest_name.clone(), reg);
-                                    }
-                                }
-                                return Ok(());
-                            }
-                            let arr_ptr = self.fresh();
-                            write!(self.body, "  {} = alloca i64, i64 {}\n", arr_ptr, count + 1).unwrap();
-                            let len_ptr = self.fresh();
-                            write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 0\n", len_ptr, arr_ptr).unwrap();
-                            write!(self.body, "  store i64 {}, ptr {}\n", count, len_ptr).unwrap();
-                            for (i, arg_reg) in compiled_args.iter().enumerate() {
-                                let final_val = if self.array_regs.contains(arg_reg) {
-                                    let tagged = self.fresh();
-                                    write!(self.body, "  {} = or i64 {}, 9223372036854775808\n", tagged, arg_reg).unwrap();
-                                    tagged
-                                } else {
-                                    arg_reg.clone()
-                                };
-                                let elem_ptr = self.fresh();
-                                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, arr_ptr, i + 1).unwrap();
-                                write!(self.body, "  store i64 {}, ptr {}\n", final_val, elem_ptr).unwrap();
-                            }
-                            let ptr_as_i64 = self.fresh();
-                            write!(self.body, "  {} = ptrtoint ptr {} to i64\n", ptr_as_i64, arr_ptr).unwrap();
-                            self.array_regs.insert(ptr_as_i64.clone());
-                            if let Some(ref dest_name) = dest {
-                                self.array_vars.insert(dest_name.clone());
-                                if let Some(var_reg) = self.variables.get(dest_name).cloned() {
-                                    write!(self.body, "  store i64 {}, ptr {}\n", ptr_as_i64, var_reg).unwrap();
-                                } else {
-                                    self.mir_temps.insert(dest_name.clone(), ptr_as_i64);
                                 }
                             }
                             return Ok(());
@@ -562,7 +425,7 @@ impl Codegen {
                           }
                      }
                 }
-                                Ok(())
+                Ok(())
             }
         }
     }
@@ -711,20 +574,17 @@ impl Codegen {
                     if self.string_vars.contains(name) { self.string_regs.insert(reg.clone()); }
                     if self.bool_vars.contains(name) { self.bool_regs.insert(reg.clone()); }
                     if self.float_vars.contains(name) { self.float_regs.insert(reg.clone()); }
-                    if self.array_vars.contains(name) { self.array_regs.insert(reg.clone()); }
                     Ok(reg)
                 } else if let Some(ssa_reg) = self.mir_temps.get(name).cloned() {
                     if self.string_vars.contains(name) { self.string_regs.insert(ssa_reg.clone()); }
                     if self.bool_vars.contains(name) { self.bool_regs.insert(ssa_reg.clone()); }
                     if self.float_vars.contains(name) { self.float_regs.insert(ssa_reg.clone()); }
-                    if self.array_vars.contains(name) { self.array_regs.insert(ssa_reg.clone()); }
                     Ok(ssa_reg)
                 } else if let Some(gname) = self.globals_map.get(name).cloned() {
                     let reg = self.fresh();
                     write!(self.body, "  {} = load i64, ptr @{}\n", reg, gname).unwrap();
                     if self.string_vars.contains(name) { self.string_regs.insert(reg.clone()); }
                     if self.bool_vars.contains(name) { self.bool_regs.insert(reg.clone()); }
-                    if self.array_vars.contains(name) { self.array_regs.insert(reg.clone()); }
                     Ok(reg)
                 } else {
                     if let Ok(idx) = name.parse::<usize>() {
@@ -786,6 +646,7 @@ impl Codegen {
                     let label = format!("mir_b{}", default);
                     write!(self.body, "  br i1 {}, label %{}, label %{}\n", cond_bool, label, label).unwrap();
                 } else {
+                    // targets[0] is the "true" branch, default is the "false" branch
                     let (_val, target) = &targets[0];
                     let true_label = format!("mir_b{}", target);
                     let false_label = format!("mir_b{}", default);
@@ -828,7 +689,24 @@ impl Codegen {
             }
         } else if args.len() == 1 {
             let arg = &args[0];
-            if self.string_regs.contains(arg) || self.bool_regs.contains(arg) {
+            if self.bool_regs.contains(arg) {
+                let is_zero = self.fresh();
+                write!(self.body, "  {} = icmp eq i64 {}, 0\n", is_zero, arg).unwrap();
+                let true_ptr = self.fresh();
+                let true_str = self.global_str("true");
+                write!(self.body, "  {} = getelementptr inbounds i8, ptr @{}, i64 0\n", true_ptr, true_str).unwrap();
+                let false_ptr = self.fresh();
+                let false_str = self.global_str("false");
+                write!(self.body, "  {} = getelementptr inbounds i8, ptr @{}, i64 0\n", false_ptr, false_str).unwrap();
+                let chosen_ptr = self.fresh();
+                write!(self.body, "  {} = select i1 {}, ptr {}, ptr {}\n", chosen_ptr, is_zero, false_ptr, true_ptr).unwrap();
+                let reg = self.fresh();
+                if is_println {
+                    write!(self.body, "  {} = call i32 @puts(ptr {})\n", reg, chosen_ptr).unwrap();
+                } else {
+                    write!(self.body, "  {} = call i32 (ptr, ...) @printf(ptr {})\n", reg, chosen_ptr).unwrap();
+                }
+            } else if self.string_regs.contains(arg) {
                 let str_ptr = self.fresh();
                 write!(self.body, "  {} = inttoptr i64 {} to ptr\n", str_ptr, arg).unwrap();
                 let reg = self.fresh();
@@ -888,7 +766,7 @@ pub(super) fn hir_type_to_type_ann(t: &HirType) -> TypeAnnot {
         HirType::Named(s) => TypeAnnot::Class(s.clone()),
         HirType::Array(inner) => TypeAnnot::Array(Box::new(hir_type_to_type_ann(inner))),
         HirType::Generic(name, _args) => TypeAnnot::Generic(name.clone()),
-        HirType::Fn { .. } => TypeAnnot::Class("function".to_string()),
+        HirType::Fn { .. } => TypeAnnot::Void,
         HirType::Unknown => TypeAnnot::Void,
     }
 }

@@ -312,25 +312,4 @@ impl Codegen {
 
 }
 
-fn hir_type_to_type_ann(t: &crate::hir::HirType) -> TypeAnnot {
-    match t {
-        crate::hir::HirType::Int => TypeAnnot::Int,
-        crate::hir::HirType::Float => TypeAnnot::Float,
-        crate::hir::HirType::Bool => TypeAnnot::Bool,
-        crate::hir::HirType::Str => TypeAnnot::String,
-        crate::hir::HirType::Void => TypeAnnot::Void,
-        crate::hir::HirType::Named(s) => TypeAnnot::Class(s.clone()),
-        crate::hir::HirType::Array(inner) => TypeAnnot::Array(Box::new(hir_type_to_type_ann(inner))),
-        crate::hir::HirType::Generic(name, args) => {
-            if args.is_empty() {
-                TypeAnnot::Generic(name.clone())
-            } else {
-                TypeAnnot::Generic(name.clone())
-            }
-        }
-        crate::hir::HirType::Fn { .. } => TypeAnnot::Class("function".to_string()),
-        crate::hir::HirType::Unknown => TypeAnnot::Void,
-    }
-}
-
 

@@ -1,0 +1,34 @@
+// Maximum Subarray Sum — Kadane's Algorithm O(n)
+// Given an integer array nums, find the subarray with the largest sum, and return its sum.
+
+function maxSubArray(nums: int[]): int {
+    set maxSum: int = nums[0];
+    set currentSum: int = nums[0];
+    set n: int = arr_len(nums);
+    set i: int = 1;
+    while (i < n) {
+        if (currentSum + nums[i] > nums[i]) {
+            currentSum = currentSum + nums[i];
+        } else {
+            currentSum = nums[i];
+        }
+        if (currentSum > maxSum) {
+            maxSum = currentSum;
+        }
+        i = i + 1;
+    }
+    return maxSum;
+}
+
+function main(): int {
+    // Example 1: [-2,1,-3,4,-1,2,1,-5,4] → Expected: 6
+    println(itoa(maxSubArray([-2, 1, -3, 4, -1, 2, 1, -5, 4])));
+
+    // Example 2: [1] → Expected: 1
+    println(itoa(maxSubArray([1])));
+
+    // Example 3: [5,4,-1,7,8] → Expected: 23
+    println(itoa(maxSubArray([5, 4, -1, 7, 8])));
+
+    return 0;
+}
