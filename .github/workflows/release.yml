@@ -40,8 +40,10 @@ jobs:
         env:
           AJEEBC_PATH: ${{ github.workspace }}/build/ajeebc
         run: |
-          cd parth
-          bash build.sh
+          cd ajeebc/crates/parth
+          cargo build --release
+          mkdir -p ${{ github.workspace }}/parth/build
+          cp target/release/parth ${{ github.workspace }}/parth/build/parth
 
       - name: Bootstrap check
         run: |
@@ -69,11 +71,14 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p release
+          mkdir -p release/packages/ajeeb-std
           cp build/ajeebc release/ajeebc-linux-x86_64
           cp parthi/build/parthi release/parthi-linux-x86_64
           cp parth/build/parth release/parth-linux-x86_64
           cp ajeebc/runtime/ajeeb_runtime.c release/
+          cp packages/ajeeb-std/*.ajb release/packages/ajeeb-std/
           ls -lh release/
+          ls -lh release/packages/ajeeb-std/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -110,8 +115,9 @@ jobs:
             ### Shamil hain:
             - **ajeebc** — Ajeeb compiler (MIR → LLVM → native binary)
             - **parthi** — MIR interpreter
-            - **parth** — Project manager CLI
+            - **parth** — Project manager CLI (Rust, with `entry` field + `generate-lockfile` support)
             - **ajeeb_runtime.c** — Runtime library (gcc ke saath link karna)
+            - **ajeeb-std/** — Standard library (io, math, string, array, fs, result, collections)
 
             ### Install karo:
             ```bash
@@ -128,3 +134,4 @@ jobs:
             release/parthi-linux-x86_64
             release/parth-linux-x86_64
             release/ajeeb_runtime.c
+            release/packages/ajeeb-std/*
