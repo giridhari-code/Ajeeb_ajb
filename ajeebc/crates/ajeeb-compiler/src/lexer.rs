@@ -50,7 +50,7 @@ impl Lexer {
         }
     }
 
-    fn skip_comment(&mut self) {
+    fn skip_comment(&mut self) -> Result<(), CompileError> {
         if self.peek() == Some('/') {
             self.advance();
             if self.peek() == Some('/') {
@@ -61,14 +61,29 @@ impl Lexer {
                 }
             } else if self.peek() == Some('*') {
                 self.advance();
+                let start_line = self.line;
+                let start_col = self.col - 2;
+                let mut depth = 1;
                 while let Some(c) = self.advance() {
                     if c == '*' && self.peek() == Some('/') {
                         self.advance();
-                        break;
+                        depth -= 1;
+                        if depth == 0 { break; }
+                    } else if c == '/' && self.peek() == Some('*') {
+                        self.advance();
+                        depth += 1;
                     }
+                }
+                if depth > 0 {
+                    return Err(CompileError::new(
+                        start_line,
+                        start_col,
+                        "Block comment khatam nahi hua! EOF tak `*/` nahi mila.".to_string(),
+                    ));
                 }
             }
         }
+        Ok(())
     }
 
     fn read_string(&mut self) -> Result<Token, CompileError> {
@@ -231,7 +246,7 @@ impl Lexer {
                 self.advance();
                 if self.peek() == Some('/') || self.peek() == Some('*') {
                     self.pos = saved;
-                    self.skip_comment();
+                    self.skip_comment()?;
                     continue;
                 }
                 self.pos = saved;

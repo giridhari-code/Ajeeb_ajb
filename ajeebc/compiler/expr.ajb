@@ -1,5 +1,31 @@
 // EXPRESSION PARSING
 
+function hasStrExpr(code: string): int {
+    set j: int = 0; set ln: int = len(code);
+    while (j < ln) {
+        if (charCode(code, j) == 40 && j + 10 < ln) {
+            if (charCode(code, j+1) == 105 && charCode(code, j+2) == 110 && charCode(code, j+3) == 116 && charCode(code, j+4) == 112 && charCode(code, j+5) == 116 && charCode(code, j+6) == 114 && charCode(code, j+7) == 95 && charCode(code, j+8) == 116 && charCode(code, j+9) == 41 && charCode(code, j+10) == 34) { return 1; }
+        }
+        if (charCode(code, j) == 115 && j + 11 < ln) {
+            if (charCode(code, j+1) == 116 && charCode(code, j+2) == 114 && charCode(code, j+3) == 95 && charCode(code, j+4) == 99 && charCode(code, j+5) == 111 && charCode(code, j+6) == 110 && charCode(code, j+7) == 99 && charCode(code, j+8) == 97 && charCode(code, j+9) == 116 && charCode(code, j+10) == 40) { return 1; }
+        }
+        if (charCode(code, j) == 105 && j + 6 < ln) {
+            if (charCode(code, j+1) == 116 && charCode(code, j+2) == 111 && charCode(code, j+3) == 97 && charCode(code, j+4) == 40) { return 1; }
+        }
+        if (charCode(code, j) == 115 && j + 10 < ln) {
+            if (charCode(code, j+1) == 117 && charCode(code, j+2) == 98 && charCode(code, j+3) == 115 && charCode(code, j+4) == 116 && charCode(code, j+5) == 114 && charCode(code, j+6) == 105 && charCode(code, j+7) == 110 && charCode(code, j+8) == 103 && charCode(code, j+9) == 40) { return 1; }
+        }
+        if (charCode(code, j) == 114 && j + 7 < ln) {
+            if (charCode(code, j+1) == 101 && charCode(code, j+2) == 97 && charCode(code, j+3) == 100 && charCode(code, j+4) == 70 && charCode(code, j+5) == 105 && charCode(code, j+6) == 108 && charCode(code, j+7) == 101 && charCode(code, j+8) == 40) { return 1; }
+        }
+        if (charCode(code, j) == 97 && j + 9 < ln) {
+            if (charCode(code, j+1) == 114 && charCode(code, j+2) == 114 && charCode(code, j+3) == 97 && charCode(code, j+4) == 121 && charCode(code, j+5) == 95 && charCode(code, j+6) == 116 && charCode(code, j+7) == 111 && charCode(code, j+8) == 95 && charCode(code, j+9) == 115 && j + 10 < ln && charCode(code, j+10) == 116) { return 1; }
+        }
+        j = j + 1;
+    }
+    return 0;
+}
+
 function parsePrimary(src: int, buf: string, out: string): void {
     set t: int = tokType(buf);
     if (t == 2) {
@@ -216,22 +242,7 @@ function parseAdd(src: int, buf: string, out: string): void {
             writeAppend(tmp, left + " - " + right);
         } else {
             set hasStrLit: int = 0;
-            set j: int = 0;
-            while (j < len(left)) {
-                if (charCode(left, j) == 40) {
-                    if (j + 10 < len(left) && charCode(left, j+1) == 105 && charCode(left, j+2) == 110 && charCode(left, j+3) == 116 && charCode(left, j+4) == 112 && charCode(left, j+5) == 116 && charCode(left, j+6) == 114 && charCode(left, j+7) == 95 && charCode(left, j+8) == 116 && charCode(left, j+9) == 41 && charCode(left, j+10) == 34) { hasStrLit = 1; }
-                }
-                j = j + 1;
-            }
-            if (hasStrLit == 0) {
-                j = 0;
-                while (j < len(right)) {
-                    if (charCode(right, j) == 40) {
-                        if (j + 10 < len(right) && charCode(right, j+1) == 105 && charCode(right, j+2) == 110 && charCode(right, j+3) == 116 && charCode(right, j+4) == 112 && charCode(right, j+5) == 116 && charCode(right, j+6) == 114 && charCode(right, j+7) == 95 && charCode(right, j+8) == 116 && charCode(right, j+9) == 41 && charCode(right, j+10) == 34) { hasStrLit = 1; }
-                    }
-                    j = j + 1;
-                }
-            }
+            if (hasStrExpr(left) == 1 || hasStrExpr(right) == 1) { hasStrLit = 1; }
             if (hasStrLit == 1) {
                 writeAppend(tmp, "str_concat(" + left + ", " + right + ")");
             } else {

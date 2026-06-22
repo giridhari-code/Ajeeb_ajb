@@ -23,7 +23,6 @@ impl HirType {
         if self.is_unknown() || other.is_unknown() { return true; }
         match (self, other) {
             (HirType::Int, HirType::Float) | (HirType::Float, HirType::Int) => true,
-            (HirType::Int, HirType::Str) | (HirType::Str, HirType::Int) => true,
             (HirType::Array(a), HirType::Array(b)) => a.is_compatible_with(b),
             _ => false,
         }

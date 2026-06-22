@@ -203,11 +203,6 @@ impl SemanticAnalyzer {
         if matches!(expected, TypeAnnot::Generic(_)) || matches!(actual, TypeAnnot::Generic(_)) {
             return true;
         }
-        if (*expected == TypeAnnot::Int && *actual == TypeAnnot::String)
-            || (*expected == TypeAnnot::String && *actual == TypeAnnot::Int)
-        {
-            return true;
-        }
         if (*expected == TypeAnnot::Int && *actual == TypeAnnot::Float)
             || (*expected == TypeAnnot::Float && *actual == TypeAnnot::Int)
         {

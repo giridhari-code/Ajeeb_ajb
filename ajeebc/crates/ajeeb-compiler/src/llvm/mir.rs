@@ -255,7 +255,8 @@ impl Codegen {
                         let fail_label = self.fresh_label();
                         write!(self.body, "  br i1 {}, label %{}, label %{}\n", cmp_reg, cont_label, fail_label).unwrap();
                         write!(self.body, "{}:\n", fail_label).unwrap();
-                        write!(self.body, "  br label %{}\n", cont_label).unwrap();
+                        write!(self.body, "  call void @exit(i32 1)\n").unwrap();
+                        write!(self.body, "  unreachable\n").unwrap();
                         write!(self.body, "{}:\n", cont_label).unwrap();
                         if let Some(ref dest_name) = dest {
                             let reg = self.fresh();
