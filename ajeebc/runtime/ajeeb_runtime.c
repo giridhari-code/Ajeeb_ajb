@@ -571,10 +571,11 @@ AjeebValue ajeeb_chr(AjeebValue s, AjeebValue idx) {
 }
 
 intptr_t chr(intptr_t s, intptr_t i) {
-    AjeebValue vs = ajb_string((const char*)s, strlen((const char*)s));
-    AjeebValue vi = ajb_int((int64_t)i);
-    AjeebValue result = ajeeb_chr(vs, vi);
-    return (intptr_t)result.string;
+    if (s == 0 || i < 0) return 0;
+    const char* str = (const char*)s;
+    size_t len = strlen(str);
+    if ((size_t)i >= len) return 0;
+    return (intptr_t)(unsigned char)str[i];
 }
 
 AjeebValue ajeeb_len(AjeebValue s) {
