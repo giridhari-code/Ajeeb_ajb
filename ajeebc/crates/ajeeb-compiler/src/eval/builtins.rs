@@ -501,7 +501,7 @@ impl Evaluator {
                     _ => "",
                 };
                 let start: usize = match arg_vals.get(2) {
-                    Some(RuntimeValue::Int(n)) => { n.max(0) as usize }
+                    Some(RuntimeValue::Int(n)) => { (*n).max(0) as usize }
                     _ => 0,
                 };
                 let haystack = if start < s.len() { &s[start..] } else { "" };
