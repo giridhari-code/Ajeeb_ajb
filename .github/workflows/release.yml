@@ -26,10 +26,10 @@ jobs:
 
       - name: Build ajeebc
         run: |
-          cd ajeebc
-          make rust
-          mkdir -p ../build
-          cp build/ajeeb_compiler ../build/ajeebc
+          cd ajeebc/crates/ajeeb-compiler
+          cargo build --release
+          mkdir -p ../../build
+          cp target/release/ajeeb_compiler ../../build/ajeebc
 
       - name: Build parthi
         env:
@@ -96,10 +96,10 @@ jobs:
 
       - name: Build ajeebc
         run: |
-          cd ajeebc
-          make rust
-          mkdir -p ../build
-          cp build/ajeeb_compiler ../build/ajeebc
+          cd ajeebc/crates/ajeeb-compiler
+          cargo build --release
+          mkdir -p ../../build
+          cp target/release/ajeeb_compiler ../../build/ajeebc
 
       - name: Build parthi
         env:
@@ -153,10 +153,10 @@ jobs:
 
       - name: Build ajeebc
         run: |
-          cd ajeebc
-          make rust
-          mkdir -p ../build
-          cp build/ajeeb_compiler ../build/ajeebc
+          cd ajeebc/crates/ajeeb-compiler
+          cargo build --release
+          mkdir -p ../../build
+          cp target/release/ajeeb_compiler ../../build/ajeebc
 
       - name: Build parthi
         env:
@@ -176,13 +176,13 @@ jobs:
           mkdir -p ajeebc/build
           build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
           llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
-          gcc ajeebc/build/compiler.s \
+          cc ajeebc/build/compiler.s \
             ajeebc/runtime/ajeeb_runtime.c \
             -o ajeebc/build/compiler -lm -Wno-int-to-pointer-cast
           echo "✓ Self-hosted compiler built"
           build/ajeebc --emit-llvm-only ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll
           llc ajeebc/build/test_simple.ll -o ajeebc/build/test_simple.s
-          gcc ajeebc/build/test_simple.s \
+          cc ajeebc/build/test_simple.s \
             ajeebc/runtime/ajeeb_runtime.c \
             -o ajeebc/build/test_simple -lm -Wno-int-to-pointer-cast
           OUTPUT=$(./ajeebc/build/test_simple 2>/dev/null)
@@ -222,10 +222,10 @@ jobs:
 
       - name: Build ajeebc
         run: |
-          cd ajeebc
-          make rust
-          mkdir -p ../build
-          cp build/ajeeb_compiler ../build/ajeebc
+          cd ajeebc/crates/ajeeb-compiler
+          cargo build --release
+          mkdir -p ../../build
+          cp target/release/ajeeb_compiler ../../build/ajeebc
 
       - name: Build parthi
         env:
@@ -245,7 +245,7 @@ jobs:
           mkdir -p ajeebc/build
           build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
           llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
-          gcc ajeebc/build/compiler.s \
+          cc ajeebc/build/compiler.s \
             ajeebc/runtime/ajeeb_runtime.c \
             -o ajeebc/build/compiler -lm -Wno-int-to-pointer-cast
           echo "✓ Self-hosted compiler built"
@@ -269,16 +269,20 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install LLVM (winget)
+      - name: Install LLVM + GCC
         run: |
-          choco install llvm -y
+          choco install llvm mingw -y
           echo "C:\Program Files\LLVM\bin" >> $GITHUB_PATH
+          echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" >> $GITHUB_PATH
 
       - name: Build ajeebc
         run: |
@@ -293,15 +297,6 @@ jobs:
           cargo build --release
           mkdir -p ${{ github.workspace }}/parth/build
           cp target/release/parth.exe ${{ github.workspace }}/parth/build/parth.exe
-
-      - name: Bootstrap check
-        run: |
-          $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
-          mkdir -p ajeebc/build
-          ./build/ajeebc.exe --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
-          llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
-          gcc ajeebc/build/compiler.s ajeebc/runtime/ajeeb_runtime.c -o ajeebc/build/compiler.exe -lm -Wno-int-to-pointer-cast
-          echo "✓ Self-hosted compiler built"
 
       - name: Collect artifacts
         run: |
@@ -377,7 +372,7 @@ jobs:
             | Windows x86_64 | `ajeebc-windows-x86_64.exe` |
 
             ### Components:
-            - **ajeebc** — Ajeeb compiler (Rust bootstrap → self-hosting)
+            - **ajeebc** — Ajeeb compiler
             - **parthi** — MIR interpreter
             - **parth** — Project manager CLI
             - **ajeeb_runtime.c** — Runtime library
