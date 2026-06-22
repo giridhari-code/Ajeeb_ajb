@@ -79,10 +79,9 @@ if ! download "ajeebc"; then
         echo "  Building ajeebc from source..."
         TMPDIR=$(mktemp -d)
         git clone --depth 1 "https://github.com/${REPO}.git" "$TMPDIR" 2>/dev/null
-        cd "$TMPDIR/ajeebc" && make rust 2>/dev/null
-        cp build/ajeeb_compiler "${BIN_DIR}/ajeebc"
+        cd "$TMPDIR/ajeebc/crates/ajeeb-compiler" && cargo build --release 2>/dev/null
+        cp target/release/ajeeb_compiler "${BIN_DIR}/ajeebc"
         cd / && rm -rf "$TMPDIR"
-        BUILT_FROM_SOURCE="${BUILT_FROM_SOURCE} ajeebc"
         echo "  ✓ ajeebc (built from source)"
     else
         echo "  ❌ ajeebc nahi mila aur cargo bhi nahi hai. Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
@@ -99,7 +98,6 @@ if ! download "parthi"; then
         cd "$TMPDIR" && AJEEBC_PATH="${BIN_DIR}/ajeebc" bash parthi/build.sh 2>/dev/null
         cp parthi/build/parthi "${BIN_DIR}/parthi"
         cd / && rm -rf "$TMPDIR"
-        BUILT_FROM_SOURCE="${BUILT_FROM_SOURCE} parthi"
         echo "  ✓ parthi (built from source)"
     else
         echo "  ⚠️  parthi skip — cargo ya ajeebc nahi hai"
@@ -114,7 +112,6 @@ if ! download "parth"; then
         cd "$TMPDIR/ajeebc/crates/parth" && cargo build --release 2>/dev/null
         cp target/release/parth "${BIN_DIR}/parth"
         cd / && rm -rf "$TMPDIR"
-        BUILT_FROM_SOURCE="${BUILT_FROM_SOURCE} parth"
         echo "  ✓ parth (built from source)"
     else
         echo "  ⚠️  parth skip — cargo nahi hai"
