@@ -178,59 +178,32 @@ function cmdBuild(): void {
     set check: string = readFile("parth.das");
     if (len(check) < 1) { println("Error: no parth.das found"); return; }
     set name: string = getConfigName();
-    set output: string = getConfigOutput();
-    set runtime: string = getConfigRuntime();
-    set root: string = findRoot();
-    mkdir(output);
-    // Combine source files
-    set combined: string = "";
+    set compiler: string = findCompiler();
+    if (len(compiler) < 1) { println("Error: compiler not found"); return; }
+    mkdir("build");
     set src: string = readFile("src/main.ajb");
-    if (len(src) > 0) { combined = combined + "\n// --- main ---\n" + src; }
-    writeFile(output + "/combined.ajb", combined);
-    set binPath: string = output + "/" + name;
-    // Compile with ajeebc or fallback
-    set native: string = root + "/build/ajeebc";
-    set nativeCheck: string = readFile(native);
-    if (len(nativeCheck) > 0) {
-        println("Using self-hosted compiler (ajeebc)");
-        set llPath: string = output + "/output.ll";
-        set sPath: string = output + "/output.s";
-        exec(native + " " + output + "/combined.ajb " + llPath + " --skip-run");
-        exec("llc -O2 " + llPath + " -o " + sPath);
-        exec("gcc " + sPath + " " + root + "/" + runtime + " -o " + binPath + " -lm -ldl -Wl,--allow-multiple-definition");
+    if (len(src) < 1) { println("Error: src/main.ajb not found"); return; }
+    writeFile("build/combined.ajb", src);
+    set exitCode: int = exec(compiler + " build/combined.ajb --skip-run");
+    if (exitCode == 0) {
+        println("Built: build/" + name);
     } else {
-        println("Using Rust interpreter");
-        set compiler: string = findCompiler();
-        if (len(compiler) < 1) { println("Error: compiler not found"); return; }
-        exec(compiler + " " + output + "/combined.ajb --skip-run");
-        set llvmIR: string = root + "/build/output.ll";
-        exec("llc -O2 " + llvmIR + " -o " + output + "/output.s");
-        exec("gcc " + output + "/output.s " + root + "/" + runtime + " -o " + binPath + " -lm -ldl -Wl,--allow-multiple-definition");
+        println("Build failed");
     }
-    println("Built: " + binPath);
 }
 
 function cmdBuildFile(file: string): void {
     if (!endsWith(file, ".ajb")) { println("Error: expected .ajb file"); return; }
-    set root: string = findRoot();
-    set runtime: string = root + "/runtime/ajeeb_runtime.c";
-    set native: string = root + "/build/ajeebc";
-    set binName: string = "build/" + getStem(file);
+    set compiler: string = findCompiler();
+    if (len(compiler) < 1) { println("Error: compiler not found"); return; }
     mkdir("build");
-    set nativeCheck: string = readFile(native);
-    if (len(nativeCheck) > 0) {
-        println("Using ajeebc");
-        exec(native + " " + file + " build/output.ll --skip-run");
-        exec("llc -O2 build/output.ll -o build/output.s");
-        exec("gcc build/output.s " + runtime + " -o " + binName + " -Wall -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast");
+    set binName: string = "build/" + getStem(file);
+    set exitCode: int = exec(compiler + " " + file + " --skip-run");
+    if (exitCode == 0) {
+        println("Built: " + binName);
     } else {
-        set compiler: string = findCompiler();
-        if (len(compiler) < 1) { println("Error: compiler not found"); return; }
-        exec(compiler + " " + file + " --skip-run");
-        exec("llc -O2 build/output.ll -o build/output.s");
-        exec("gcc build/output.s " + runtime + " -o " + binName + " -lm -ldl");
+        println("Build failed");
     }
-    println("Built: " + binName);
 }
 
 function cmdRun(): void {
@@ -240,8 +213,12 @@ function cmdRun(): void {
     if (len(check) < 1) { println("Error: " + file + " not found"); return; }
     set compiler: string = findCompiler();
     if (len(compiler) < 1) { println("Error: compiler not found"); return; }
+    mkdir("build");
+    set exitCode: int = exec(compiler + " " + file + " --skip-run");
+    if (exitCode != 0) { println("Error: compilation failed"); return; }
+    set binName: string = "build/" + getStem(file);
     println("Running " + file + "...");
-    exec(compiler + " " + file);
+    exec("./" + binName);
 }
 
 function cmdTest(): void {
