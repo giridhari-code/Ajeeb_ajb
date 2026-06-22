@@ -1,0 +1,1 @@
+../ajeebc/tests/bootstrap_check.sh
