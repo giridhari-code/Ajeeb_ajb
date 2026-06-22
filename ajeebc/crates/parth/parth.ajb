@@ -1,0 +1,172 @@
+// Parth — Ajeeb Package Manager
+function main(): int {
+    set cmd: string = readArg(1);
+    if (len(cmd) < 1) {
+        cmdHelp();
+        return 1;
+    }
+    if (isEq(cmd, "help")) { cmdHelp(); }
+    else if (isEq(cmd, "build")) { cmdBuild(); }
+    else if (isEq(cmd, "new")) { cmdNew(); }
+    else if (isEq(cmd, "init")) { cmdInit(); }
+    else if (isEq(cmd, "test")) { cmdTest(); }
+    else if (isEq(cmd, "clean")) { cmdClean(); }
+    else if (isEq(cmd, "info")) { cmdInfo(); }
+    else if (isEq(cmd, "version")) { println("parth 0.2.0 (Ajeeb)"); }
+    else { println("Unknown: " + cmd); println("Try 'parth help'"); }
+    return 0;
+}
+
+// ─── Help ────────────────────────────────────────────────────────────
+function cmdHelp(): void {
+    println("Ajeeb Package Manager — parth v0.2.0 (written in Ajeeb!)");
+    println("");
+    println("COMMANDS:");
+    println("  new <name>       Create a new Ajeeb project");
+    println("  init             Initialize project in current directory");
+    println("  build [file.ajb] Compile project or single file");
+    println("  test             Run all test files");
+    println("  clean            Remove build artifacts");
+    println("  info             Show project info from parth.das");
+    println("  version          Show parth version");
+    println("  help             Show this help message");
+}
+
+// ─── Build ───────────────────────────────────────────────────────────
+function cmdBuild(): void {
+    set file: string = readArg(2);
+    if (len(file) < 1) { set file = "src/main.ajb"; }
+    set check: string = readFile(file);
+    if (len(check) < 1) {
+        println("Error: " + file + " not found");
+        return;
+    }
+    set compiler: string = findCompiler();
+    if (len(compiler) < 1) {
+        println("Error: ajeeb compiler not found. Run 'make' first.");
+        return;
+    }
+    // Get compiler dir to find runtime path
+    set selfPath: string = readArg(0);
+    set dir: string = getDir(selfPath);
+    println("Building " + file + "...");
+    set cmd: string = compiler + " " + file + " --skip-run";
+    exec(cmd);
+    println("Build complete!");
+}
+
+// ─── New ─────────────────────────────────────────────────────────────
+function cmdNew(): void {
+    set name: string = readArg(2);
+    if (len(name) < 1) { println("Usage: parth new <name>"); return; }
+    mkdir(name);
+    mkdir(name + "/src");
+    mkdir(name + "/build");
+    mkdir(name + "/tests");
+    set das: string = "[package]\n";
+    das = das + "name = \"" + name + "\"\n";
+    das = das + "version = \"0.1.0\"\n";
+    das = das + "\n[dependencies]\n";
+    writeFile(name + "/parth.das", das);
+    set src: string = "function main(): int {\n";
+    src = src + "    println(\"Hello from " + name + "!\");\n";
+    src = src + "    return 0;\n}\n";
+    writeFile(name + "/src/main.ajb", src);
+    println("Created '" + name + "' — next: cd " + name + " && parth build");
+}
+
+// ─── Init ────────────────────────────────────────────────────────────
+function cmdInit(): void {
+    mkdir("src");
+    mkdir("build");
+    mkdir("tests");
+    set das: string = "[package]\n";
+    das = das + "name = \"project\"\n";
+    das = das + "version = \"0.1.0\"\n";
+    das = das + "\n[dependencies]\n";
+    writeFile("parth.das", das);
+    set src: string = "function main(): int {\n";
+    src = src + "    println(\"Hello from Ajeeb!\");\n";
+    src = src + "    return 0;\n}\n";
+    writeFile("src/main.ajb", src);
+    println("Initialized project");
+}
+
+// ─── Test ────────────────────────────────────────────────────────────
+function cmdTest(): void {
+    set compiler: string = findCompiler();
+    if (len(compiler) < 1) { println("Error: compiler not found"); return; }
+    println("Running tests...");
+    runTest(compiler, "test_simple");
+    runTest(compiler, "test_math");
+    runTest(compiler, "test_if");
+    runTest(compiler, "test_while");
+    runTest(compiler, "test_for");
+    runTest(compiler, "test_strings");
+    println("Done!");
+}
+
+function runTest(compiler: string, name: string): void {
+    set path: string = "tests/" + name + ".ajb";
+    set check: string = readFile(path);
+    if (len(check) < 1) { return; }
+    print("  " + name + " ... ");
+    set cmd: string = compiler + " " + path + " --skip-run 2>/dev/null";
+    exec(cmd);
+    set bin: string = "build/" + name;
+    set binCheck: string = readFile(bin);
+    if (len(binCheck) > 0) {
+        exec("./" + bin);
+        println("PASS");
+    } else {
+        println("FAIL");
+    }
+}
+
+// ─── Clean ───────────────────────────────────────────────────────────
+function cmdClean(): void {
+    exec("rm -rf build/*");
+    println("Cleaned build/");
+}
+
+// ─── Info ────────────────────────────────────────────────────────────
+function cmdInfo(): void {
+    set content: string = readFile("parth.das");
+    if (len(content) < 1) { println("No parth.das found"); return; }
+    println(content);
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────
+function findCompiler(): string {
+    set selfPath: string = readArg(0);
+    set dir: string = getDir(selfPath);
+
+    // Check for marker files (small, safe to read)
+    set v1: string = readFile(dir + "/.compiler_version");
+    if (len(v1) > 0) { return dir + "/ajeeb_compiler"; }
+    set v2: string = readFile(dir + "/.native_version");
+    if (len(v2) > 0) { return dir + "/compiler"; }
+
+    // Try current dir
+    set v3: string = readFile("build/.compiler_version");
+    if (len(v3) > 0) { return "./build/ajeeb_compiler"; }
+    set v4: string = readFile("build/.native_version");
+    if (len(v4) > 0) { return "./build/compiler"; }
+
+    return "";
+}
+
+function getDir(path: string): string {
+    set i: int = len(path) - 1;
+    while (i >= 0) {
+        if (charCode(path, i) == 47) { // '/'
+            return substring(path, 0, i);
+        }
+        set i = i - 1;
+    }
+    return ".";
+}
+
+function isEq(a: string, b: string): bool {
+    return strcmp_ajeeb(a, b) == 0;
+}

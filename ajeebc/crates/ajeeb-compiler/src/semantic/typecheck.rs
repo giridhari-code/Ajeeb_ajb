@@ -205,6 +205,8 @@ impl SemanticAnalyzer {
         }
         if (*expected == TypeAnnot::Int && *actual == TypeAnnot::Float)
             || (*expected == TypeAnnot::Float && *actual == TypeAnnot::Int)
+            || (*expected == TypeAnnot::Int && *actual == TypeAnnot::String)
+            || (*expected == TypeAnnot::String && *actual == TypeAnnot::Int)
         {
             return true;
         }

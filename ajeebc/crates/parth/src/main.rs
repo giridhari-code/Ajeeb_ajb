@@ -1452,6 +1452,303 @@ fn read_package_version_from_dir(pkg_dir: &Path) -> Option<String> {
     None
 }
 
+// ============================================================
+// NEW COMMANDS — from Cargo + Miri
+// ============================================================
+
+fn cmd_bench(args: &[String]) {
+    let bench_dir = Path::new("benches");
+    if !bench_dir.exists() {
+        eprintln!("Error: no benches/ directory found. Create it and add benchmark files.");
+        std::process::exit(1);
+    }
+    let filter = if !args.is_empty() { &args[0] } else { "" };
+    let mut count = 0;
+    let mut failed = 0;
+    if let Ok(entries) = fs::read_dir(bench_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map(|e| e == "ajb").unwrap_or(false) {
+                let name = path.file_stem().unwrap().to_string_lossy();
+                if !filter.is_empty() && !name.contains(filter) { continue; }
+                print!("bench {} ... ", name);
+                use std::time::Instant;
+                let start = Instant::now();
+                let output = Command::new("ajeebc")
+                    .arg(path.to_str().unwrap())
+                    .output()
+                    .or_else(|_| Command::new("./target/debug/ajeebc").arg(path.to_str().unwrap()).output());
+                match output {
+                    Ok(o) if o.status.success() => {
+                        let elapsed = start.elapsed();
+                        println!("ok ({:.3?})", elapsed);
+                        count += 1;
+                    }
+                    Ok(o) => {
+                        let stderr = String::from_utf8_lossy(&o.stderr);
+                        println!("FAILED");
+                        if !stderr.is_empty() { eprintln!("  {}", stderr.lines().next().unwrap_or("")); }
+                        failed += 1;
+                        count += 1;
+                    }
+                    Err(e) => {
+                        println!("FAILED ({})", e);
+                        failed += 1;
+                        count += 1;
+                    }
+                }
+            }
+        }
+    }
+    println!("\n{} benchmarks: {} passed, {} failed", count, count - failed, failed);
+    if failed > 0 { std::process::exit(1); }
+}
+
+fn cmd_sanitize(args: &[String]) {
+    if !Path::new("parth.das").exists() {
+        eprintln!("Error: no parth.das found"); std::process::exit(1);
+    }
+    let cfg = config::read_config(Path::new("parth.das")).unwrap_or_else(|e| {
+        eprintln!("Error: {}", e); std::process::exit(1);
+    });
+    let entry = if !args.is_empty() && args[0].ends_with(".ajb") { args[0].clone() }
+    else { format!("src/{}.ajb", cfg.pkg_name) };
+
+    println!("Running sanitizer checks on {}...", entry);
+    println!("  Checking: memory safety, bounds, use-after-free, null deref");
+
+    let build_out = Command::new("ajeebc")
+        .args([&entry, "-o", "build/sanitize_check"])
+        .output()
+        .or_else(|_| Command::new("./target/debug/ajeebc").args([&entry, "-o", "build/sanitize_check"]).output());
+
+    match build_out {
+        Ok(o) if o.status.success() => {
+            let run_out = Command::new("./build/sanitize_check")
+                .env("AJEEB_SANITIZE", "1")
+                .output();
+            match run_out {
+                Ok(o) if o.status.success() => {
+                    println!("No memory safety issues detected!");
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    if !stderr.is_empty() { println!("  Runtime: {}", stderr.trim()); }
+                }
+                Ok(o) => {
+                    eprintln!("Sanitizer found issues:");
+                    let stdout = String::from_utf8_lossy(&o.stdout);
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    if !stdout.is_empty() { eprintln!("  {}", stdout.trim()); }
+                    if !stderr.is_empty() { eprintln!("  {}", stderr.trim()); }
+                    std::process::exit(1);
+                }
+                Err(e) => { eprintln!("Cannot run binary: {}", e); std::process::exit(1); }
+            }
+        }
+        Ok(o) => {
+            eprintln!("Build failed:");
+            eprintln!("{}", String::from_utf8_lossy(&o.stderr));
+            std::process::exit(1);
+        }
+        Err(e) => { eprintln!("Cannot run ajeebc: {}", e); std::process::exit(1); }
+    }
+}
+
+fn cmd_lint(args: &[String]) {
+    let target = if !args.is_empty() { args[0].clone() } else { "src/".to_string() };
+    let path = Path::new(&target);
+    let mut issues = 0;
+    let mut files_checked = 0;
+
+    fn lint_file(path: &Path, issues: &mut i32) {
+        if let Ok(content) = fs::read_to_string(path) {
+            for (i, line) in content.lines().enumerate() {
+                let line_num = i + 1;
+                if line.contains("== \"\"") || line.contains("!= \"\"") {
+                    eprintln!("  {}:{}: use strEq() instead of == for string comparison", path.display(), line_num);
+                    *issues += 1;
+                }
+                if line.trim().starts_with("// TODO") {
+                    eprintln!("  {}:{}: TODO found", path.display(), line_num);
+                    *issues += 1;
+                }
+                if line.len() > 120 {
+                    eprintln!("  {}:{}: line exceeds 120 characters ({})", path.display(), line_num, line.len());
+                    *issues += 1;
+                }
+                if line.ends_with(' ') || line.ends_with('\t') {
+                    eprintln!("  {}:{}: trailing whitespace", path.display(), line_num);
+                    *issues += 1;
+                }
+            }
+        }
+    }
+
+    if path.is_dir() {
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().map(|e| e == "ajb").unwrap_or(false) {
+                    lint_file(&p, &mut issues);
+                    files_checked += 1;
+                }
+            }
+        }
+    } else if path.exists() {
+        lint_file(path, &mut issues);
+        files_checked = 1;
+    } else {
+        eprintln!("Error: {} not found", target);
+        std::process::exit(1);
+    }
+
+    println!("Linted {} files: {} issues found", files_checked, issues);
+    if issues > 0 { std::process::exit(1); }
+}
+
+fn cmd_package() {
+    if !Path::new("parth.das").exists() {
+        eprintln!("Error: no parth.das found"); std::process::exit(1);
+    }
+    let cfg = config::read_config(Path::new("parth.das")).unwrap_or_else(|e| {
+        eprintln!("Error: {}", e); std::process::exit(1);
+    });
+    let pkg_name = &cfg.pkg_name;
+    let pkg_version = &cfg.pkg_version;
+    let tarball = format!("{}-{}.tar.gz", pkg_name, pkg_version);
+
+    println!("Packaging {} v{}...", pkg_name, pkg_version);
+
+    let mut files_to_pack: Vec<String> = vec!["parth.das".to_string()];
+    let src_dir = Path::new("src");
+    if src_dir.exists() {
+        if let Ok(entries) = fs::read_dir(src_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().map(|e| e == "ajb").unwrap_or(false) {
+                    files_to_pack.push(p.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    let output = Command::new("tar")
+        .args(["czf", &tarball])
+        .args(&files_to_pack)
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            println!("Created {}", tarball);
+            if let Ok(meta) = fs::metadata(&tarball) {
+                println!("  Size: {} bytes", meta.len());
+            }
+        }
+        _ => {
+            println!("Would package:");
+            for f in &files_to_pack { println!("  {}", f); }
+        }
+    }
+}
+
+fn cmd_generate_lockfile() {
+    if !Path::new("parth.das").exists() {
+        eprintln!("Error: no parth.das found"); std::process::exit(1);
+    }
+    let cfg = config::read_config(Path::new("parth.das")).unwrap_or_else(|e| {
+        eprintln!("Error: {}", e); std::process::exit(1);
+    });
+    if cfg.deps.is_empty() {
+        println!("No dependencies. Lockfile not needed.");
+        return;
+    }
+    match resolver::resolve_and_cache(&cfg.deps, Path::new("."), "") {
+        Ok((resolved, _lock)) => {
+            println!("Generated parth.lock with {} dependencies", resolved.len());
+        }
+        Err(e) => {
+            eprintln!("Failed to generate lockfile: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_vendor() {
+    if !Path::new("parth.das").exists() {
+        eprintln!("Error: no parth.das found"); std::process::exit(1);
+    }
+    let cfg = config::read_config(Path::new("parth.das")).unwrap_or_else(|e| {
+        eprintln!("Error: {}", e); std::process::exit(1);
+    });
+    if cfg.deps.is_empty() {
+        println!("No dependencies to vendor.");
+        return;
+    }
+
+    let vendor_dir = Path::new("vendor");
+    fs::create_dir_all(vendor_dir).expect("Cannot create vendor dir");
+
+    println!("Vendoring dependencies into vendor/...");
+    match resolver::resolve_and_cache(&cfg.deps, Path::new("."), "") {
+        Ok((resolved, _lock)) => {
+            for dep in &resolved {
+                let dep_dir = vendor_dir.join(&dep.name);
+                fs::create_dir_all(&dep_dir).ok();
+                let cache_path: String = std::env::var("HOME").unwrap_or_default();
+                let cache_base = Path::new(&cache_path).join(".parth/cache").join(&dep.name).join(&dep.version_req);
+                if cache_base.exists() {
+                    let _ = Command::new("cp").args(["-r", cache_base.to_str().unwrap(), dep_dir.to_str().unwrap()]).output();
+                }
+                println!("  {}@{}", dep.name, dep.version_req);
+            }
+            println!("Vendored {} dependencies", resolved.len());
+        }
+        Err(e) => { eprintln!("Vendor failed: {}", e); std::process::exit(1); }
+    }
+}
+
+fn cmd_doc_open() {
+    cmd_doc();
+    let doc_path = Path::new("build/doc.html");
+    if doc_path.exists() {
+        let _ = Command::new("xdg-open").arg(doc_path.to_str().unwrap()).spawn();
+        let _ = Command::new("open").arg(doc_path.to_str().unwrap()).spawn();
+    }
+}
+
+fn cmd_ls() {
+    let mut packages: Vec<(String, String, String)> = Vec::new();
+
+    if Path::new("parth.das").exists() {
+        if let Ok(cfg) = config::read_config(&std::env::current_dir().unwrap().join("parth.das")) {
+            packages.push((cfg.pkg_name.clone(), cfg.pkg_version.clone(), ".".to_string()));
+        }
+    }
+
+    let packages_dir = Path::new("packages");
+    if packages_dir.exists() {
+        if let Ok(entries) = fs::read_dir(packages_dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.join("parth.das").exists() {
+                    if let Ok(cfg) = config::read_config(&p.join("parth.das")) {
+                        packages.push((cfg.pkg_name.clone(), cfg.pkg_version.clone(), p.display().to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    if packages.is_empty() {
+        println!("No packages found.");
+    } else {
+        println!("{:<30} {:<12} {}", "Package", "Version", "Path");
+        println!("{}", "-".repeat(60));
+        for (name, version, path) in &packages {
+            println!("{:<30} {:<12} {}", name, version, path);
+        }
+    }
+}
+
 fn cmd_help() {
     println!("Ajeeb Package Manager — parth v0.1.0");
     println!();
@@ -1473,9 +1770,16 @@ fn cmd_help() {
     println!("                   Examples: parth run hello.ajb");
     println!("                             parth run (runs src/main.ajb)");
     println!("                             parth run file.ajb --native (compile + run)");
+    println!("  bench [filter]   Run benchmarks in benches/ directory");
     println!("  test             Run all tests in tests/ directory");
     println!("  fmt [files..]    Format Ajeeb source files");
-    println!("  doc              Generate documentation from /// comments");
+    println!("  lint [path]      Lint Ajeeb source files");
+    println!("  doc [--open]     Generate documentation (use --open to auto-open)");
+    println!("  sanitize [file]  Run sanitizer checks (memory safety, bounds)");
+    println!("  package          Package into tarball without publishing");
+    println!("  generate-lockfile Generate parth.lock without building");
+    println!("  vendor           Vendor dependencies into vendor/ directory");
+    println!("  ls               List workspace packages");
     println!("  clean            Remove build artifacts");
     println!("  info             Show project info from parth.das");
     println!("  version          Show parth and project version");
@@ -1529,7 +1833,17 @@ fn main() {
         }
         "test" => cmd_test(),
         "fmt" => cmd_fmt(&args[2..]),
-        "doc" => cmd_doc(),
+        "bench" => cmd_bench(&args[2..]),
+        "lint" => cmd_lint(&args[2..]),
+        "sanitize" => cmd_sanitize(&args[2..]),
+        "package" => cmd_package(),
+        "generate-lockfile" => cmd_generate_lockfile(),
+        "vendor" => cmd_vendor(),
+        "ls" => cmd_ls(),
+        "doc" => {
+            if args.len() > 2 && args[2] == "--open" { cmd_doc_open(); }
+            else { cmd_doc(); }
+        }
         "publish" => cmd_publish(&args[2..]),
         "update" => cmd_update(),
         "tree" => cmd_tree(),

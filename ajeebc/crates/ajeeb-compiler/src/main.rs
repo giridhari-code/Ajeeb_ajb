@@ -312,6 +312,26 @@ fn main() -> io::Result<()> {
     std::fs::create_dir_all("build").ok();
     let mut compiled_ok = false;
 
+    // Find ajeeb root relative to binary for runtime paths
+    let ajeeb_root = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+        .and_then(|bin_dir| {
+            // Walk up to find compiler/compiler.ajb
+            let mut d = bin_dir.clone();
+            loop {
+                if d.join("compiler").join("compiler.ajb").exists() {
+                    return Some(d);
+                }
+                if !d.pop() { break; }
+            }
+            // Fallback: assume bin_dir/../../ is root
+            bin_dir.parent().and_then(|p| p.parent()).map(|p| p.to_path_buf())
+        })
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+    let runtime_c = ajeeb_root.join("runtime/ajeeb_runtime.c");
+
     if backend == "llvm" {
         // --- LLVM PIPELINE (MIR-based) ---
         let mut codegen = llvm::Codegen::new();
@@ -353,10 +373,11 @@ fn main() -> io::Result<()> {
 
                 // Step 3: compile runtime.c to object (if not cached)
                 if !Path::new("build/runtime.o").exists() {
+                    let runtime_src = runtime_c.to_str().unwrap_or("runtime/ajeeb_runtime.c");
                     let runtime_ok = Command::new("gcc")
                         .args([
                             "-c",
-                            "runtime/ajeeb_runtime.c",
+                            runtime_src,
                             "-o",
                             "build/runtime.o",
                             "-Wno-int-to-pointer-cast",
@@ -404,7 +425,7 @@ fn main() -> io::Result<()> {
                         let gcc_status = Command::new("gcc")
                             .args([
                                 "build/output.c",
-                                "runtime/ajeeb_runtime.c",
+                                runtime_c.to_str().unwrap_or("runtime/ajeeb_runtime.c"),
                                 "-o",
                                 &bin_path,
                                 "-Wno-int-to-pointer-cast",
@@ -438,7 +459,7 @@ fn main() -> io::Result<()> {
                 let gcc_status = Command::new("gcc")
                     .args([
                         output_c,
-                        "runtime/ajeeb_runtime.c",
+                        runtime_c.to_str().unwrap_or("runtime/ajeeb_runtime.c"),
                         "-o",
                         &bin_path,
                         "-Wno-int-to-pointer-cast",
