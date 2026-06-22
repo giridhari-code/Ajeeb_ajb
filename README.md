@@ -128,8 +128,8 @@ git clone https://github.com/giridhari-code/Ajeeb_ajb
 cd Ajeeb_ajb
 
 # Rust compiler build karo (sirf development ke liye)
-cd ajeebBootstrap
-cargo build --release -p ajeeb-compiler --bin ajeeb_compiler
+cd ajeebc
+make rust
 
 # Self-hosting check
 cd ../ajeebc

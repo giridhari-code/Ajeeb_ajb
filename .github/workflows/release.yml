@@ -26,10 +26,10 @@ jobs:
 
       - name: Build ajeebc (Rust bootstrap)
         run: |
-          mkdir -p build
-          cd ajeebBootstrap
-          cargo build --release -p ajeeb-compiler --bin ajeeb_compiler
-          cp target/release/ajeeb_compiler ../build/ajeebc
+          cd ajeebc
+          make rust
+          mkdir -p ../build
+          cp build/ajeeb_compiler ../build/ajeebc
 
       - name: Build parthi
         env:

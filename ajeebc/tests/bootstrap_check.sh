@@ -23,15 +23,14 @@ fail() {
 }
 
 step "Build Rust compiler (MIR → LLVM pipeline)"
-mkdir -p build
-cargo build -p ajeeb-compiler --bin ajeeb_compiler 2>/dev/null
-if [ ! -x target/debug/ajeeb_compiler ]; then
+make rust 2>/dev/null
+if [ ! -x build/ajeeb_compiler ]; then
   fail "Rust compiler not built"
 fi
 pass "Rust compiler built"
 
 step "Compile compiler.ajb via MIR → native binary"
-cargo run -p ajeeb-compiler --bin ajeeb_compiler -- compiler/compiler.ajb --skip-run 2>/dev/null
+./build/ajeeb_compiler compiler/compiler.ajb --skip-run 2>/dev/null
 if [ ! -x build/compiler ]; then
   fail "Native compiler binary not built"
 fi
@@ -42,7 +41,7 @@ step "Verify all test files compile and run correctly via MIR pipeline"
 run_test() {
   local name="$1"
   local expected="$2"
-  cargo run -p ajeeb-compiler --bin ajeeb_compiler -- "tests/${name}.ajb" --skip-run 2>/dev/null
+  ./build/ajeeb_compiler "tests/${name}.ajb" --skip-run 2>/dev/null
   if [ ! -x "build/${name}" ]; then
     fail "${name}: binary not built"
   fi
@@ -63,5 +62,5 @@ run_test "test_strings" "$(printf 'Hello World\nHELLO\najeeb\n1\n1\nHello')"
 echo ""
 echo "✅ BOOTSTRAP SUCCESS — MIR pipeline verified!"
 echo "  Pipeline: AST → Semantic → HIR → THIR → MIR → LLVM IR → native"
-echo "  compiler.ajb compiles to working native binary (77KB)"
+echo "  compiler.ajb compiles to working native binary ($(du -h build/compiler | cut -f1))"
 echo "  All test files compile and run correctly ✓"

@@ -7,25 +7,20 @@ cd "$ROOT"
 
 echo "Ajeeb install ho raha hai..."
 
-# Step 1: Build ajeebc (Rust compiler → LLVM)
+# Step 1: Build ajeebc (Rust compiler via rustc, no Cargo)
 echo ""
 echo "=== Step 1: ajeebc (Rust compiler) ==="
-cargo build --release -p ajeeb-compiler
-cp target/release/ajeeb_compiler build/ajeebc
+make rust
+cp build/ajeeb_compiler build/ajeebc
 echo "  ✓ build/ajeebc ready"
 
-# Step 2: Build parthi (ParthI interpreter)
+# Step 2: Build native compiler (compiler.ajb → native)
 echo ""
-echo "=== Step 2: parthi (MIR Interpreter) ==="
-echo "  Compiling ParthI with ajeebc..."
-./build/ajeebc parthi/src/main.ajb build/parthi.ll
-echo "  Assembling with llc..."
-llc build/parthi.ll -o build/parthi.s
-echo "  Linking with gcc..."
-gcc build/parthi.s runtime/ajeeb_runtime.c -o build/parthi -lm -ldl
-echo "  ✓ build/parthi ready"
+echo "=== Step 2: Native compiler (compiler.ajb) ==="
+./build/ajeebc compiler/compiler.ajb --skip-run
+echo "  ✓ build/compiler ready"
 
-# Step 3: Build parth (Rust CLI)
+# Step 3: Build parth (Rust CLI — Cargo needed for deps)
 echo ""
 echo "=== Step 3: parth (Rust CLI) ==="
 cargo build --release -p parth
@@ -40,10 +35,9 @@ echo ""
 echo "Use karo:"
 echo "  ./build/parth init my-project"
 echo "  cd my-project"
-echo "  ../build/parth run        # ParthI se interpret"
 echo "  ../build/parth build      # Native binary banaye"
 echo "  ../build/parth test       # Tests chalao"
 echo ""
 echo "Ya PATH mein daal do:"
 echo "  export PATH=\"$ROOT/build:\$PATH\""
-echo "  parth init demo && cd demo && parth run"
+echo "  parth init demo && cd demo && parth build"

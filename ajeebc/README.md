@@ -5,18 +5,20 @@ Compile `.ajb` files to native binary!
 ## Build
 
 ```bash
-cargo build --release -p ajeeb-compiler
-cp target/release/ajeeb_compiler build/ajeebc
+make            # build everything (rust compiler + native compiler)
+make rust       # build Rust compiler only (rustc, no Cargo)
+make native     # compile compiler.ajb → native binary
+make test       # compile and run all test files
+make clean      # remove build artifacts
 ```
 
 ## Use
 
 ```bash
-ajeebc file.ajb            # LLVM codegen → .ll
+./build/ajeeb_compiler file.ajb --skip-run  # LLVM codegen
+./build/ajeeb_compiler file.ajb             # compile and run
 ```
 
 ## Architecture
 
 - Stage 0: Rust lexer/parser/codegen (`crates/ajeeb-compiler`)
-- Stage 1-3: Self-hosting compiler in Ajeeb (`compiler/compiler.ajb`)
-- Runtime: C runtime library (`runtime/ajeeb_runtime.c`)

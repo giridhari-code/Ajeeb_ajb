@@ -37,9 +37,7 @@ echo "  Compiling with ajeebc..."
 AJEEBC="${ROOT}/../ajeebc/build/ajeebc"
 if [ ! -x "$AJEEBC" ]; then
     echo "  ajeebc not found at $AJEEBC — building it first..."
-    (cd "${ROOT}/../ajeebc" && cargo build --release -p ajeeb-compiler 2>/dev/null)
-    mkdir -p "${ROOT}/../ajeebc/build"
-    cp "${ROOT}/../ajeebc/target/release/ajeeb_compiler" "$AJEEBC"
+    (cd "${ROOT}/../ajeebc" && make rust 2>/dev/null)
 fi
 
 "$AJEEBC" "$COMBINED" "build/parthi.ll" 2>/dev/null
