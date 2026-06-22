@@ -76,15 +76,22 @@ download() {
 BUILT_FROM_SOURCE=""
 if ! download "ajeebc"; then
     if command -v cargo &>/dev/null; then
-        echo "  Building ajeebc from source..."
+        echo "  Building ajeebc from source (cargo)..."
         TMPDIR=$(mktemp -d)
         git clone --depth 1 "https://github.com/${REPO}.git" "$TMPDIR" 2>/dev/null
-        cd "$TMPDIR/ajeebc/crates/ajeeb-compiler" && cargo build --release 2>/dev/null
-        cp target/release/ajeeb_compiler "${BIN_DIR}/ajeebc"
+        if cd "$TMPDIR/ajeebc/crates/ajeeb-compiler" && cargo build --release; then
+            cp target/release/ajeeb_compiler "${BIN_DIR}/ajeebc"
+            echo "  ✓ ajeebc (built from source)"
+        else
+            echo "  ❌ cargo build fail — Rust toolchain check karo"
+            echo "     rustc --version && cargo --version"
+            cd / && rm -rf "$TMPDIR"
+            exit 1
+        fi
         cd / && rm -rf "$TMPDIR"
-        echo "  ✓ ajeebc (built from source)"
     else
-        echo "  ❌ ajeebc nahi mila aur cargo bhi nahi hai. Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        echo "  ❌ ajeebc nahi mila aur cargo bhi nahi hai"
+        echo "  Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
         exit 1
     fi
 fi
@@ -95,7 +102,7 @@ if ! download "parthi"; then
         echo "  Building parthi from source..."
         TMPDIR=$(mktemp -d)
         git clone --depth 1 "https://github.com/${REPO}.git" "$TMPDIR" 2>/dev/null
-        cd "$TMPDIR" && AJEEBC_PATH="${BIN_DIR}/ajeebc" bash parthi/build.sh 2>/dev/null
+        cd "$TMPDIR" && AJEEBC_PATH="${BIN_DIR}/ajeebc" bash parthi/build.sh
         cp parthi/build/parthi "${BIN_DIR}/parthi"
         cd / && rm -rf "$TMPDIR"
         echo "  ✓ parthi (built from source)"
@@ -109,7 +116,7 @@ if ! download "parth"; then
         echo "  Building parth from source..."
         TMPDIR=$(mktemp -d)
         git clone --depth 1 "https://github.com/${REPO}.git" "$TMPDIR" 2>/dev/null
-        cd "$TMPDIR/ajeebc/crates/parth" && cargo build --release 2>/dev/null
+        cd "$TMPDIR/ajeebc/crates/parth" && cargo build --release
         cp target/release/parth "${BIN_DIR}/parth"
         cd / && rm -rf "$TMPDIR"
         echo "  ✓ parth (built from source)"
