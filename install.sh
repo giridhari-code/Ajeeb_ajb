@@ -76,6 +76,32 @@ curl -sSfL "$RUNTIME_URL" -o "${BIN_DIR}/ajeeb_runtime.c" || {
     echo "  ⚠️  Runtime download fail — chalega to chalega lekin guarantee nahi"
 }
 
+# ── Standard library ──────────────────────────────
+echo ""
+echo "  Downloading ajeeb-std packages..."
+STD_DIR="${BIN_DIR}/../packages/ajeeb-std"
+mkdir -p "$STD_DIR"
+for f in io.ajb math.ajb string.ajb array.ajb fs.ajb result.ajb collections.ajb; do
+    URL="https://raw.githubusercontent.com/${REPO}/${VERSION}/packages/ajeeb-std/${f}"
+    curl -sSfL "$URL" -o "${STD_DIR}/${f}" 2>/dev/null && echo "  ✓ ajeeb-std/${f}" || true
+done
+
+# ── Default parth.das template ────────────────────
+cat > "${BIN_DIR}/parth.das.template" << 'DASTPL'
+[package]
+name = "my-project"
+version = "0.1.0"
+author = ""
+
+[dependencies]
+
+[compiler]
+target = "native"
+output = "build/"
+runtime = "runtime/ajeeb_runtime.c"
+DASTPL
+echo "  ✓ parth.das template"
+
 # ── PATH setup ─────────────────────────────────────
 if [[ ":$PATH:" != *":${BIN_DIR}:"* ]]; then
     echo "" >> "${HOME}/.bashrc"
@@ -93,9 +119,12 @@ echo "Abhi ke liye chalao:"
 echo "  export PATH=\"${BIN_DIR}:\$PATH\""
 echo ""
 echo "Phir use karo:"
-echo "  ajeebc file.ajb              # compile → LLVM IR"
+echo "  ajeebc file.ajb              # compile → LLVM IR + native binary"
 echo "  parthi file.ajb              # MIR interpreter se chalao"
-echo "  parth init my-project        # naya project"
+echo "  parth init my-project        # naya project banao"
+echo "  parth build                  # compile karo (native target)"
+echo "  parth run                    # build + chalao"
+echo "  parth generate-lockfile      # lock file banao"
 echo ""
 echo "Pehli baar? Ye karo:"
 echo "  parth init hello-ajeeb"

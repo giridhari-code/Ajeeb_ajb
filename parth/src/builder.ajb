@@ -1,5 +1,5 @@
 // builder.ajb — Project builder for parth
-// Config parser, source combiner, build command generator
+// Reads config, resolves deps, compiles to native binary
 // All errors in Hinglish!
 
 import parser;
@@ -14,42 +14,43 @@ function readSource(path: string): string {
     return content;
 }
 
-function makeBuildDir(): int {
-    writeFile("build/.parth_keep", "");
+function makeBuildDir(outDir: string): int {
+    mkdir(outDir);
     return 0;
 }
 
-function combineProject(buf: string, src: string, outPath: string): int {
-    set entry: string = readSource("src/main.ajb");
-    if (len(entry) == 0) {
-        println("Error: src/main.ajb nahi mila! Pehle 'parth init' karo.");
-        return 1;
-    }
+function findRuntime(runtimePath: string): string {
+    // Check configured path first
+    if (fileExists(runtimePath) == 1) { return runtimePath; }
+    // Try relative to parth itself
+    set p1: string = str_concat("../ajeebc/runtime/", runtimePath);
+    if (fileExists(p1) == 1) { return p1; }
+    set p2: string = str_concat("../runtime/", runtimePath);
+    if (fileExists(p2) == 1) { return p2; }
+    // Try absolute paths for common locations
+    set p3: string = "/root/ajeeb_compiler/runtime/ajeeb_runtime.c";
+    if (fileExists(p3) == 1) { return p3; }
+    set p4: string = "/root/ajeeb_compiler/ajeebc/runtime/ajeeb_runtime.c";
+    if (fileExists(p4) == 1) { return p4; }
+    return runtimePath;
+}
 
-    set name: string = getConfigName(buf, src);
-    set combined: string = str_concat("// Combined source — ", str_concat(name, "\n"));
-    combined = str_concat(combined, entry);
-
-    set dc: int = getDepCount(buf);
-    set j: int = 0;
-    while (j < dc) {
-        set dn: string = getDepName(buf, src, j);
-        set pkgSrc: string = str_concat("packages/", str_concat(dn, "/src/main.ajb"));
-        set pkgContent: string = readSource(pkgSrc);
-        if (len(pkgContent) > 0) {
-            combined = str_concat(combined, str_concat("\n// --- Dependency: ", str_concat(dn, " ---\n")));
-            combined = str_concat(combined, pkgContent);
-            println(str_concat("  + ", str_concat(dn, " [package]")));
-        }
-        j = j + 1;
-    }
-
-    writeFile(outPath, combined);
-    println(str_concat("Combined source → ", outPath));
-    return 0;
+function findAjeebc(): string {
+    // Check PATH first
+    set r: int = exec("which ajeebc > /dev/null 2>&1");
+    if (r == 0) { return "ajeebc"; }
+    // Check relative paths
+    set p1: string = "../build/ajeebc";
+    if (fileExists(p1) == 1) { return p1; }
+    set p2: string = "../ajeebc/build/compiler";
+    if (fileExists(p2) == 1) { return p2; }
+    set p3: string = "../build/ajeeb_native";
+    if (fileExists(p3) == 1) { return p3; }
+    return "ajeebc";
 }
 
 function buildProject(): int {
+    // Parse config
     set buf: string = getStateBuf();
     set r: int = parseDasConfig("parth.das");
     if (r != 0) {
@@ -58,31 +59,94 @@ function buildProject(): int {
     }
     set src: string = readFile("parth.das");
 
-    println(str_concat("Project: ", getConfigName(buf, src)));
-    println(str_concat("Version: ", getConfigVersion(buf, src)));
+    set name: string = getConfigName(buf, src);
+    set entry: string = getCompilerEntry(buf, src);
+    set outDir: string = getBuildOutput(buf, src);
+    set runtimePath: string = getBuildRuntime(buf, src);
+    set target: string = getCompilerTarget(buf, src);
 
+    println(str_concat("Project:  ", name));
+    println(str_concat("Entry:    ", entry));
+    println(str_concat("Output:   ", outDir));
+    println(str_concat("Target:   ", target));
+
+    // Resolve dependencies
     r = resolveAll(buf, src);
     if (r != 0) { return r; }
 
-    makeBuildDir();
+    // Make build directory
+    makeBuildDir(outDir);
 
-    set outPath: string = "build/combined.ajb";
-    r = combineProject(buf, src, outPath);
-    if (r != 0) { return r; }
-
-    set name: string = getConfigName(buf, src);
-    println("");
-    println("Compile ho raha hai (ajeebc)...");
-    r = exec("ajeebc src/main.ajb build/out.ll");
-    if (r != 0) {
-        println("ajeebc compile fail! Neeche dekh lo.");
-        return r;
+    // Check entry file exists
+    set entrySrc: string = readSource(entry);
+    if (len(entrySrc) == 0) {
+        println(str_concat("Error: entry file nahi mili — ", entry));
+        println("Pehle 'parth init' karo.");
+        return 1;
     }
-    r = exec("llc build/out.ll -o build/out.s");
-    if (r != 0) { return r; }
-    set outName: string = str_concat("build/", name);
-    r = exec(str_concat("gcc build/out.s ../ajeebc/runtime/ajeeb_runtime.c -o ", outName));
-    if (r != 0) { return r; }
-    println(str_concat("Binary ready: ", outName));
+
+    // Find compiler
+    set ajeebc: string = findAjeebc();
+
+    if (strcmp_ajeeb(target, "native") == 0) {
+        // Native build: ajeebc → LLVM IR → llc → gcc
+        println("");
+        println("Compile ho raha hai (native target)...");
+        set llPath: string = str_concat(outDir, str_concat(name, ".ll"));
+        set sPath: string = str_concat(outDir, str_concat(name, ".s"));
+        set binPath: string = str_concat(outDir, name);
+
+        // Step 1: Compile to LLVM IR
+        set cmd1: string = str_concat(ajeebc, " --emit-llvm-only ");
+        cmd1 = str_concat(cmd1, entry);
+        cmd1 = str_concat(cmd1, " ");
+        cmd1 = str_concat(cmd1, llPath);
+        r = exec(cmd1);
+        if (r != 0) {
+            println("ajeebc compile fail! Neeche dekh lo.");
+            return r;
+        }
+        println(str_concat("  ✓ LLVM IR → ", llPath));
+
+        // Step 2: Assemble with llc
+        set cmd2: string = str_concat("llc ", llPath);
+        cmd2 = str_concat(cmd2, " -o ");
+        cmd2 = str_concat(cmd2, sPath);
+        r = exec(cmd2);
+        if (r != 0) {
+            println("llc assemble fail!");
+            return r;
+        }
+        println(str_concat("  ✓ Assembly → ", sPath));
+
+        // Step 3: Link with gcc
+        set resolvedRuntime: string = findRuntime(runtimePath);
+        set cmd3: string = str_concat("gcc -no-pie ", sPath);
+        cmd3 = str_concat(cmd3, " ");
+        cmd3 = str_concat(cmd3, resolvedRuntime);
+        cmd3 = str_concat(cmd3, " -o ");
+        cmd3 = str_concat(cmd3, binPath);
+        cmd3 = str_concat(cmd3, " -lm -ldl -Wno-int-to-pointer-cast");
+        r = exec(cmd3);
+        if (r != 0) {
+            println("gcc link fail!");
+            return r;
+        }
+        println(str_concat("  ✓ Binary → ", binPath));
+        println("");
+        println(str_concat("Build safal! Chalao: ./", str_concat(outDir, name)));
+
+    } else {
+        // Interpreter target: just verify sources parse
+        println("");
+        println("Compile ho raha hai (interpreter target)...");
+        set cmd: string = str_concat(ajeebc, str_concat(" ", entry));
+        r = exec(cmd);
+        if (r != 0) {
+            println("Compile fail! Neeche dekh lo.");
+            return r;
+        }
+        println(str_concat("  ✓ Sources valid. Chalao: parthi ", entry));
+    }
     return 0;
 }

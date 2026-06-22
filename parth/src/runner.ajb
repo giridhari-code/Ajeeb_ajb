@@ -3,9 +3,60 @@
 // All errors in Hinglish!
 
 import builder;
+import parser;
+
+function findParthi(): string {
+    set r: int = exec("which parthi > /dev/null 2>&1");
+    if (r == 0) { return "parthi"; }
+    set p1: string = "/root/.parth/bin/parthi";
+    if (fileExists(p1) == 1) { return p1; }
+    return "parthi";
+}
 
 function runProject(): int {
-    println("ParthI se run ho raha hai...\n");
-    set r: int = exec("parthi src/main.ajb");
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das padh nahi paaya!");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+
+    set name: string = getConfigName(buf, src);
+    set entry: string = getCompilerEntry(buf, src);
+    set outDir: string = getBuildOutput(buf, src);
+    set target: string = getCompilerTarget(buf, src);
+
+    set bldMsg: string = str_concat("Pehle build kar rahe hain '", name);
+    bldMsg = str_concat(bldMsg, "'...");
+    println(bldMsg);
+    r = buildProject();
+    if (r != 0) {
+        println("Build fail! Run fail hoga.");
+        return r;
+    }
+
+    println("");
+    set runMsg: string = str_concat("Chala rahe hain '", name);
+    runMsg = str_concat(runMsg, "'...");
+    println(runMsg);
+    println("---");
+
+    if (strcmp_ajeeb(target, "native") == 0) {
+        set binPath: string = str_concat(outDir, name);
+        r = exec(binPath);
+    } else {
+        set parthi: string = findParthi();
+        set cmd: string = str_concat(parthi, " ");
+        cmd = str_concat(cmd, entry);
+        r = exec(cmd);
+    }
+
+    println("---");
+    if (r != 0) {
+        set errMsg: string = str_concat("Program ne error diya (exit code: ", itoa(r));
+        errMsg = str_concat(errMsg, ")");
+        println(errMsg);
+    }
     return r;
 }

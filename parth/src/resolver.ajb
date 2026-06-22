@@ -1,5 +1,5 @@
 // resolver.ajb — Dependency resolver for parth
-// Uses parser.ajb to read deps, checks cache & packages/
+// Checks local packages, cache, and fetches from git
 // All errors in Hinglish!
 
 import parser;
@@ -7,6 +7,15 @@ import parser;
 function fileExists(path: string): int {
     set content: string = readFile(path);
     if (len(content) > 0) { return 1; }
+    // Empty file still exists — try writeFile touch check
+    return 0;
+}
+
+function findPackageLocal(name: string): int {
+    set p1: string = str_concat("packages/", str_concat(name, "/parth.das"));
+    if (fileExists(p1) == 1) { return 1; }
+    set p2: string = str_concat("../packages/", str_concat(name, "/parth.das"));
+    if (fileExists(p2) == 1) { return 1; }
     return 0;
 }
 
@@ -16,13 +25,39 @@ function findPackageCache(name: string): int {
     return 0;
 }
 
-function findPackageLocal(name: string): int {
-    set p1: string = str_concat("packages/", str_concat(name, "/parth.das"));
-    if (fileExists(p1) == 1) { return 1; }
-    set p2: string = str_concat("../packages/", str_concat(name, "/parth.das"));
-    if (fileExists(p2) == 1) { return 1; }
-    set p3: string = str_concat("/root/ajeeb_compiler/Ajeeb_ajb/packages/", str_concat(name, "/parth.das"));
-    if (fileExists(p3) == 1) { return 1; }
+function fetchPackage(name: string, version: string): int {
+    mkdir("/root/.parth");
+    mkdir("/root/.parth/cache");
+    set cachePath: string = str_concat("/root/.parth/cache/", name);
+    mkdir(cachePath);
+    set url: string = str_concat("https://github.com/giridhari-code/", str_concat(name, ".git"));
+    set dlmsg: string = str_concat("  Downloading ", name);
+    dlmsg = str_concat(dlmsg, " @ ");
+    dlmsg = str_concat(dlmsg, version);
+    dlmsg = str_concat(dlmsg, "...");
+    println(dlmsg);
+    set cloneCmd: string = str_concat("git clone --depth 1 ", url);
+    cloneCmd = str_concat(cloneCmd, " ");
+    cloneCmd = str_concat(cloneCmd, cachePath);
+    cloneCmd = str_concat(cloneCmd, "/src");
+    set r: int = exec(cloneCmd);
+    if (r != 0) {
+        println(str_concat("  Download fail: ", str_concat(name, " — internet check karo.")));
+        return r;
+    }
+    // Create parth.das in cache if not present by the clone
+    set dasPath: string = str_concat(cachePath, "/parth.das");
+    if (fileExists(dasPath) == 0) {
+        // Auto-generate minimal parth.das for fetched package
+        set das: string = str_concat("[package]\nname = \"", name);
+        das = str_concat(das, "\"\nversion = \"");
+        das = str_concat(das, version);
+        das = str_concat(das, "\"\n\n[dependencies]\n");
+        writeFile(dasPath, das);
+    }
+    set okmsg: string = str_concat("  ✓ ", name);
+    okmsg = str_concat(okmsg, " download ho gaya!");
+    println(okmsg);
     return 0;
 }
 
@@ -33,17 +68,52 @@ function resolveAll(buf: string, src: string): int {
         return 0;
     }
     set missing: int = 0;
-    println(str_concat(itoa(dc), " dependency(ies) resolve kar rahe hain..."));
+    set msg: string = str_concat(itoa(dc), " dependency(ies) resolve kar rahe hain...");
+    println(msg);
     set j: int = 0;
     while (j < dc) {
         set dn: string = getDepName(buf, src, j);
         set dv: string = getDepVersion(buf, src, j);
-        set r: int = findPackageCache(dn);
-        if (r == 0) { r = findPackageLocal(dn); }
+        // Check local packages first
+        set r: int = findPackageLocal(dn);
         if (r > 0) {
-            println(str_concat("  ✓ ", str_concat(dn, str_concat(" @ ", dv))));
+            set foundMsg: string = "  ✓ ";
+            foundMsg = str_concat(foundMsg, dn);
+            foundMsg = str_concat(foundMsg, " @ ");
+            foundMsg = str_concat(foundMsg, dv);
+            foundMsg = str_concat(foundMsg, " [local]");
+            println(foundMsg);
+            j = j + 1;
+            continue;
+        }
+        // Check cache
+        r = findPackageCache(dn);
+        if (r > 0) {
+            set cacheMsg: string = "  ✓ ";
+            cacheMsg = str_concat(cacheMsg, dn);
+            cacheMsg = str_concat(cacheMsg, " @ ");
+            cacheMsg = str_concat(cacheMsg, dv);
+            cacheMsg = str_concat(cacheMsg, " [cache]");
+            println(cacheMsg);
+            j = j + 1;
+            continue;
+        }
+        // Try to fetch from git
+        r = fetchPackage(dn, dv);
+        if (r == 0) {
+            set fetchMsg: string = "  ✓ ";
+            fetchMsg = str_concat(fetchMsg, dn);
+            fetchMsg = str_concat(fetchMsg, " @ ");
+            fetchMsg = str_concat(fetchMsg, dv);
+            fetchMsg = str_concat(fetchMsg, " [fetched]");
+            println(fetchMsg);
         } else {
-            println(str_concat("  ✗ ", str_concat(dn, str_concat(" v", str_concat(dv, " — nahi mila bhai!")))));
+            set errMsg: string = "  ✗ ";
+            errMsg = str_concat(errMsg, dn);
+            errMsg = str_concat(errMsg, " v");
+            errMsg = str_concat(errMsg, dv);
+            errMsg = str_concat(errMsg, " — nahi mila bhai!");
+            println(errMsg);
             missing = missing + 1;
         }
         j = j + 1;
@@ -51,9 +121,139 @@ function resolveAll(buf: string, src: string): int {
     if (missing > 0) {
         println("");
         println(str_concat(itoa(missing), " dependency(ies) missing hai!"));
-        println("Package add karo: parth add <package-name>");
+        println("Check karo: git remote available hai ya nahi.");
         return 1;
     }
     println("Sab dependencies resolve ho gayi! Badhiya!");
+    return 0;
+}
+
+function addDep(name: string, version: string): int {
+    set dasPath: string = "parth.das";
+    set src: string = readFile(dasPath);
+    if (len(src) == 0) {
+        println("Error: parth.das nahi mili! Pehle 'parth init' karo.");
+        return 1;
+    }
+    // Check if dep already exists
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig(dasPath);
+    if (r != 0) { return r; }
+    set dc: int = getDepCount(buf);
+    set j: int = 0;
+    while (j < dc) {
+        set dn: string = getDepName(buf, src, j);
+        if (strcmp_ajeeb(dn, name) == 0) {
+            println(str_concat("Dependency '", str_concat(name, "' pehle se hai!")));
+            return 0;
+        }
+        j = j + 1;
+    }
+    // Append new dep to parth.das
+    set newLine: string = str_concat(name, " = \"");
+    newLine = str_concat(newLine, version);
+    newLine = str_concat(newLine, "\"\n");
+    writeFile(dasPath, str_concat(src, newLine));
+    set addMsg: string = str_concat("✓ ", name);
+    addMsg = str_concat(addMsg, " @ ");
+    addMsg = str_concat(addMsg, version);
+    addMsg = str_concat(addMsg, " add ho gaya!");
+    println(addMsg);
+    return 0;
+}
+
+function removeDep(name: string): int {
+    set dasPath: string = "parth.das";
+    set src: string = readFile(dasPath);
+    if (len(src) == 0) {
+        println("Error: parth.das nahi mili! Pehle 'parth init' karo.");
+        return 1;
+    }
+    // Find and remove the dep line
+    set newSrc: string = "";
+    set i: int = 0;
+    set removed: int = 0;
+    while (i < len(src)) {
+        set nl: int = findChar(src, i, 10);
+        set lineEnd: int = nl;
+        if (lineEnd > i && charCode(src, lineEnd - 1) == 13) { lineEnd = lineEnd - 1; }
+        set line: string = substring(src, i, lineEnd);
+        // Check if this line starts with the dep name followed by =
+        set isDepLine: int = 0;
+        if (len(line) > len(name)) {
+            set prefix: string = substring(line, 0, len(name));
+            if (strcmp_ajeeb(prefix, name) == 0) {
+                set afterName: int = charCode(line, len(name));
+                if (afterName == 32 || afterName == 61) { // space or =
+                    isDepLine = 1;
+                }
+            }
+        }
+        if (isDepLine == 1) {
+            removed = 1;
+        } else {
+            newSrc = str_concat(newSrc, str_concat(line, "\n"));
+        }
+        if (nl < len(src)) { i = nl + 1; } else { i = len(src); }
+    }
+    if (removed == 0) {
+        set emsg: string = str_concat("Dependency '", name);
+        emsg = str_concat(emsg, "' nahi mili.");
+        println(emsg);
+        return 1;
+    }
+    writeFile(dasPath, newSrc);
+    set okmsg: string = str_concat("✓ ", name);
+    okmsg = str_concat(okmsg, " remove ho gaya!");
+    println(okmsg);
+    return 0;
+}
+
+function generateLockfile(): int {
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das nahi mili!");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+    set dc: int = getDepCount(buf);
+    if (dc == 0) {
+        println("Koi dependency nahi hai. Lockfile ki zaroorat nahi.");
+        return 0;
+    }
+    set lockContent: string = "# Auto-generated by parth\n# Do not edit manually\n\n";
+    set i: int = 0;
+    while (i < dc) {
+        set dn: string = getDepName(buf, src, i);
+        set dv: string = getDepVersion(buf, src, i);
+        set p1: string = str_concat("packages/", dn);
+        p1 = str_concat(p1, "/parth.das");
+        set p2: string = str_concat("../packages/", dn);
+        p2 = str_concat(p2, "/parth.das");
+        if (fileExists(p1) == 1 || fileExists(p2) == 1) {
+            lockContent = str_concat(lockContent, "[[package]]\nname = \"");
+            lockContent = str_concat(lockContent, dn);
+            lockContent = str_concat(lockContent, "\"\nversion = \"");
+            lockContent = str_concat(lockContent, dv);
+            lockContent = str_concat(lockContent, "\"\nsource = \"local\"\n\n");
+            set info: string = str_concat("  ✓ ", dn);
+            info = str_concat(info, " @ ");
+            info = str_concat(info, dv);
+            info = str_concat(info, " [local]");
+            println(info);
+        } else {
+            set info2: string = "  ✗ ";
+            info2 = str_concat(info2, dn);
+            info2 = str_concat(info2, " — local mein nahi mila");
+            println(info2);
+        }
+        i = i + 1;
+    }
+    writeFile("parth.lock", lockContent);
+    set doneMsg: string = "\nparth.lock generate ho gaya! (";
+    doneMsg = str_concat(doneMsg, itoa(dc));
+    doneMsg = str_concat(doneMsg, " dependencies)");
+    println(doneMsg);
     return 0;
 }

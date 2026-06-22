@@ -13,5 +13,6 @@ log_level = "info"
 
 [compiler]
 target = "native"
+entry = "ajeebc/compiler/main.ajb"
 output = "build/"
 runtime = "runtime/ajeeb_runtime.c"

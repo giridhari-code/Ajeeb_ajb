@@ -69,7 +69,12 @@ function cmdInstall(tool: string): int {
         return 1;
     }
     println(str_concat("Download ho raha hai: ", tool));
-    set r: int = exec(str_concat("curl -L ", str_concat(url, str_concat(" -o /root/.parth/bin/", str_concat(tool, " && chmod +x /root/.parth/bin/", tool)))));
+    set curlCmd: string = str_concat("curl -L ", url);
+    curlCmd = str_concat(curlCmd, " -o /root/.parth/bin/");
+    curlCmd = str_concat(curlCmd, tool);
+    curlCmd = str_concat(curlCmd, " && chmod +x /root/.parth/bin/");
+    curlCmd = str_concat(curlCmd, tool);
+    set r: int = exec(curlCmd);
     if (r != 0) {
         println(str_concat("Error: ", str_concat(tool, " download fail! Internet check karo.")));
         return r;
@@ -90,15 +95,16 @@ function main(): int {
     }
 
     if (argc < 1) {
-        println("Usage: parth <init|new|build|run|test|install>");
-        println("");
-        println("Commands:");
-        println("  init [name]       Project initialize karo current dir mein");
-        println("  new <name>        Naya project banao");
-        println("  build             ajeebc se compile karo (LLVM + gcc)");
-        println("  run               ParthI interpreter se chalao");
-        println("  test              Tests chalao (tests/ folder)");
-        println("  install <tool>    Tool download karo (ajeebc/parthi)");
+    println("Usage: parth <init|new|build|run|test|install|generate-lockfile>");
+    println("");
+    println("Commands:");
+    println("  init [name]       Project initialize karo current dir mein");
+    println("  new <name>        Naya project banao");
+    println("  build             ajeebc se compile karo (LLVM + gcc)");
+    println("  run               ParthI interpreter se chalao");
+    println("  test              Tests chalao (tests/ folder)");
+    println("  install <tool>    Tool download karo (ajeebc/parthi)");
+    println("  generate-lockfile Lock file banao dependencies ke liye");
         return 1;
     }
 
@@ -129,6 +135,10 @@ function main(): int {
     if (strcmp_ajeeb(cmd, "install") == 0) {
         set tool: string = readArg(2);
         return cmdInstall(tool);
+    }
+
+    if (strcmp_ajeeb(cmd, "generate-lockfile") == 0) {
+        return generateLockfile();
     }
 
     println(str_concat("Error: '", str_concat(cmd, "' — yeh command nahi hai bhai!")));

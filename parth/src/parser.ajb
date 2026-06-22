@@ -1,6 +1,8 @@
 // parser.ajb — parth.das config parser
 // Slots: 0=nameOff 1=nameLen 2=verOff 3=verLen 4=authorOff 5=authorLen
-// 6=outOff 7=outLen  10=depCount  100+ i*4 = dep entries
+// 6=outOff 7=outLen 8=runtimeOff 9=runtimeLen 10=depCount
+// 11=targetOff 12=targetLen 13=entryOff 14=entryLen
+// 200+ i*4 = dep entries (keyOff keyLen valOff valLen)
 
 function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
 function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
@@ -80,7 +82,7 @@ function parseDasConfig(path: string): int {
     bw(buf, 10, 0);
     while (i < len(src)) {
         i = skipBlankLines(src, i);
-        if (i >= len(src)) { return 0; }
+        if (i >= len(src)) { break; }
         set nl: int = findChar(src, i, 10);
         set lineEnd: int = nl;
         if (lineEnd > i && charCode(src, lineEnd - 1) == 13) { lineEnd = lineEnd - 1; }
@@ -92,20 +94,21 @@ function parseDasConfig(path: string): int {
             if (strcmp_ajeeb(secName, "package") == 0) { section = 1; }
             else if (strcmp_ajeeb(secName, "dependencies") == 0) { section = 2; }
             else if (strcmp_ajeeb(secName, "build") == 0) { section = 3; }
+            else if (strcmp_ajeeb(secName, "compiler") == 0) { section = 4; }
             else { section = 0; }
         } else if (c == 35 || c == 59) {
             // comment line (; or #)
-        } else if (section == 1 || section == 3) {
+        } else if (section == 1 || section == 3 || section == 4) {
             set eq: int = findChar(src, i, 61);
             if (eq >= lineEnd) { i = nl + 1; continue; }
             set vs: int = trimStart(src, eq + 1);
             set ve: int = trimEnd(src, lineEnd);
             if (vs < ve && charCode(src, vs) == 34) { vs = vs + 1; }
             if (ve > vs && charCode(src, ve - 1) == 34) { ve = ve - 1; }
+            set ks: int = trimStart(src, i);
+            set ke: int = trimEnd(src, eq);
+            set key: string = substring(src, ks, ke);
             if (section == 1) {
-                set ks: int = trimStart(src, i);
-                set ke: int = trimEnd(src, eq);
-                set key: string = substring(src, ks, ke);
                 set db: int = 0;
                 if (strcmp_ajeeb(key, "name") == 0) { db = 0; }
                 else if (strcmp_ajeeb(key, "version") == 0) { db = 2; }
@@ -113,13 +116,26 @@ function parseDasConfig(path: string): int {
                 else { i = nl + 1; continue; }
                 bw(buf, db, vs);
                 bw(buf, db + 1, ve - vs);
-            } else {
-                bw(buf, 6, vs);
-                bw(buf, 7, ve - vs);
+            } else if (section == 3) {
+                if (strcmp_ajeeb(key, "output") == 0) {
+                    bw(buf, 6, vs);
+                    bw(buf, 7, ve - vs);
+                } else if (strcmp_ajeeb(key, "runtime") == 0) {
+                    bw(buf, 8, vs);
+                    bw(buf, 9, ve - vs);
+                }
+            } else if (section == 4) {
+                if (strcmp_ajeeb(key, "target") == 0) {
+                    bw(buf, 11, vs);
+                    bw(buf, 12, ve - vs);
+                } else if (strcmp_ajeeb(key, "entry") == 0) {
+                    bw(buf, 13, vs);
+                    bw(buf, 14, ve - vs);
+                }
             }
         } else if (section == 2) {
-            if (depCount >= 20) { i = nl + 1; continue; }
-            set db: int = 100 + depCount * 4;
+            if (depCount >= 50) { i = nl + 1; continue; }
+            set db: int = 200 + depCount * 4;
             set r: int = parseKeyValue(src, i, lineEnd, buf, db);
             if (r == 0) { depCount = depCount + 1; }
         }
@@ -149,7 +165,25 @@ function getConfigAuthor(buf: string, src: string): string {
 
 function getBuildOutput(buf: string, src: string): string {
     set off: int = br(buf, 6); set ln: int = br(buf, 7);
-    if (ln == 0) { return ""; }
+    if (ln == 0) { return "build/"; }
+    return substring(src, off, off + ln);
+}
+
+function getBuildRuntime(buf: string, src: string): string {
+    set off: int = br(buf, 8); set ln: int = br(buf, 9);
+    if (ln == 0) { return "runtime/ajeeb_runtime.c"; }
+    return substring(src, off, off + ln);
+}
+
+function getCompilerTarget(buf: string, src: string): string {
+    set off: int = br(buf, 11); set ln: int = br(buf, 12);
+    if (ln == 0) { return "native"; }
+    return substring(src, off, off + ln);
+}
+
+function getCompilerEntry(buf: string, src: string): string {
+    set off: int = br(buf, 13); set ln: int = br(buf, 14);
+    if (ln == 0) { return "src/main.ajb"; }
     return substring(src, off, off + ln);
 }
 
@@ -158,14 +192,14 @@ function getDepCount(buf: string): int {
 }
 
 function getDepName(buf: string, src: string, idx: int): string {
-    set db: int = 100 + idx * 4;
+    set db: int = 200 + idx * 4;
     set off: int = br(buf, db); set ln: int = br(buf, db + 1);
     if (ln == 0) { return ""; }
     return substring(src, off, off + ln);
 }
 
 function getDepVersion(buf: string, src: string, idx: int): string {
-    set db: int = 100 + idx * 4;
+    set db: int = 200 + idx * 4;
     set off: int = br(buf, db + 2); set ln: int = br(buf, db + 3);
     if (ln == 0) { return ""; }
     return substring(src, off, off + ln);

@@ -15,6 +15,7 @@ pub struct ProjectConfig {
     pub pkg_author: String,
     pub pkg_homepage: String,
     pub pkg_license: String,
+    pub entry: String,
     pub deps: Vec<PkgDep>,
     pub features: Vec<Feature>,
     pub profiles: Vec<Profile>,
@@ -47,6 +48,7 @@ pub fn read_config(path: &Path) -> Result<ProjectConfig, String> {
     let mut pkg_homepage = String::new();
     let mut pkg_license = String::new();
     let mut registry_url = String::new();
+    let mut entry = String::new();
     let mut deps = Vec::new();
     let mut features = Vec::new();
     let mut profiles = vec![Profile::default()];
@@ -134,7 +136,20 @@ pub fn read_config(path: &Path) -> Result<ProjectConfig, String> {
         }
     }
 
-    Ok(ProjectConfig { pkg_name, pkg_version, pkg_description, pkg_author, pkg_homepage, pkg_license, deps, features, profiles, workspace, registry_url })
+    // Parse compiler section
+    if let Some(comp_start) = find_section(&lines, 0, "compiler") {
+        for i in comp_start + 1..lines.len() {
+            let line = lines[i].trim();
+            if line.starts_with('[') { break; }
+            if let Some(eq) = line.find('=') {
+                let key = line[..eq].trim();
+                let val = line[eq + 1..].trim().trim_matches('"');
+                if key == "entry" { entry = val.to_string(); }
+            }
+        }
+    }
+
+    Ok(ProjectConfig { pkg_name, pkg_version, pkg_description, pkg_author, pkg_homepage, pkg_license, entry, deps, features, profiles, workspace, registry_url })
 }
 
 pub fn read_config_basic(path: &Path) -> (String, String, Vec<PkgDep>) {

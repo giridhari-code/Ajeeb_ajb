@@ -494,11 +494,16 @@ fn cmd_build() {
     }
 
     // ── STEP 3: Add project source ──
-    let entry = project_dir.join("src/main.ajb");
-    all_ajb_files.push(entry);
+    let entry_path = if cfg.entry.is_empty() {
+        project_dir.join("src/main.ajb")
+    } else {
+        project_dir.join(&cfg.entry)
+    };
+    let entry_name = entry_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    all_ajb_files.push(entry_path);
 
     // ── STEP 4: Combine all .ajb sources ──
-    println!("🔨 Compiling: src/main.ajb{}", 
+    println!("🔨 Compiling: {}{}", entry_name,
         if !cfg.deps.is_empty() {
             format!(" + {}", cfg.deps.iter().map(|d| d.name.as_str()).collect::<Vec<_>>().join(", "))
         } else {
@@ -520,7 +525,8 @@ fn cmd_build() {
     });
 
     // ── STEP 5: Compile ──
-    let native_binary = root.join("build/ajeebc");
+    let native_binary = root.join("build/ajeeb_compiler");
+    let native_binary = if native_binary.exists() { native_binary } else { root.join("build/ajeebc") };
     let combined_str = combined_path.to_string_lossy().to_string();
 
     if native_binary.exists() {
@@ -672,6 +678,7 @@ fn dep_search_paths() -> Vec<PathBuf> {
 
 /// Collect .ajb source files from a package
 fn collect_ajb_files(pkg_dir: &Path, files: &mut Vec<PathBuf>) {
+    // Check src/ subdirectory first
     let src_dir = pkg_dir.join("src");
     if src_dir.exists() {
         if let Ok(entries) = fs::read_dir(&src_dir) {
@@ -680,6 +687,15 @@ fn collect_ajb_files(pkg_dir: &Path, files: &mut Vec<PathBuf>) {
                 if p.extension().map(|e| e == "ajb").unwrap_or(false) {
                     files.push(p);
                 }
+            }
+        }
+    }
+    // Also check root level .ajb files (for std packages without src/ dir)
+    if let Ok(entries) = fs::read_dir(pkg_dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_file() && p.extension().map(|e| e == "ajb").unwrap_or(false) {
+                files.push(p);
             }
         }
     }
@@ -709,17 +725,22 @@ fn read_config_basic_for_build() -> (String, String, String) {
 fn cmd_run() {
     let root = find_ajeeb_root();
     let parthi_bin = root.join("build/parthi");
-    let entry = "src/main.ajb";
+    let cfg = config::read_config(Path::new("parth.das")).unwrap_or_default();
+    let entry = if cfg.entry.is_empty() {
+        String::from("src/main.ajb")
+    } else {
+        cfg.entry
+    };
 
-    if !Path::new(entry).exists() {
-        eprintln!("Error: src/main.ajb not found. 'parth init' karo pehle.");
+    if !Path::new(&entry).exists() {
+        eprintln!("Error: {} not found. 'parth init' karo pehle.", entry);
         std::process::exit(1);
     }
 
     if parthi_bin.exists() {
         println!("🚀 Running with ParthI...\n");
         let status = Command::new(&parthi_bin)
-            .arg(entry)
+            .arg(&entry)
             .status()
             .expect("Failed to run parthi");
         std::process::exit(status.code().unwrap_or(1));
