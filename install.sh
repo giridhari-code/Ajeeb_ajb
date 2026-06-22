@@ -5,7 +5,15 @@ set -euo pipefail
 
 REPO="giridhari-code/Ajeeb_ajb"
 BIN_DIR="${HOME}/.ajeeb/bin"
-ARCH="linux-x86_64"
+
+# Auto-detect architecture
+ARCH_RAW=$(uname -m)
+case "$ARCH_RAW" in
+    x86_64|amd64)  ARCH="linux-x86_64" ;;
+    aarch64|arm64) ARCH="linux-aarch64" ;;
+    armv7l|armhf)  ARCH="linux-armv7" ;;
+    *)             ARCH="linux-x86_64"; echo "⚠️  Unknown arch ($ARCH_RAW), using x86_64" ;;
+esac
 
 echo "================================================"
 echo "  Ajeeb install ho raha hai..."
@@ -54,19 +62,64 @@ download() {
     local url="https://github.com/${REPO}/releases/download/${VERSION}/${name}-${ARCH}"
     local out="${BIN_DIR}/${name}"
     echo "  Downloading: ${name}..."
-    curl -sSfL "$url" -o "$out" || {
-        echo "  Error: ${name} download fail! Internet check karo."
-        exit 1
-    }
-    chmod +x "$out"
-    echo "  ✓ ${name}"
+    if curl -sSfL "$url" -o "$out" 2>/dev/null; then
+        chmod +x "$out"
+        echo "  ✓ ${name}"
+        return 0
+    else
+        echo "  ⚠️  ${name} (${ARCH}) release mein nahi hai"
+        return 1
+    fi
 }
 
-download "ajeebc"
+# Download or build from source
+BUILT_FROM_SOURCE=""
+if ! download "ajeebc"; then
+    if command -v cargo &>/dev/null; then
+        echo "  Building ajeebc from source..."
+        TMPDIR=$(mktemp -d)
+        git clone --depth 1 "https://github.com/${REPO}.git" "$TMPDIR" 2>/dev/null
+        cd "$TMPDIR/ajeebc" && make rust 2>/dev/null
+        cp build/ajeeb_compiler "${BIN_DIR}/ajeebc"
+        cd / && rm -rf "$TMPDIR"
+        BUILT_FROM_SOURCE="${BUILT_FROM_SOURCE} ajeebc"
+        echo "  ✓ ajeebc (built from source)"
+    else
+        echo "  ❌ ajeebc nahi mila aur cargo bhi nahi hai. Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        exit 1
+    fi
+fi
 ln -sf "${BIN_DIR}/ajeebc" "${BIN_DIR}/ajeeb_compiler" 2>/dev/null || true
 
-download "parthi"
-download "parth"
+if ! download "parthi"; then
+    if command -v cargo &>/dev/null && [ -f "${BIN_DIR}/ajeebc" ]; then
+        echo "  Building parthi from source..."
+        TMPDIR=$(mktemp -d)
+        git clone --depth 1 "https://github.com/${REPO}.git" "$TMPDIR" 2>/dev/null
+        cd "$TMPDIR" && AJEEBC_PATH="${BIN_DIR}/ajeebc" bash parthi/build.sh 2>/dev/null
+        cp parthi/build/parthi "${BIN_DIR}/parthi"
+        cd / && rm -rf "$TMPDIR"
+        BUILT_FROM_SOURCE="${BUILT_FROM_SOURCE} parthi"
+        echo "  ✓ parthi (built from source)"
+    else
+        echo "  ⚠️  parthi skip — cargo ya ajeebc nahi hai"
+    fi
+fi
+
+if ! download "parth"; then
+    if command -v cargo &>/dev/null; then
+        echo "  Building parth from source..."
+        TMPDIR=$(mktemp -d)
+        git clone --depth 1 "https://github.com/${REPO}.git" "$TMPDIR" 2>/dev/null
+        cd "$TMPDIR/ajeebc/crates/parth" && cargo build --release 2>/dev/null
+        cp target/release/parth "${BIN_DIR}/parth"
+        cd / && rm -rf "$TMPDIR"
+        BUILT_FROM_SOURCE="${BUILT_FROM_SOURCE} parth"
+        echo "  ✓ parth (built from source)"
+    else
+        echo "  ⚠️  parth skip — cargo nahi hai"
+    fi
+fi
 
 # ── Runtime jugaad ─────────────────────────────────
 echo ""

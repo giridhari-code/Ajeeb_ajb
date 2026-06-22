@@ -37,8 +37,6 @@ jobs:
         run: bash parthi/build.sh
 
       - name: Build parth
-        env:
-          AJEEBC_PATH: ${{ github.workspace }}/build/ajeebc
         run: |
           cd ajeebc/crates/parth
           cargo build --release
@@ -47,7 +45,6 @@ jobs:
 
       - name: Bootstrap check
         run: |
-          # Quick bootstrap check: compile compiler.ajb with ajeebc, then run a test
           mkdir -p ajeebc/build
           build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
           llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
@@ -55,7 +52,6 @@ jobs:
             ajeebc/runtime/ajeeb_runtime.c \
             -o ajeebc/build/compiler -lm -ldl -Wno-int-to-pointer-cast
           echo "✓ Self-hosted compiler built: $(ls -lh ajeebc/build/compiler | awk '{print $5}')"
-          # Verify it works: compile + run test_math
           build/ajeebc --emit-llvm-only ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll
           llc ajeebc/build/test_simple.ll -o ajeebc/build/test_simple.s
           gcc -no-pie ajeebc/build/test_simple.s \
@@ -66,7 +62,7 @@ jobs:
             echo "FAIL: expected 'Hello World', got '$OUTPUT'"
             exit 1
           fi
-          echo "✓ Bootstrap check: Ajeeb compiler compiles itself and runs tests"
+          echo "✓ Bootstrap check passed"
 
       - name: Collect artifacts
         run: |
@@ -77,8 +73,6 @@ jobs:
           cp parth/build/parth release/parth-linux-x86_64
           cp ajeebc/runtime/ajeeb_runtime.c release/
           cp packages/ajeeb-std/*.ajb release/packages/ajeeb-std/
-          ls -lh release/
-          ls -lh release/packages/ajeeb-std/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -86,17 +80,91 @@ jobs:
           name: ajeeb-linux-x86_64
           path: release/
 
+  build-linux-aarch64:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install LLVM + GCC
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq llvm-dev gcc libc-dev
+
+      - name: Build ajeebc
+        run: |
+          cd ajeebc
+          make rust
+          mkdir -p ../build
+          cp build/ajeeb_compiler ../build/ajeebc
+
+      - name: Build parthi
+        env:
+          AJEEBC_PATH: ${{ github.workspace }}/build/ajeebc
+        run: bash parthi/build.sh
+
+      - name: Build parth
+        run: |
+          cd ajeebc/crates/parth
+          cargo build --release
+          mkdir -p ${{ github.workspace }}/parth/build
+          cp target/release/parth ${{ github.workspace }}/parth/build/parth
+
+      - name: Bootstrap check
+        run: |
+          mkdir -p ajeebc/build
+          build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
+          llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          gcc -no-pie ajeebc/build/compiler.s \
+            ajeebc/runtime/ajeeb_runtime.c \
+            -o ajeebc/build/compiler -lm -ldl -Wno-int-to-pointer-cast
+          echo "✓ Self-hosted compiler built: $(ls -lh ajeebc/build/compiler | awk '{print $5}')"
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p release
+          mkdir -p release/packages/ajeeb-std
+          cp build/ajeebc release/ajeebc-linux-aarch64
+          cp parthi/build/parthi release/parthi-linux-aarch64
+          cp parth/build/parth release/parth-linux-aarch64
+          cp ajeebc/runtime/ajeeb_runtime.c release/
+          cp packages/ajeeb-std/*.ajb release/packages/ajeeb-std/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ajeeb-linux-aarch64
+          path: release/
+
   create-release:
-    needs: [build-linux-x86_64]
+    needs: [build-linux-x86_64, build-linux-aarch64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download artifacts
+      - name: Download x86_64 artifacts
         uses: actions/download-artifact@v4
         with:
           name: ajeeb-linux-x86_64
           path: release/
+
+      - name: Download aarch64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ajeeb-linux-aarch64
+          path: release-aarch64/
+
+      - name: Merge aarch64 into release
+        run: |
+          cp release-aarch64/ajeebc-linux-aarch64 release/
+          cp release-aarch64/parthi-linux-aarch64 release/
+          cp release-aarch64/parth-linux-aarch64 release/
+          cp -n release-aarch64/packages/ajeeb-std/* release/packages/ajeeb-std/ 2>/dev/null || true
+          ls -lh release/
 
       - name: Get tag name
         id: tag
@@ -110,15 +178,6 @@ jobs:
           body: |
             ## Ajeeb ${{ steps.tag.outputs.tag }}
 
-            Bhar le bhai! Ajeeb compiler ka naya version ready hai.
-
-            ### Shamil hain:
-            - **ajeebc** — Ajeeb compiler (MIR → LLVM → native binary)
-            - **parthi** — MIR interpreter
-            - **parth** — Project manager CLI (Rust, with `entry` field + `generate-lockfile` support)
-            - **ajeeb_runtime.c** — Runtime library (gcc ke saath link karna)
-            - **ajeeb-std/** — Standard library (io, math, string, array, fs, result, collections)
-
             ### Install karo:
             ```bash
             curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/install.sh | bash
@@ -128,10 +187,15 @@ jobs:
             - `gcc` (ya `clang`)
             - `llc` (LLVM)
 
-            > 💡 Binary sirf linux-x86_64 ke liye hai.
+            ### Platforms:
+            - linux-x86_64
+            - linux-aarch64
           files: |
             release/ajeebc-linux-x86_64
+            release/ajeebc-linux-aarch64
             release/parthi-linux-x86_64
+            release/parthi-linux-aarch64
             release/parth-linux-x86_64
+            release/parth-linux-aarch64
             release/ajeeb_runtime.c
             release/packages/ajeeb-std/*
