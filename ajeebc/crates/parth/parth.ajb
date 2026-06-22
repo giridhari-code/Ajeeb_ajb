@@ -317,8 +317,9 @@ function cmdAdd(): void {
         set pkgName = substring(spec, 0, atPos);
         set version = substring(spec, atPos + 1, len(spec));
     }
-    // Check if already a dep
-    if (hasDep(pkgName)) {
+    // Check if already a dep — simple grep via exec
+    set dupCheck: int = exec("grep -q '^" + pkgName + " =' parth.das 2>/dev/null");
+    if (dupCheck == 0) {
         println("'" + pkgName + "' is already a dependency");
         return;
     }
@@ -804,7 +805,7 @@ function cmdSearch(): void {
     println("Searching for '" + query + "'...");
     // Use curl to search registry (if available)
     set url: string = "https://registry.ajeeb.dev/api/search?q=" + query;
-    set exitCode: int = exec("curl -s " + url + " > /tmp/parth_search.json 2>/dev/null");
+    set exitCode: int = exec("curl -s --connect-timeout 3 --max-time 5 " + url + " > /tmp/parth_search.json 2>/dev/null");
     if (exitCode == 0) {
         set result: string = readFile("/tmp/parth_search.json");
         if (len(result) > 0) {
@@ -837,7 +838,7 @@ function cmdPublish(): void {
     // Upload
     set url: string = "https://registry.ajeeb.dev/api/publish";
     set tarball: string = name + "-" + ver + ".tar.gz";
-    set exitCode: int = exec("curl -s -X POST -F \"package=@" + tarball + "\" " + url + " > /tmp/parth_publish.json 2>/dev/null");
+    set exitCode: int = exec("curl -s --connect-timeout 3 --max-time 5 -X POST -F \"package=@" + tarball + "\" " + url + " > /tmp/parth_publish.json 2>/dev/null");
     if (exitCode == 0) {
         set result: string = readFile("/tmp/parth_publish.json");
         if (len(result) > 0) {
@@ -855,7 +856,7 @@ function cmdYank(): void {
     set ver: string = readArg(3);
     if (len(name) < 1 || len(ver) < 1) { println("Usage: parth yank <package> <version>"); return; }
     set url: string = "https://registry.ajeeb.dev/api/yank";
-    set exitCode: int = exec("curl -s -X POST -d 'name=" + name + "&version=" + ver + "' " + url + " > /tmp/parth_yank.json 2>/dev/null");
+    set exitCode: int = exec("curl -s --connect-timeout 3 --max-time 5 -X POST -d 'name=" + name + "&version=" + ver + "' " + url + " > /tmp/parth_yank.json 2>/dev/null");
     if (exitCode == 0) {
         println("Yanked '" + name + "@" + ver + "'");
     } else {
@@ -868,7 +869,7 @@ function cmdUnyank(): void {
     set ver: string = readArg(3);
     if (len(name) < 1 || len(ver) < 1) { println("Usage: parth unyank <package> <version>"); return; }
     set url: string = "https://registry.ajeeb.dev/api/unyank";
-    set exitCode: int = exec("curl -s -X POST -d 'name=" + name + "&version=" + ver + "' " + url + " > /tmp/parth_unyank.json 2>/dev/null");
+    set exitCode: int = exec("curl -s --connect-timeout 3 --max-time 5 -X POST -d 'name=" + name + "&version=" + ver + "' " + url + " > /tmp/parth_unyank.json 2>/dev/null");
     if (exitCode == 0) {
         println("Un-yanked '" + name + "@" + ver + "'");
     } else {

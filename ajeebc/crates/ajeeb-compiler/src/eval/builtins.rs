@@ -500,8 +500,13 @@ impl Evaluator {
                     Some(RuntimeValue::String(ss)) => { sg2 = ss.borrow(); &*sg2 }
                     _ => "",
                 };
-                if let Some(pos) = s.find(search) {
-                    RuntimeValue::Int(pos as i64)
+                let start: usize = match arg_vals.get(2) {
+                    Some(RuntimeValue::Int(n)) => { n.max(0) as usize }
+                    _ => 0,
+                };
+                let haystack = if start < s.len() { &s[start..] } else { "" };
+                if let Some(pos) = haystack.find(search) {
+                    RuntimeValue::Int((start + pos) as i64)
                 } else {
                     RuntimeValue::Int(-1)
                 }

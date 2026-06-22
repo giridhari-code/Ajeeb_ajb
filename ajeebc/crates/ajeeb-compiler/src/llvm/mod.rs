@@ -142,11 +142,12 @@ impl Codegen {
             | "exec" | "mkdir" | "getStr"
                 => Some(format!("declare i64 @{}(i64)", name)),
             // 2-arg functions
-            "str_concat" | "indexOf" | "contains"
+            "str_concat" | "contains"
             | "getInt" | "startsWith" | "endsWith"
             | "charCode" | "strcmp_ajeeb" | "chr"
                 => Some(format!("declare i64 @{}(i64, i64)", name)),
             // 3-arg functions
+            "indexOf" => Some(format!("declare i64 @{}(i64, i64, i64)", name)),
             "substring" => Some("declare i64 @substring(i64, i64, i64)".into()),
             "replace" => Some("declare i64 @replace(i64, i64, i64)".into()),
             "lib_open" => Some(format!("declare i64 @lib_open(i64)")),

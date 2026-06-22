@@ -381,7 +381,7 @@ AjeebValue ajeeb_println(AjeebValue v);
 AjeebValue ajeeb_itoa(AjeebValue n);
 AjeebValue ajeeb_str_concat(AjeebValue a, AjeebValue b);
 AjeebValue ajeeb_substring(AjeebValue s, AjeebValue start, AjeebValue end);
-AjeebValue ajeeb_indexOf(AjeebValue s, AjeebValue search);
+AjeebValue ajeeb_indexOf(AjeebValue s, AjeebValue search, int64_t start);
 AjeebValue ajeeb_contains(AjeebValue s, AjeebValue search);
 AjeebValue ajeeb_toUpperCase(AjeebValue s);
 AjeebValue ajeeb_toLowerCase(AjeebValue s);
@@ -784,10 +784,13 @@ intptr_t substring(intptr_t s, intptr_t start, intptr_t end) {
     return (intptr_t)result.string;
 }
 
-AjeebValue ajeeb_indexOf(AjeebValue s, AjeebValue search) {
+AjeebValue ajeeb_indexOf(AjeebValue s, AjeebValue search, int64_t start) {
     if (s.tag != AJB_STRING || search.tag != AJB_STRING) return ajb_int(-1);
-    if (search.string_len == 0) return ajb_int(0);
-    for (size_t i = 0; i <= s.string_len - search.string_len; i++) {
+    if (search.string_len == 0) return ajb_int(start < (int64_t)s.string_len ? start : 0);
+    if (start < 0) start = 0;
+    if ((size_t)start > s.string_len) return ajb_int(-1);
+    if (search.string_len > s.string_len) return ajb_int(-1);
+    for (size_t i = (size_t)start; i <= s.string_len - search.string_len; i++) {
         if (memcmp(s.string + i, search.string, search.string_len) == 0) {
             return ajb_int((int64_t)i);
         }
@@ -795,14 +798,14 @@ AjeebValue ajeeb_indexOf(AjeebValue s, AjeebValue search) {
     return ajb_int(-1);
 }
 
-intptr_t indexOf(intptr_t s, intptr_t search) {
+intptr_t indexOf(intptr_t s, intptr_t search, intptr_t start) {
     AjeebValue vs = ajb_string((const char*)s, strlen((const char*)s));
     AjeebValue vsearch = ajb_string((const char*)search, strlen((const char*)search));
-    return (intptr_t)ajeeb_indexOf(vs, vsearch).data.as_int;
+    return (intptr_t)ajeeb_indexOf(vs, vsearch, (int64_t)start).data.as_int;
 }
 
 AjeebValue ajeeb_contains(AjeebValue s, AjeebValue search) {
-    int64_t idx = ajeeb_indexOf(s, search).data.as_int;
+    int64_t idx = ajeeb_indexOf(s, search, 0).data.as_int;
     return ajb_int(idx >= 0 ? 1 : 0);
 }
 

@@ -56,7 +56,7 @@ impl CCodegen {
         writeln!(self.output, "long long charCode(long long s, long long i);").unwrap();
         writeln!(self.output, "long long chr(long long c);").unwrap();
         writeln!(self.output, "long long substring(long long s, long long start, long long end);").unwrap();
-        writeln!(self.output, "long long indexOf(long long s, long long sub);").unwrap();
+        writeln!(self.output, "long long indexOf(long long s, long long sub, long long start);").unwrap();
         writeln!(self.output, "long long contains(long long s, long long sub);").unwrap();
         writeln!(self.output, "long long toUpperCase(long long s);").unwrap();
         writeln!(self.output, "long long toLowerCase(long long s);").unwrap();
