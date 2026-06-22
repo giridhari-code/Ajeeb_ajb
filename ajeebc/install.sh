@@ -20,11 +20,10 @@ echo "=== Step 2: Native compiler (compiler.ajb) ==="
 ./build/ajeebc compiler/compiler.ajb --skip-run
 echo "  ✓ build/compiler ready"
 
-# Step 3: Build parth (Rust CLI — Cargo needed for deps)
+# Step 3: Build parth (Ajeeb package manager — no Cargo!)
 echo ""
-echo "=== Step 3: parth (Rust CLI) ==="
-cargo build --release -p parth
-cp target/release/parth build/parth
+echo "=== Step 3: parth (Ajeeb CLI) ==="
+./build/ajeebc crates/parth/parth.ajb --skip-run
 echo "  ✓ build/parth ready"
 
 echo ""

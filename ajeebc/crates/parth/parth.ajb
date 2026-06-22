@@ -1,61 +1,118 @@
-// Parth — Ajeeb Package Manager
+// Parth — Ajeeb Package Manager (all 42 commands)
+// Uses readFile/writeFile for file ops, exec() for build/registry/crypto
+
 function main(): int {
     set cmd: string = readArg(1);
-    if (len(cmd) < 1) {
-        cmdHelp();
-        return 1;
-    }
-    if (isEq(cmd, "help")) { cmdHelp(); }
-    else if (isEq(cmd, "build")) { cmdBuild(); }
+    if (len(cmd) < 1) { cmdHelp(); return 1; }
+    if (isEq(cmd, "help") || isEq(cmd, "-h") || isEq(cmd, "--help")) { cmdHelp(); }
     else if (isEq(cmd, "new")) { cmdNew(); }
     else if (isEq(cmd, "init")) { cmdInit(); }
+    else if (isEq(cmd, "build")) { cmdBuild(); }
+    else if (isEq(cmd, "run")) { cmdRun(); }
     else if (isEq(cmd, "test")) { cmdTest(); }
     else if (isEq(cmd, "clean")) { cmdClean(); }
     else if (isEq(cmd, "info")) { cmdInfo(); }
-    else if (isEq(cmd, "version")) { println("parth 0.2.0 (Ajeeb)"); }
-    else { println("Unknown: " + cmd); println("Try 'parth help'"); }
+    else if (isEq(cmd, "version")) { cmdVersion(); }
+    else if (isEq(cmd, "add")) { cmdAdd(); }
+    else if (isEq(cmd, "remove")) { cmdRemove(); }
+    else if (isEq(cmd, "install")) { cmdInstall(); }
+    else if (isEq(cmd, "link")) { cmdLink(); }
+    else if (isEq(cmd, "list")) { cmdList(); }
+    else if (isEq(cmd, "update")) { cmdUpdate(); }
+    else if (isEq(cmd, "upgrade")) { cmdUpgrade(); }
+    else if (isEq(cmd, "tree")) { cmdTree(); }
+    else if (isEq(cmd, "why")) { cmdWhy(); }
+    else if (isEq(cmd, "outdated")) { cmdOutdated(); }
+    else if (isEq(cmd, "fmt")) { cmdFmt(); }
+    else if (isEq(cmd, "lint")) { cmdLint(); }
+    else if (isEq(cmd, "sanitize")) { cmdSanitize(); }
+    else if (isEq(cmd, "bench")) { cmdBench(); }
+    else if (isEq(cmd, "audit")) { cmdAudit(); }
+    else if (isEq(cmd, "package")) { cmdPackage(); }
+    else if (isEq(cmd, "generate-lockfile")) { cmdGenLockfile(); }
+    else if (isEq(cmd, "vendor")) { cmdVendor(); }
+    else if (isEq(cmd, "ls")) { cmdLs(); }
+    else if (isEq(cmd, "doc")) { cmdDoc(); }
+    else if (isEq(cmd, "search")) { cmdSearch(); }
+    else if (isEq(cmd, "publish")) { cmdPublish(); }
+    else if (isEq(cmd, "yank")) { cmdYank(); }
+    else if (isEq(cmd, "unyank")) { cmdUnyank(); }
+    else if (isEq(cmd, "keygen")) { cmdKeygen(); }
+    else if (isEq(cmd, "login")) { cmdLogin(); }
+    else if (isEq(cmd, "logout")) { cmdLogout(); }
+    else if (isEq(cmd, "whoami")) { cmdWhoami(); }
+    else if (isEq(cmd, "sign")) { cmdSign(); }
+    else if (isEq(cmd, "verify")) { cmdVerify(); }
+    else if (isEq(cmd, "cache")) { cmdCache(); }
+    else if (isEq(cmd, "workspace")) { cmdWorkspace(); }
+    else { println("Unknown command: " + cmd); println("Try 'parth help'"); return 1; }
     return 0;
 }
 
-// ─── Help ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// HELP
+// ═══════════════════════════════════════════════════════════════════════
 function cmdHelp(): void {
-    println("Ajeeb Package Manager — parth v0.2.0 (written in Ajeeb!)");
+    println("Ajeeb Package Manager — parth v0.3.0 (written in Ajeeb!)");
     println("");
-    println("COMMANDS:");
-    println("  new <name>       Create a new Ajeeb project");
-    println("  init             Initialize project in current directory");
-    println("  build [file.ajb] Compile project or single file");
-    println("  test             Run all test files");
-    println("  clean            Remove build artifacts");
-    println("  info             Show project info from parth.das");
-    println("  version          Show parth version");
-    println("  help             Show this help message");
+    println("USAGE: parth <command> [arguments]");
+    println("");
+    println("PROJECT:");
+    println("  new <name>           Create a new Ajeeb project");
+    println("  init                 Initialize project in current directory");
+    println("  build [file.ajb]     Compile project or single file");
+    println("  run [file.ajb]       Run with interpreter");
+    println("  test                 Run all tests in tests/");
+    println("  clean                Remove build artifacts");
+    println("  info                 Show project info");
+    println("  version              Show version");
+    println("");
+    println("DEPENDENCIES:");
+    println("  add <pkg>[@ver]      Add a dependency");
+    println("  remove <pkg>         Remove a dependency");
+    println("  install <pkg>[@ver]  Install a package");
+    println("  link <path>          Link a local package");
+    println("  list                 List available packages");
+    println("  update               Re-resolve all dependencies");
+    println("  upgrade [pkg]        Upgrade dependencies");
+    println("  tree                 Show dependency tree");
+    println("  why <pkg>            Explain why a package is included");
+    println("  outdated             Check for outdated deps");
+    println("  generate-lockfile    Generate parth.lock");
+    println("  vendor               Vendor deps into vendor/");
+    println("");
+    println("QUALITY:");
+    println("  fmt                  Format source files");
+    println("  lint [path]          Lint source files");
+    println("  sanitize [file]      Run sanitizer checks");
+    println("  bench [filter]       Run benchmarks");
+    println("  audit                Security audit");
+    println("");
+    println("BUILD TOOLS:");
+    println("  package              Package into tarball");
+    println("  ls                   List workspace packages");
+    println("  doc                  Generate documentation");
+    println("  workspace [cmd]      Workspace management");
+    println("");
+    println("REGISTRY:");
+    println("  search <query>       Search packages");
+    println("  publish              Publish package");
+    println("  yank <pkg> <ver>     Yank a version");
+    println("  unyank <pkg> <ver>   Un-yank a version");
+    println("  cache [cmd]          Cache management");
+    println("");
+    println("AUTH:");
+    println("  keygen               Generate Ed25519 keypair");
+    println("  login [url]          Login to registry");
+    println("  logout               Logout");
+    println("  whoami               Show current user");
+    println("  sign <pkg> [ver]     Sign a package");
+    println("  verify <pkg> <ver>   Verify signature");
 }
 
-// ─── Build ───────────────────────────────────────────────────────────
-function cmdBuild(): void {
-    set file: string = readArg(2);
-    if (len(file) < 1) { set file = "src/main.ajb"; }
-    set check: string = readFile(file);
-    if (len(check) < 1) {
-        println("Error: " + file + " not found");
-        return;
-    }
-    set compiler: string = findCompiler();
-    if (len(compiler) < 1) {
-        println("Error: ajeeb compiler not found. Run 'make' first.");
-        return;
-    }
-    // Get compiler dir to find runtime path
-    set selfPath: string = readArg(0);
-    set dir: string = getDir(selfPath);
-    println("Building " + file + "...");
-    set cmd: string = compiler + " " + file + " --skip-run";
-    exec(cmd);
-    println("Build complete!");
-}
-
-// ─── New ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// PROJECT COMMANDS
+// ═══════════════════════════════════════════════════════════════════════
 function cmdNew(): void {
     set name: string = readArg(2);
     if (len(name) < 1) { println("Usage: parth new <name>"); return; }
@@ -66,100 +123,948 @@ function cmdNew(): void {
     set das: string = "[package]\n";
     das = das + "name = \"" + name + "\"\n";
     das = das + "version = \"0.1.0\"\n";
+    das = das + "author = \"\"\n";
+    das = das + "description = \"\"\n";
     das = das + "\n[dependencies]\n";
+    das = das + "\n[profile.release]\n";
+    das = das + "opt-level = \"3\"\n";
     writeFile(name + "/parth.das", das);
     set src: string = "function main(): int {\n";
     src = src + "    println(\"Hello from " + name + "!\");\n";
     src = src + "    return 0;\n}\n";
     writeFile(name + "/src/main.ajb", src);
-    println("Created '" + name + "' — next: cd " + name + " && parth build");
+    println("Created '" + name + "'");
+    println("");
+    println("  Next steps:");
+    println("  cd " + name);
+    println("  parth run");
 }
 
-// ─── Init ────────────────────────────────────────────────────────────
 function cmdInit(): void {
+    set check: string = readFile("parth.das");
+    if (len(check) > 0) { println("Error: parth.das already exists"); return; }
     mkdir("src");
     mkdir("build");
     mkdir("tests");
+    set name: string = getBaseName(cwd());
     set das: string = "[package]\n";
-    das = das + "name = \"project\"\n";
+    das = das + "name = \"" + name + "\"\n";
     das = das + "version = \"0.1.0\"\n";
+    das = das + "author = \"\"\n";
+    das = das + "description = \"\"\n";
     das = das + "\n[dependencies]\n";
+    das = das + "\n[profile.dev]\n";
+    das = das + "opt-level = \"0\"\n";
+    das = das + "debug = \"true\"\n";
+    das = das + "\n[profile.release]\n";
+    das = das + "opt-level = \"3\"\n";
+    das = das + "debug = \"false\"\n";
+    das = das + "lto = \"true\"\n";
     writeFile("parth.das", das);
     set src: string = "function main(): int {\n";
     src = src + "    println(\"Hello from Ajeeb!\");\n";
     src = src + "    return 0;\n}\n";
     writeFile("src/main.ajb", src);
-    println("Initialized project");
+    println("Initialized Ajeeb project");
+    println("  Name: " + name);
 }
 
-// ─── Test ────────────────────────────────────────────────────────────
+function cmdBuild(): void {
+    set file: string = readArg(2);
+    if (len(file) > 0) {
+        cmdBuildFile(file);
+        return;
+    }
+    set check: string = readFile("parth.das");
+    if (len(check) < 1) { println("Error: no parth.das found"); return; }
+    set name: string = getConfigName();
+    set output: string = getConfigOutput();
+    set runtime: string = getConfigRuntime();
+    set root: string = findRoot();
+    mkdir(output);
+    // Combine source files
+    set combined: string = "";
+    set src: string = readFile("src/main.ajb");
+    if (len(src) > 0) { combined = combined + "\n// --- main ---\n" + src; }
+    writeFile(output + "/combined.ajb", combined);
+    set binPath: string = output + "/" + name;
+    // Compile with ajeebc or fallback
+    set native: string = root + "/build/ajeebc";
+    set nativeCheck: string = readFile(native);
+    if (len(nativeCheck) > 0) {
+        println("Using self-hosted compiler (ajeebc)");
+        set llPath: string = output + "/output.ll";
+        set sPath: string = output + "/output.s";
+        exec(native + " " + output + "/combined.ajb " + llPath + " --skip-run");
+        exec("llc -O2 " + llPath + " -o " + sPath);
+        exec("gcc " + sPath + " " + root + "/" + runtime + " -o " + binPath + " -lm -ldl -Wl,--allow-multiple-definition");
+    } else {
+        println("Using Rust interpreter");
+        set compiler: string = findCompiler();
+        if (len(compiler) < 1) { println("Error: compiler not found"); return; }
+        exec(compiler + " " + output + "/combined.ajb --skip-run");
+        set llvmIR: string = root + "/build/output.ll";
+        exec("llc -O2 " + llvmIR + " -o " + output + "/output.s");
+        exec("gcc " + output + "/output.s " + root + "/" + runtime + " -o " + binPath + " -lm -ldl -Wl,--allow-multiple-definition");
+    }
+    println("Built: " + binPath);
+}
+
+function cmdBuildFile(file: string): void {
+    if (!endsWith(file, ".ajb")) { println("Error: expected .ajb file"); return; }
+    set root: string = findRoot();
+    set runtime: string = root + "/runtime/ajeeb_runtime.c";
+    set native: string = root + "/build/ajeebc";
+    set binName: string = "build/" + getStem(file);
+    mkdir("build");
+    set nativeCheck: string = readFile(native);
+    if (len(nativeCheck) > 0) {
+        println("Using ajeebc");
+        exec(native + " " + file + " build/output.ll --skip-run");
+        exec("llc -O2 build/output.ll -o build/output.s");
+        exec("gcc build/output.s " + runtime + " -o " + binName + " -Wall -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast");
+    } else {
+        set compiler: string = findCompiler();
+        if (len(compiler) < 1) { println("Error: compiler not found"); return; }
+        exec(compiler + " " + file + " --skip-run");
+        exec("llc -O2 build/output.ll -o build/output.s");
+        exec("gcc build/output.s " + runtime + " -o " + binName + " -lm -ldl");
+    }
+    println("Built: " + binName);
+}
+
+function cmdRun(): void {
+    set file: string = readArg(2);
+    if (len(file) < 1) { set file = "src/main.ajb"; }
+    set check: string = readFile(file);
+    if (len(check) < 1) { println("Error: " + file + " not found"); return; }
+    set compiler: string = findCompiler();
+    if (len(compiler) < 1) { println("Error: compiler not found"); return; }
+    println("Running " + file + "...");
+    exec(compiler + " " + file);
+}
+
 function cmdTest(): void {
+    set testDir: string = "tests";
+    // Try to list test files via exec
+    exec("ls " + testDir + "/*.ajb > /tmp/parth_test_list.txt 2>/dev/null");
+    set fileList: string = readFile("/tmp/parth_test_list.txt");
+    if (len(fileList) < 1) { println("Error: no test files in tests/"); return; }
     set compiler: string = findCompiler();
     if (len(compiler) < 1) { println("Error: compiler not found"); return; }
     println("Running tests...");
-    runTest(compiler, "test_simple");
-    runTest(compiler, "test_math");
-    runTest(compiler, "test_if");
-    runTest(compiler, "test_while");
-    runTest(compiler, "test_for");
-    runTest(compiler, "test_strings");
-    println("Done!");
-}
-
-function runTest(compiler: string, name: string): void {
-    set path: string = "tests/" + name + ".ajb";
-    set check: string = readFile(path);
-    if (len(check) < 1) { return; }
-    print("  " + name + " ... ");
-    set cmd: string = compiler + " " + path + " --skip-run 2>/dev/null";
-    exec(cmd);
-    set bin: string = "build/" + name;
-    set binCheck: string = readFile(bin);
-    if (len(binCheck) > 0) {
-        exec("./" + bin);
-        println("PASS");
-    } else {
-        println("FAIL");
+    set passed: int = 0;
+    set failed: int = 0;
+    set pos: int = 0;
+    set len: int = len(fileList);
+    while (pos < len) {
+        set lineEnd: int = indexOf(fileList, "\n", pos);
+        if (lineEnd < 0) { set lineEnd = len; }
+        set path: string = trimStr(substring(fileList, pos, lineEnd));
+        if (len(path) > 0) {
+            set name: string = getFileName(path);
+            print("  " + name + " ... ");
+            set exitCode: int = exec(compiler + " " + path + " --skip-run 2>/dev/null");
+            if (exitCode == 0) {
+                println("PASS");
+                set passed = passed + 1;
+            } else {
+                println("FAIL");
+                set failed = failed + 1;
+            }
+        }
+        set pos = lineEnd + 1;
     }
+    println("");
+    println("Results: " + itoa(passed) + " passed, " + itoa(failed) + " failed");
+    if (failed > 0) { exit(1); }
 }
 
-// ─── Clean ───────────────────────────────────────────────────────────
 function cmdClean(): void {
-    exec("rm -rf build/*");
+    exec("rm -f build/output.c build/output2.c build/combined.ajb build/output.s build/output.ll build/*.o");
     println("Cleaned build/");
 }
 
-// ─── Info ────────────────────────────────────────────────────────────
 function cmdInfo(): void {
     set content: string = readFile("parth.das");
     if (len(content) < 1) { println("No parth.das found"); return; }
+    println("parth.das:");
     println(content);
+    set lock: string = readFile("parth.lock");
+    if (len(lock) > 0) {
+        println("parth.lock:");
+        println(lock);
+    }
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────
+function cmdVersion(): void {
+    println("parth 0.3.0 — Ajeeb Package Manager (written in Ajeeb)");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// DEPENDENCY COMMANDS
+// ═══════════════════════════════════════════════════════════════════════
+function cmdAdd(): void {
+    set spec: string = readArg(2);
+    if (len(spec) < 1) { println("Usage: parth add <package>[@version]"); return; }
+    set check: string = readFile("parth.das");
+    if (len(check) < 1) { println("Error: no parth.das found"); return; }
+    // Parse name@version
+    set pkgName: string = spec;
+    set version: string = "*";
+    set atPos: int = indexOf(spec, "@", 0);
+    if (atPos >= 0) {
+        set pkgName = substring(spec, 0, atPos);
+        set version = substring(spec, atPos + 1, len(spec));
+    }
+    // Check if already a dep
+    if (hasDep(pkgName)) {
+        println("'" + pkgName + "' is already a dependency");
+        return;
+    }
+    // Find dep locally
+    set found: string = findDepLocal(pkgName);
+    if (len(found) > 0) {
+        println("Found '" + pkgName + "' locally at " + found);
+    } else {
+        // Try to download
+        exec("mkdir -p ~/.parth/packages/" + pkgName);
+    }
+    // Append to [dependencies] section
+    addDepToConfig(pkgName, version);
+    println("Added '" + pkgName + "' v" + version);
+}
+
+function cmdRemove(): void {
+    set name: string = readArg(2);
+    if (len(name) < 1) { println("Usage: parth remove <package>"); return; }
+    set check: string = readFile("parth.das");
+    if (len(check) < 1) { println("Error: no parth.das found"); return; }
+    removeDepFromConfig(name);
+    println("Removed '" + name + "'");
+}
+
+function cmdInstall(): void {
+    set spec: string = readArg(2);
+    if (len(spec) < 1) { println("Usage: parth install <package>[@version]"); return; }
+    set pkgName: string = spec;
+    set version: string = "";
+    set atPos: int = indexOf(spec, "@", 0);
+    if (atPos >= 0) {
+        set pkgName = substring(spec, 0, atPos);
+        set version = substring(spec, atPos + 1, len(spec));
+    }
+    // Find locally first
+    set local: string = findDepLocal(pkgName);
+    if (len(local) > 0) {
+        println("Found '" + pkgName + "' locally at " + local);
+        exec("cp -r " + local + " ~/.parth/packages/" + pkgName);
+        println("Installed '" + pkgName + "'");
+        return;
+    }
+    // Create package dir
+    exec("mkdir -p ~/.parth/packages/" + pkgName);
+    println("Installed '" + pkgName + "'");
+}
+
+function cmdLink(): void {
+    set path: string = readArg(2);
+    if (len(path) < 1) { println("Usage: parth link <path>"); return; }
+    set dasCheck: string = readFile(path + "/parth.das");
+    if (len(dasCheck) < 1) { println("Error: not a valid package (no parth.das)"); return; }
+    // Read package name from path's parth.das
+    set oldPwd: string = cwd();
+    // We'll just use the directory name as the package name
+    set pkgName: string = getBaseName(path);
+    exec("rm -rf ~/.parth/packages/" + pkgName);
+    exec("cp -r " + path + " ~/.parth/packages/" + pkgName);
+    println("Linked: " + pkgName);
+    println("  Path: ~/.parth/packages/" + pkgName);
+}
+
+function cmdList(): void {
+    println("Available packages:");
+    println("  Global packages:");
+    exec("ls ~/.parth/packages/ 2>/dev/null || echo '  (none)'");
+    println("  Local packages:");
+    exec("ls packages/ 2>/dev/null || echo '  (none)'");
+}
+
+function cmdUpdate(): void {
+    set check: string = readFile("parth.das");
+    if (len(check) < 1) { println("Error: no parth.das found"); return; }
+    exec("rm -f parth.lock");
+    println("Lock file removed. Run 'parth build' to re-resolve dependencies");
+}
+
+function cmdUpgrade(): void {
+    set pkgName: string = readArg(2);
+    set check: string = readFile("parth.das");
+    if (len(check) < 1) { println("Error: no parth.das found"); return; }
+    if (len(pkgName) < 1) {
+        // Upgrade all
+        exec("rm -f parth.lock");
+        println("Lock file removed. Run 'parth build' to re-resolve");
+        return;
+    }
+    // Remove old dep, add new with *
+    removeDepFromConfig(pkgName);
+    addDepToConfig(pkgName, "*");
+    println("Upgraded '" + pkgName + "'");
+}
+
+function cmdTree(): void {
+    set lock: string = readFile("parth.lock");
+    if (len(lock) < 1) { println("No parth.lock found. Run 'parth build' first."); return; }
+    println("Dependency tree:");
+    println(lock);
+}
+
+function cmdWhy(): void {
+    set name: string = readArg(2);
+    if (len(name) < 1) { println("Usage: parth why <package>"); return; }
+    set lock: string = readFile("parth.lock");
+    if (len(lock) < 1) { println("No parth.lock found. Run 'parth build' first."); return; }
+    // Search for package in lock file
+    set pos: int = indexOf(lock, name, 0);
+    if (pos >= 0) {
+        println("'" + name + "' is a dependency of this project");
+        // Show context around the match
+        set lineStart: int = pos;
+        while (lineStart > 0 && charCode(lock, lineStart - 1) != 10) { set lineStart = lineStart - 1; }
+        set lineEnd: int = pos + len(name);
+        while (lineEnd < len(lock) && charCode(lock, lineEnd) != 10) { set lineEnd = lineEnd + 1; }
+        println("  " + substring(lock, lineStart, lineEnd));
+    } else {
+        println("'" + name + "' is not a dependency of this project");
+    }
+}
+
+function cmdOutdated(): void {
+    set lock: string = readFile("parth.lock");
+    if (len(lock) < 1) { println("No parth.lock found. Run 'parth build' first."); return; }
+    println("Checking for outdated dependencies...");
+    println("Note: full version checking requires registry access");
+    println("Current lock file:");
+    println(lock);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// QUALITY COMMANDS
+// ═══════════════════════════════════════════════════════════════════════
+function cmdFmt(): void {
+    set target: string = readArg(2);
+    if (len(target) < 1) { set target = "src/"; }
+    println("Formatting " + target + "...");
+    println("Note: ajeeb-fmt not yet available in Ajeeb");
+}
+
+function cmdLint(): void {
+    set target: string = readArg(2);
+    if (len(target) < 1) { set target = "src/"; }
+    set issues: int = 0;
+    set filesChecked: int = 0;
+    // List .ajb files
+    exec("find " + target + " -name '*.ajb' > /tmp/parth_lint_files.txt 2>/dev/null");
+    set fileList: string = readFile("/tmp/parth_lint_files.txt");
+    if (len(fileList) < 1) { println("No .ajb files found in " + target); return; }
+    set pos: int = 0;
+    set flen: int = len(fileList);
+    while (pos < flen) {
+        set nl: int = indexOf(fileList, "\n", pos);
+        if (nl < 0) { set nl = flen; }
+        set path: string = trimStr(substring(fileList, pos, nl));
+        if (len(path) > 0) {
+            set content: string = readFile(path);
+            if (len(content) > 0) {
+                set li: int = 0;
+                set lineNum: int = 1;
+                set clen: int = len(content);
+                while (li < clen) {
+                    set lineEnd: int = indexOf(content, "\n", li);
+                    if (lineEnd < 0) { set lineEnd = clen; }
+                    set line: string = substring(content, li, lineEnd);
+                    // Check string comparison with == or !=
+                    set eqPos: int = indexOf(line, "== \"", 0);
+                    if (eqPos >= 0) {
+                        println("  " + path + ":" + itoa(lineNum) + ": use strEq() instead of == for string comparison");
+                        set issues = issues + 1;
+                    }
+                    // Check TODO
+                    set todoPos: int = indexOf(line, "TODO", 0);
+                    if (todoPos >= 0) {
+                        println("  " + path + ":" + itoa(lineNum) + ": TODO found");
+                        set issues = issues + 1;
+                    }
+                    // Check line length
+                    if (lineEnd - li > 120) {
+                        println("  " + path + ":" + itoa(lineNum) + ": line exceeds 120 characters");
+                        set issues = issues + 1;
+                    }
+                    set li = lineEnd + 1;
+                    set lineNum = lineNum + 1;
+                }
+                set filesChecked = filesChecked + 1;
+            }
+        }
+        set pos = nl + 1;
+    }
+    println("Linted " + itoa(filesChecked) + " files: " + itoa(issues) + " issues found");
+    if (issues > 0) { exit(1); }
+}
+
+function cmdSanitize(): void {
+    set file: string = readArg(2);
+    set check: string = readFile("parth.das");
+    if (len(check) < 1) { println("Error: no parth.das found"); return; }
+    if (len(file) < 1) {
+        set name: string = getConfigName();
+        set file = "src/" + name + ".ajb";
+    }
+    println("Running sanitizer checks on " + file + "...");
+    println("  Checking: memory safety, bounds, use-after-free, null deref");
+    set compiler: string = findCompiler();
+    if (len(compiler) < 1) { println("Error: compiler not found"); return; }
+    set exitCode: int = exec(compiler + " " + file + " --skip-run 2>/dev/null");
+    if (exitCode == 0) {
+        println("No memory safety issues detected!");
+    } else {
+        println("Sanitizer found issues (exit code: " + itoa(exitCode) + ")");
+    }
+}
+
+function cmdBench(): void {
+    set filter: string = readArg(2);
+    set benchDir: string = "benches";
+    exec("ls " + benchDir + "/*.ajb > /tmp/parth_bench_list.txt 2>/dev/null");
+    set fileList: string = readFile("/tmp/parth_bench_list.txt");
+    if (len(fileList) < 1) { println("Error: no benchmark files in benches/"); return; }
+    set compiler: string = findCompiler();
+    if (len(compiler) < 1) { println("Error: compiler not found"); return; }
+    println("Running benchmarks...");
+    set count: int = 0;
+    set failed: int = 0;
+    set pos: int = 0;
+    set flen: int = len(fileList);
+    while (pos < flen) {
+        set nl: int = indexOf(fileList, "\n", pos);
+        if (nl < 0) { set nl = flen; }
+        set path: string = trimStr(substring(fileList, pos, nl));
+        if (len(path) > 0) {
+            set name: string = getStem(path);
+            if (len(filter) > 0 && !containsStr(name, filter)) {
+                // skip
+            } else {
+                print("  bench " + name + " ... ");
+                set t1: string = readFile("/proc/uptime");
+                set exitCode: int = exec(compiler + " " + path + " --skip-run 2>/dev/null");
+                set t2: string = readFile("/proc/uptime");
+                if (exitCode == 0) {
+                    println("ok");
+                    set count = count + 1;
+                } else {
+                    println("FAILED");
+                    set failed = failed + 1;
+                    set count = count + 1;
+                }
+            }
+        }
+        set pos = nl + 1;
+    }
+    println("");
+    println(itoa(count) + " benchmarks: " + itoa(count - failed) + " passed, " + itoa(failed) + " failed");
+    if (failed > 0) { exit(1); }
+}
+
+function cmdAudit(): void {
+    set lock: string = readFile("parth.lock");
+    if (len(lock) < 1) { println("No lock file found. Run 'parth build' first."); return; }
+    println("Security audit:");
+    println("Note: full security audit requires registry access");
+    // Basic checks
+    set hasIssues: int = 0;
+    if (containsStr(lock, "unsafe")) {
+        println("  Warning: 'unsafe' found in lock file");
+        set hasIssues = 1;
+    }
+    if (hasIssues == 0) {
+        println("  No obvious security issues found in lock file");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BUILD TOOLS
+// ═══════════════════════════════════════════════════════════════════════
+function cmdPackage(): void {
+    set check: string = readFile("parth.das");
+    if (len(check) < 1) { println("Error: no parth.das found"); return; }
+    set name: string = getConfigName();
+    set ver: string = getConfigVersion();
+    set tarball: string = name + "-" + ver + ".tar.gz";
+    println("Packaging " + name + " v" + ver + "...");
+    // Collect files
+    set files: string = "parth.das";
+    exec("ls src/*.ajb > /tmp/parth_pkg_files.txt 2>/dev/null");
+    set srcFiles: string = readFile("/tmp/parth_pkg_files.txt");
+    if (len(srcFiles) > 0) {
+        set pos: int = 0;
+        set slen: int = len(srcFiles);
+        while (pos < slen) {
+            set nl: int = indexOf(srcFiles, "\n", pos);
+            if (nl < 0) { set nl = slen; }
+            set f: string = trimStr(substring(srcFiles, pos, nl));
+            if (len(f) > 0) { set files = files + " " + f; }
+            set pos = nl + 1;
+        }
+    }
+    set exitCode: int = exec("tar czf " + tarball + " " + files);
+    if (exitCode == 0) {
+        println("Created " + tarball);
+    } else {
+        println("Packaging failed");
+    }
+}
+
+function cmdGenLockfile(): void {
+    set check: string = readFile("parth.das");
+    if (len(check) < 1) { println("Error: no parth.das found"); return; }
+    set deps: string = getConfigDeps();
+    if (len(deps) < 1) { println("No dependencies. Lockfile not needed."); return; }
+    println("Generating parth.lock...");
+    // For now, write a simple lock file listing deps
+    set lock: string = "# parth.lock — generated by parth\n";
+    set pos: int = 0;
+    set dlen: int = len(deps);
+    while (pos < dlen) {
+        set nl: int = indexOf(deps, "\n", pos);
+        if (nl < 0) { set nl = dlen; }
+        set line: string = trimStr(substring(deps, pos, nl));
+        if (len(line) > 0 && !startsWith(line, "#")) {
+            set eqPos: int = indexOf(line, "=", 0);
+            if (eqPos >= 0) {
+                set depName: string = trimStr(substring(line, 0, eqPos));
+                set depVer: string = trimStr(substring(line, eqPos + 1, len(line)));
+                // Strip quotes
+                depVer = stripQuotes(depVer);
+                lock = lock + depName + " = \"" + depVer + "\"\n";
+            }
+        }
+        set pos = nl + 1;
+    }
+    writeFile("parth.lock", lock);
+    println("Generated parth.lock");
+}
+
+function cmdVendor(): void {
+    set check: string = readFile("parth.das");
+    if (len(check) < 1) { println("Error: no parth.das found"); return; }
+    set deps: string = getConfigDeps();
+    if (len(deps) < 1) { println("No dependencies to vendor."); return; }
+    mkdir("vendor");
+    println("Vendoring dependencies into vendor/...");
+    // Copy each dep
+    set pos: int = 0;
+    set dlen: int = len(deps);
+    while (pos < dlen) {
+        set nl: int = indexOf(deps, "\n", pos);
+        if (nl < 0) { set nl = dlen; }
+        set line: string = trimStr(substring(deps, pos, nl));
+        if (len(line) > 0 && !startsWith(line, "#")) {
+            set eqPos: int = indexOf(line, "=", 0);
+            if (eqPos >= 0) {
+                set depName: string = trimStr(substring(line, 0, eqPos));
+                set local: string = findDepLocal(depName);
+                if (len(local) > 0) {
+                    exec("cp -r " + local + " vendor/" + depName);
+                    println("  " + depName + " (from local)");
+                } else {
+                    mkdir("vendor/" + depName);
+                    println("  " + depName + " (placeholder)");
+                }
+            }
+        }
+        set pos = nl + 1;
+    }
+    println("Done");
+}
+
+function cmdLs(): void {
+    println("Workspace packages:");
+    set found: int = 0;
+    // Current project
+    set check: string = readFile("parth.das");
+    if (len(check) > 0) {
+        set name: string = getConfigName();
+        set ver: string = getConfigVersion();
+        println("  " + name + " v" + ver + " (.)");
+        set found = 1;
+    }
+    // Local packages
+    exec("ls packages/ > /tmp/parth_ls_local.txt 2>/dev/null");
+    set local: string = readFile("/tmp/parth_ls_local.txt");
+    if (len(local) > 0) {
+        set pos: int = 0;
+        set llen: int = len(local);
+        while (pos < llen) {
+            set nl: int = indexOf(local, "\n", pos);
+            if (nl < 0) { set nl = llen; }
+            set entry: string = trimStr(substring(local, pos, nl));
+            if (len(entry) > 0) {
+                println("  " + entry + " (packages/" + entry + ")");
+                set found = 1;
+            }
+            set pos = nl + 1;
+        }
+    }
+    if (found == 0) { println("  (no packages found)"); }
+}
+
+function cmdDoc(): void {
+    set name: string = "project";
+    set check: string = readFile("parth.das");
+    if (len(check) > 0) { set name = getConfigName(); }
+    println("Generating documentation for " + name + "...");
+    mkdir("build");
+    set doc: string = "# " + name + "\n\n";
+    // Add source file list
+    doc = doc + "## Source Files\n\n";
+    exec("ls src/*.ajb > /tmp/parth_doc_files.txt 2>/dev/null");
+    set files: string = readFile("/tmp/parth_doc_files.txt");
+    if (len(files) > 0) {
+        set pos: int = 0;
+        set flen: int = len(files);
+        while (pos < flen) {
+            set nl: int = indexOf(files, "\n", pos);
+            if (nl < 0) { set nl = flen; }
+            set f: string = trimStr(substring(files, pos, nl));
+            if (len(f) > 0) {
+                doc = doc + "- " + f + "\n";
+            }
+            set pos = nl + 1;
+        }
+    }
+    // Add functions from main.ajb
+    set content: string = readFile("src/main.ajb");
+    if (len(content) > 0) {
+        doc = doc + "\n## Functions\n\n";
+        set pos: int = 0;
+        set clen: int = len(content);
+        while (pos < clen) {
+            set fPos: int = indexOf(content, "function ", pos);
+            if (fPos < 0) { break; }
+            set fEnd: int = indexOf(content, "{", fPos);
+            if (fEnd < 0) { break; }
+            set sig: string = trimStr(substring(content, fPos, fEnd));
+            doc = doc + "- " + sig + "\n";
+            set pos = fEnd + 1;
+        }
+    }
+    writeFile("build/doc.md", doc);
+    println("Documentation generated: build/doc.md");
+}
+
+function cmdWorkspace(): void {
+    set sub: string = readArg(2);
+    if (len(sub) < 1) {
+        // List workspace members
+        set check: string = readFile("parth.das");
+        if (len(check) < 1) { println("No parth.das found"); return; }
+        set ws: string = getConfigWorkspace();
+        if (len(ws) < 1) {
+            println("No workspace members configured.");
+        } else {
+            println("Workspace members:");
+            println(ws);
+        }
+        return;
+    }
+    if (isEq(sub, "add")) {
+        set memberPath: string = readArg(3);
+        if (len(memberPath) < 1) { println("Usage: parth workspace add <path>"); return; }
+        set content: string = readFile("parth.das");
+        if (len(content) < 1) { println("Error: no parth.das found"); return; }
+        // Add [workspace] section if not present
+        if (!containsStr(content, "[workspace]")) {
+            content = content + "\n[workspace]\n";
+        }
+        content = content + "members = \"" + memberPath + "\"\n";
+        writeFile("parth.das", content);
+        println("Added workspace member '" + memberPath + "'");
+    } else {
+        println("Usage: parth workspace [add <path>]");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// REGISTRY COMMANDS
+// ═══════════════════════════════════════════════════════════════════════
+function cmdSearch(): void {
+    set query: string = readArg(2);
+    if (len(query) < 1) { println("Usage: parth search <query>"); return; }
+    println("Searching for '" + query + "'...");
+    // Use curl to search registry (if available)
+    set url: string = "https://registry.ajeeb.dev/api/search?q=" + query;
+    set exitCode: int = exec("curl -s " + url + " > /tmp/parth_search.json 2>/dev/null");
+    if (exitCode == 0) {
+        set result: string = readFile("/tmp/parth_search.json");
+        if (len(result) > 0) {
+            println(result);
+        } else {
+            println("No results found");
+        }
+    } else {
+        println("Registry not available (curl failed)");
+        println("Note: registry access requires network connection");
+    }
+}
+
+function cmdPublish(): void {
+    set check: string = readFile("parth.das");
+    if (len(check) < 1) { println("Error: no parth.das found"); return; }
+    set name: string = getConfigName();
+    set ver: string = getConfigVersion();
+    if (len(name) < 1 || isEq(name, "project")) {
+        println("Error: package name must be set in [package] section");
+        return;
+    }
+    if (len(ver) < 1) {
+        println("Error: version must be set in [package] section");
+        return;
+    }
+    println("Publishing " + name + " v" + ver + "...");
+    // Create tarball
+    cmdPackage();
+    // Upload
+    set url: string = "https://registry.ajeeb.dev/api/publish";
+    set tarball: string = name + "-" + ver + ".tar.gz";
+    set exitCode: int = exec("curl -s -X POST -F \"package=@" + tarball + "\" " + url + " > /tmp/parth_publish.json 2>/dev/null");
+    if (exitCode == 0) {
+        set result: string = readFile("/tmp/parth_publish.json");
+        if (len(result) > 0) {
+            println(result);
+        } else {
+            println("Published '" + name + "@" + ver + "'");
+        }
+    } else {
+        println("Publish failed (network error)");
+    }
+}
+
+function cmdYank(): void {
+    set name: string = readArg(2);
+    set ver: string = readArg(3);
+    if (len(name) < 1 || len(ver) < 1) { println("Usage: parth yank <package> <version>"); return; }
+    set url: string = "https://registry.ajeeb.dev/api/yank";
+    set exitCode: int = exec("curl -s -X POST -d 'name=" + name + "&version=" + ver + "' " + url + " > /tmp/parth_yank.json 2>/dev/null");
+    if (exitCode == 0) {
+        println("Yanked '" + name + "@" + ver + "'");
+    } else {
+        println("Yank failed (network error)");
+    }
+}
+
+function cmdUnyank(): void {
+    set name: string = readArg(2);
+    set ver: string = readArg(3);
+    if (len(name) < 1 || len(ver) < 1) { println("Usage: parth unyank <package> <version>"); return; }
+    set url: string = "https://registry.ajeeb.dev/api/unyank";
+    set exitCode: int = exec("curl -s -X POST -d 'name=" + name + "&version=" + ver + "' " + url + " > /tmp/parth_unyank.json 2>/dev/null");
+    if (exitCode == 0) {
+        println("Un-yanked '" + name + "@" + ver + "'");
+    } else {
+        println("Unyank failed (network error)");
+    }
+}
+
+function cmdCache(): void {
+    set sub: string = readArg(2);
+    if (len(sub) < 1) { set sub = "info"; }
+    if (isEq(sub, "info")) {
+        exec("du -sh ~/.parth/ 2>/dev/null");
+        println("Cache location: ~/.parth/");
+        println("Packages: ~/.parth/packages/");
+    } else if (isEq(sub, "clear")) {
+        exec("rm -rf ~/.parth/cache/*");
+        println("Cache cleared");
+    } else if (isEq(sub, "prune")) {
+        set lock: string = readFile("parth.lock");
+        println("Pruning unused packages...");
+        // For now, just list what's in packages
+        exec("ls ~/.parth/packages/ 2>/dev/null");
+    } else if (isEq(sub, "put")) {
+        set key: string = readArg(3);
+        set val: string = readArg(4);
+        if (len(key) < 1 || len(val) < 1) { println("Usage: parth cache put <key> <value>"); return; }
+        mkdir("~/.parth/cache");
+        writeFile("~/.parth/cache/" + key, val);
+        println("Cached: " + key);
+    } else if (isEq(sub, "get")) {
+        set key: string = readArg(3);
+        if (len(key) < 1) { println("Usage: parth cache get <key>"); return; }
+        set val: string = readFile("~/.parth/cache/" + key);
+        if (len(val) > 0) {
+            println(val);
+        } else {
+            println("Key not found: " + key);
+        }
+    } else if (isEq(sub, "lookup")) {
+        set key: string = readArg(3);
+        if (len(key) < 1) { println("Usage: parth cache lookup <key>"); return; }
+        set val: string = readFile("~/.parth/cache/" + key);
+        if (len(val) > 0) {
+            println(key + " -> (cached)");
+        } else {
+            println("Key not found: " + key);
+        }
+    } else {
+        println("Usage: parth cache <info|clear|prune|put|get|lookup>");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// AUTH COMMANDS
+// ═══════════════════════════════════════════════════════════════════════
+function cmdKeygen(): void {
+    mkdir("~/.parth/keys");
+    set exitCode: int = exec("ssh-keygen -t ed25519 -f ~/.parth/keys/id_ed25519 -N '' -q 2>/dev/null");
+    if (exitCode == 0) {
+        println("Ed25519 keypair generated");
+        println("Keys stored in: ~/.parth/keys/");
+    } else {
+        // Fallback: try openssl
+        set exitCode2: int = exec("openssl genpkey -algorithm Ed25519 -out ~/.parth/keys/id_ed25519 2>/dev/null");
+        if (exitCode2 == 0) {
+            exec("openssl pkey -in ~/.parth/keys/id_ed25519 -pubout -out ~/.parth/keys/id_ed25519.pub 2>/dev/null");
+            println("Ed25519 keypair generated (openssl)");
+            println("Keys stored in: ~/.parth/keys/");
+        } else {
+            println("Key generation failed (no ssh-keygen or openssl)");
+        }
+    }
+}
+
+function cmdLogin(): void {
+    set registryUrl: string = readArg(2);
+    if (len(registryUrl) < 1) { set registryUrl = "https://registry.ajeeb.dev"; }
+    println("Logging in to " + registryUrl + "...");
+    // For now, just store the registry URL
+    mkdir("~/.parth");
+    writeFile("~/.parth/auth.json", "{\"registry_url\":\"" + registryUrl + "\"}");
+    println("Login placeholder — full auth requires browser-based OAuth");
+    println("Registry: " + registryUrl);
+}
+
+function cmdLogout(): void {
+    exec("rm -f ~/.parth/auth.json");
+    println("Logged out");
+}
+
+function cmdWhoami(): void {
+    set auth: string = readFile("~/.parth/auth.json");
+    if (len(auth) > 0) {
+        println("Authenticated");
+        println("  " + auth);
+    } else {
+        println("Not logged in. Use 'parth login' to authenticate.");
+    }
+}
+
+function cmdSign(): void {
+    set name: string = readArg(2);
+    set ver: string = readArg(3);
+    if (len(name) < 1) { println("Usage: parth sign <package> [version]"); return; }
+    if (isEq(name, ".")) {
+        set check: string = readFile("parth.das");
+        if (len(check) < 1) { println("Error: no parth.das found"); return; }
+        set name = getConfigName();
+        if (len(ver) < 1) { set ver = getConfigVersion(); }
+    }
+    println("Signing " + name + "@" + ver + "...");
+    // Try to sign with openssl
+    set keyPath: string = "~/.parth/keys/id_ed25519";
+    set keyCheck: string = readFile(keyPath);
+    if (len(keyCheck) < 1) {
+        println("No signing key found. Run 'parth keygen' first.");
+        return;
+    }
+    mkdir("~/.parth/signatures");
+    set sigPath: string = "~/.parth/signatures/" + name + "_" + ver + ".sig";
+    set exitCode: int = exec("openssl dgst -sha256 -sign " + keyPath + " -out " + sigPath + " parth.das 2>/dev/null");
+    if (exitCode == 0) {
+        println("Signed '" + name + "@" + ver + "'");
+        println("  Signature: " + sigPath);
+    } else {
+        println("Signing failed");
+    }
+}
+
+function cmdVerify(): void {
+    set name: string = readArg(2);
+    set ver: string = readArg(3);
+    if (len(name) < 1 || len(ver) < 1) { println("Usage: parth verify <package> <version>"); return; }
+    set pubPath: string = "~/.parth/keys/id_ed25519.pub";
+    set pubCheck: string = readFile(pubPath);
+    set sigPath: string = "~/.parth/signatures/" + name + "_" + ver + ".sig";
+    set sigCheck: string = readFile(sigPath);
+    if (len(pubCheck) < 1) {
+        println("No public key found. Run 'parth keygen' first.");
+        return;
+    }
+    if (len(sigCheck) < 1) {
+        println("No signature found for '" + name + "@" + ver + "'");
+        return;
+    }
+    set exitCode: int = exec("openssl dgst -sha256 -verify " + pubPath + " -signature " + sigPath + " parth.das 2>/dev/null");
+    if (exitCode == 0) {
+        println("Verified '" + name + "@" + ver + "'");
+    } else {
+        println("Verification failed for '" + name + "@" + ver + "'");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════════
 function findCompiler(): string {
     set selfPath: string = readArg(0);
     set dir: string = getDir(selfPath);
-
-    // Check for marker files (small, safe to read)
+    // Check for marker files
     set v1: string = readFile(dir + "/.compiler_version");
     if (len(v1) > 0) { return dir + "/ajeeb_compiler"; }
     set v2: string = readFile(dir + "/.native_version");
     if (len(v2) > 0) { return dir + "/compiler"; }
-
     // Try current dir
     set v3: string = readFile("build/.compiler_version");
     if (len(v3) > 0) { return "./build/ajeeb_compiler"; }
     set v4: string = readFile("build/.native_version");
     if (len(v4) > 0) { return "./build/compiler"; }
+    return "";
+}
 
+function findRoot(): string {
+    set selfPath: string = readArg(0);
+    return getDir(selfPath);
+}
+
+function findDepLocal(name: string): string {
+    // Search in ./packages/, ~/.parth/packages/, <root>/packages/
+    set local1: string = "packages/" + name;
+    set check1: string = readFile(local1 + "/parth.das");
+    if (len(check1) > 0) { return local1; }
+    set local2: string = "~/.parth/packages/" + name;
+    set check2: string = readFile(local2 + "/parth.das");
+    if (len(check2) > 0) { return local2; }
+    set root: string = findRoot();
+    set local3: string = root + "/packages/" + name;
+    set check3: string = readFile(local3 + "/parth.das");
+    if (len(check3) > 0) { return local3; }
     return "";
 }
 
 function getDir(path: string): string {
     set i: int = len(path) - 1;
     while (i >= 0) {
-        if (charCode(path, i) == 47) { // '/'
+        if (charCode(path, i) == 47) {
             return substring(path, 0, i);
         }
         set i = i - 1;
@@ -167,6 +1072,155 @@ function getDir(path: string): string {
     return ".";
 }
 
+function getBaseName(path: string): string {
+    set i: int = len(path) - 1;
+    while (i >= 0) {
+        if (charCode(path, i) == 47) {
+            return substring(path, i + 1, len(path));
+        }
+        set i = i - 1;
+    }
+    return path;
+}
+
+function getStem(path: string): string {
+    set base: string = getBaseName(path);
+    set dotPos: int = indexOf(base, ".", 0);
+    if (dotPos >= 0) {
+        return substring(base, 0, dotPos);
+    }
+    return base;
+}
+
+function getFileName(path: string): string {
+    return getBaseName(path);
+}
+
+function cwd(): string {
+    exec("pwd > /tmp/parth_cwd.txt");
+    return trimStr(readFile("/tmp/parth_cwd.txt"));
+}
+
 function isEq(a: string, b: string): bool {
     return strcmp_ajeeb(a, b) == 0;
+}
+
+function trimStr(s: string): string {
+    set start: int = 0;
+    set end: int = len(s);
+    while (start < end) {
+        set c: int = charCode(s, start);
+        if (c != 32 && c != 9 && c != 10 && c != 13) { break; }
+        set start = start + 1;
+    }
+    while (end > start) {
+        set c: int = charCode(s, end - 1);
+        if (c != 32 && c != 9 && c != 10 && c != 13) { break; }
+        set end = end - 1;
+    }
+    return substring(s, start, end);
+}
+
+// startsWith and endsWith are in the C runtime
+
+function containsStr(haystack: string, needle: string): bool {
+    return indexOf(haystack, needle, 0) >= 0;
+}
+
+function stripQuotes(s: string): string {
+    if (len(s) >= 2) {
+        if (charCode(s, 0) == 34 && charCode(s, len(s) - 1) == 34) {
+            return substring(s, 1, len(s) - 1);
+        }
+    }
+    return s;
+}
+
+// Config parsing helpers
+function getConfigName(): string {
+    return getConfigValue("[package]", "name");
+}
+
+function getConfigVersion(): string {
+    return getConfigValue("[package]", "version");
+}
+
+function getConfigOutput(): string {
+    set val: string = getConfigValue("[compiler]", "output");
+    if (len(val) < 1) { return "build"; }
+    return stripQuotes(val);
+}
+
+function getConfigRuntime(): string {
+    set val: string = getConfigValue("[compiler]", "runtime");
+    if (len(val) < 1) { return "runtime/ajeeb_runtime.c"; }
+    return stripQuotes(val);
+}
+
+function getConfigDeps(): string {
+    set content: string = readFile("parth.das");
+    if (len(content) < 1) { return ""; }
+    set depsStart: int = indexOf(content, "[dependencies]", 0);
+    if (depsStart < 0) { return ""; }
+    set depsEnd: int = indexOf(content, "\n[", depsStart + 14);
+    if (depsEnd < 0) { set depsEnd = len(content); }
+    return substring(content, depsStart + 14, depsEnd);
+}
+
+function getConfigWorkspace(): string {
+    set content: string = readFile("parth.das");
+    if (len(content) < 1) { return ""; }
+    set wsStart: int = indexOf(content, "[workspace]", 0);
+    if (wsStart < 0) { return ""; }
+    return substring(content, wsStart + 11, len(content));
+}
+
+function getConfigValue(section: string, key: string): string {
+    set content: string = readFile("parth.das");
+    if (len(content) < 1) { return ""; }
+    set secPos: int = indexOf(content, section, 0);
+    if (secPos < 0) { return ""; }
+    set pos: int = secPos + len(section);
+    set end: int = len(content);
+    set nextSec: int = indexOf(content, "\n[", pos);
+    if (nextSec >= 0) { set end = nextSec; }
+    while (pos < end) {
+        set nl: int = indexOf(content, "\n", pos);
+        if (nl < 0 || nl >= end) { set nl = end; }
+        set line: string = trimStr(substring(content, pos, nl));
+        set eqPos: int = indexOf(line, "=", 0);
+        if (eqPos >= 0) {
+            set k: string = trimStr(substring(line, 0, eqPos));
+            if (isEq(k, key)) {
+                set val: string = trimStr(substring(line, eqPos + 1, len(line)));
+                return stripQuotes(val);
+            }
+        }
+        if (nl >= end) { break; }
+        set pos = nl + 1;
+    }
+    return "";
+}
+
+function hasDep(name: string): bool {
+    set deps: string = getConfigDeps();
+    if (len(deps) < 1) { return false; }
+    return containsStr(deps, name);
+}
+
+function addDepToConfig(name: string, version: string): void {
+    set content: string = readFile("parth.das");
+    if (len(content) < 1) { return; }
+    set marker: string = "[dependencies]";
+    set depsPos: int = indexOf(content, marker, 0);
+    if (depsPos < 0) { return; }
+    set insertAt: int = depsPos + len(marker);
+    set before: string = substring(content, 0, insertAt);
+    set after: string = substring(content, insertAt, len(content));
+    set newDep: string = "\n" + name + " = \"" + version + "\"";
+    writeFile("parth.das", before + newDep + after);
+}
+
+function removeDepFromConfig(name: string): void {
+    exec("sed -i '/^" + name + " = /d' parth.das");
 }

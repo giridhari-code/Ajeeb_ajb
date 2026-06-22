@@ -26,7 +26,8 @@ mkdir -p build
 
 # Stage 0: Bootstrap with Rust → LLVM IR
 echo "  [1/4] Rust compiler: compiler.ajb → LLVM IR"
-cargo run -p ajeeb-compiler --bin ajeeb_compiler -- \
+make rust 2>/dev/null
+./build/ajeeb_compiler \
     compiler/compiler.ajb build/output.ll --skip-run 2>/dev/null
 
 if [ ! -f build/output.ll ]; then
