@@ -6,36 +6,53 @@ set -euo pipefail
 REPO="giridhari-code/Ajeeb_ajb"
 BIN_DIR="${HOME}/.ajeeb/bin"
 
-# Auto-detect architecture
+# ── Detect OS + Architecture ────────────────────────
+OS_RAW=$(uname -s)
 ARCH_RAW=$(uname -m)
-case "$ARCH_RAW" in
-    x86_64|amd64)  ARCH="linux-x86_64" ;;
-    aarch64|arm64) ARCH="linux-aarch64" ;;
-    armv7l|armhf)  ARCH="linux-armv7" ;;
-    *)             ARCH="linux-x86_64"; echo "⚠️  Unknown arch ($ARCH_RAW), using x86_64" ;;
+
+case "$OS_RAW" in
+    Linux)
+        case "$ARCH_RAW" in
+            x86_64|amd64)  PLATFORM="linux-x86_64" ;;
+            aarch64|arm64) PLATFORM="linux-aarch64" ;;
+            armv7l|armhf)  PLATFORM="linux-armv7" ;;
+            *)             PLATFORM="linux-x86_64"; echo "⚠️  Unknown arch ($ARCH_RAW), using x86_64" ;;
+        esac
+        ;;
+    Darwin)
+        case "$ARCH_RAW" in
+            arm64)  PLATFORM="macos-arm64" ;;
+            x86_64) PLATFORM="macos-x86_64" ;;
+            *)      PLATFORM="macos-arm64"; echo "⚠️  Unknown Mac arch ($ARCH_RAW), using arm64" ;;
+        esac
+        ;;
+    MINGW*|MSYS*|CYGWIN*)
+        PLATFORM="windows-x86_64"
+        echo "⚠️  Windows detected — use PowerShell install.ps1 for best experience"
+        ;;
+    *)
+        PLATFORM="linux-x86_64"
+        echo "⚠️  Unknown OS ($OS_RAW), using linux-x86_64"
+        ;;
 esac
 
 echo "================================================"
-echo "  Ajeeb install ho raha hai..."
+echo "  Ajeeb install ho raha hai... ($PLATFORM)"
 echo "================================================"
 echo ""
 
 # ── Dependency checks ──────────────────────────────
 MISSING=""
-if ! command -v gcc &>/dev/null && ! command -v clang &>/dev/null; then
-    MISSING="${MISSING}  ❌ gcc/clang nahi mila! Pehle install karo:
-       sudo apt install gcc          # Ubuntu/Debian
-       sudo dnf install gcc          # Fedora
-       sudo pacman -S gcc            # Arch
-       brew install gcc              # macOS\n"
+if ! command -v gcc &>/dev/null && ! command -v cc &>/dev/null && ! command -v clang &>/dev/null; then
+    MISSING="${MISSING}  ❌ gcc/clang nahi mila!
+       Linux:  sudo apt install gcc
+       macOS:  xcode-select --install\n"
 fi
 
 if ! command -v llc &>/dev/null; then
-    MISSING="${MISSING}  ❌ llc (LLVM) nahi mila! Pehle install karo:
-       sudo apt install llvm         # Ubuntu/Debian
-       sudo dnf install llvm         # Fedora
-       sudo pacman -S llvm           # Arch
-       brew install llvm             # macOS\n"
+    MISSING="${MISSING}  ❌ llc (LLVM) nahi mila!
+       Linux:  sudo apt install llvm
+       macOS:  brew install llvm\n"
 fi
 
 if [ -n "$MISSING" ]; then
@@ -59,7 +76,7 @@ mkdir -p "$BIN_DIR"
 
 download() {
     local name="$1"
-    local url="https://github.com/${REPO}/releases/download/${VERSION}/${name}-${ARCH}"
+    local url="https://github.com/${REPO}/releases/download/${VERSION}/${name}-${PLATFORM}"
     local out="${BIN_DIR}/${name}"
     echo "  Downloading: ${name}..."
     if curl -sSfL "$url" -o "$out" 2>/dev/null; then
@@ -67,13 +84,12 @@ download() {
         echo "  ✓ ${name}"
         return 0
     else
-        echo "  ⚠️  ${name} (${ARCH}) release mein nahi hai"
+        echo "  ⚠️  ${name} (${PLATFORM}) release mein nahi hai"
         return 1
     fi
 }
 
 # Download or build from source
-BUILT_FROM_SOURCE=""
 if ! download "ajeebc"; then
     if command -v cargo &>/dev/null; then
         echo "  Building ajeebc from source (cargo)..."
@@ -84,7 +100,6 @@ if ! download "ajeebc"; then
             echo "  ✓ ajeebc (built from source)"
         else
             echo "  ❌ cargo build fail — Rust toolchain check karo"
-            echo "     rustc --version && cargo --version"
             cd / && rm -rf "$TMPDIR"
             exit 1
         fi
@@ -125,12 +140,12 @@ if ! download "parth"; then
     fi
 fi
 
-# ── Runtime jugaad ─────────────────────────────────
+# ── Runtime ────────────────────────────────────────
 echo ""
 echo "  Downloading runtime library..."
 RUNTIME_URL="https://raw.githubusercontent.com/${REPO}/${VERSION}/ajeebc/runtime/ajeeb_runtime.c"
 curl -sSfL "$RUNTIME_URL" -o "${BIN_DIR}/ajeeb_runtime.c" || {
-    echo "  ⚠️  Runtime download fail — chalega to chalega lekin guarantee nahi"
+    echo "  ⚠️  Runtime download fail"
 }
 
 # ── Standard library ──────────────────────────────
@@ -161,27 +176,32 @@ echo "  ✓ parth.das template"
 
 # ── PATH setup ─────────────────────────────────────
 if [[ ":$PATH:" != *":${BIN_DIR}:"* ]]; then
-    echo "" >> "${HOME}/.bashrc"
-    echo "# Ajeeb" >> "${HOME}/.bashrc"
-    echo "export PATH=\"${BIN_DIR}:\$PATH\"" >> "${HOME}/.bashrc"
-    echo "  ✓ Added to ~/.bashrc"
+    SHELL_RC=""
+    if [ -f "${HOME}/.bashrc" ]; then SHELL_RC="${HOME}/.bashrc"
+    elif [ -f "${HOME}/.zshrc" ]; then SHELL_RC="${HOME}/.zshrc"
+    fi
+    if [ -n "$SHELL_RC" ]; then
+        echo "" >> "$SHELL_RC"
+        echo "# Ajeeb" >> "$SHELL_RC"
+        echo "export PATH=\"${BIN_DIR}:\$PATH\"" >> "$SHELL_RC"
+        echo "  ✓ Added to $(basename $SHELL_RC)"
+    fi
 fi
 
 echo ""
 echo "================================================"
-echo "  Install complete! 🎉"
+echo "  Install complete!"
 echo "================================================"
 echo ""
 echo "Abhi ke liye chalao:"
 echo "  export PATH=\"${BIN_DIR}:\$PATH\""
 echo ""
 echo "Phir use karo:"
-echo "  ajeebc file.ajb              # compile → LLVM IR + native binary"
+echo "  ajeebc file.ajb              # compile"
 echo "  parthi file.ajb              # MIR interpreter se chalao"
 echo "  parth init my-project        # naya project banao"
-echo "  parth build                  # compile karo (native target)"
+echo "  parth build                  # compile karo"
 echo "  parth run                    # build + chalao"
-echo "  parth generate-lockfile      # lock file banao"
 echo ""
 echo "Pehli baar? Ye karo:"
 echo "  parth init hello-ajeeb"

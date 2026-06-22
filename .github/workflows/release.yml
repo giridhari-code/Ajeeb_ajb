@@ -24,7 +24,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq llvm-dev gcc libc-dev
 
-      - name: Build ajeebc (Rust bootstrap)
+      - name: Build ajeebc
         run: |
           cd ajeebc
           make rust
@@ -51,7 +51,7 @@ jobs:
           gcc -no-pie ajeebc/build/compiler.s \
             ajeebc/runtime/ajeeb_runtime.c \
             -o ajeebc/build/compiler -lm -ldl -Wno-int-to-pointer-cast
-          echo "✓ Self-hosted compiler built: $(ls -lh ajeebc/build/compiler | awk '{print $5}')"
+          echo "✓ Self-hosted compiler built"
           build/ajeebc --emit-llvm-only ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll
           llc ajeebc/build/test_simple.ll -o ajeebc/build/test_simple.s
           gcc -no-pie ajeebc/build/test_simple.s \
@@ -66,7 +66,6 @@ jobs:
 
       - name: Collect artifacts
         run: |
-          mkdir -p release
           mkdir -p release/packages/ajeeb-std
           cp build/ajeebc release/ajeebc-linux-x86_64
           cp parthi/build/parthi release/parthi-linux-x86_64
@@ -122,11 +121,10 @@ jobs:
           gcc -no-pie ajeebc/build/compiler.s \
             ajeebc/runtime/ajeeb_runtime.c \
             -o ajeebc/build/compiler -lm -ldl -Wno-int-to-pointer-cast
-          echo "✓ Self-hosted compiler built: $(ls -lh ajeebc/build/compiler | awk '{print $5}')"
+          echo "✓ Self-hosted compiler built"
 
       - name: Collect artifacts
         run: |
-          mkdir -p release
           mkdir -p release/packages/ajeeb-std
           cp build/ajeebc release/ajeebc-linux-aarch64
           cp parthi/build/parthi release/parthi-linux-aarch64
@@ -140,30 +138,207 @@ jobs:
           name: ajeeb-linux-aarch64
           path: release/
 
+  build-macos-arm64:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install LLVM
+        run: brew install llvm
+
+      - name: Build ajeebc
+        run: |
+          cd ajeebc
+          make rust
+          mkdir -p ../build
+          cp build/ajeeb_compiler ../build/ajeebc
+
+      - name: Build parthi
+        env:
+          AJEEBC_PATH: ${{ github.workspace }}/build/ajeebc
+        run: bash parthi/build.sh
+
+      - name: Build parth
+        run: |
+          cd ajeebc/crates/parth
+          cargo build --release
+          mkdir -p ${{ github.workspace }}/parth/build
+          cp target/release/parth ${{ github.workspace }}/parth/build/parth
+
+      - name: Bootstrap check
+        run: |
+          export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+          mkdir -p ajeebc/build
+          build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
+          llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          gcc ajeebc/build/compiler.s \
+            ajeebc/runtime/ajeeb_runtime.c \
+            -o ajeebc/build/compiler -lm -Wno-int-to-pointer-cast
+          echo "✓ Self-hosted compiler built"
+          build/ajeebc --emit-llvm-only ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll
+          llc ajeebc/build/test_simple.ll -o ajeebc/build/test_simple.s
+          gcc ajeebc/build/test_simple.s \
+            ajeebc/runtime/ajeeb_runtime.c \
+            -o ajeebc/build/test_simple -lm -Wno-int-to-pointer-cast
+          OUTPUT=$(./ajeebc/build/test_simple 2>/dev/null)
+          if [ "$OUTPUT" != "Hello World" ]; then
+            echo "FAIL: expected 'Hello World', got '$OUTPUT'"
+            exit 1
+          fi
+          echo "✓ Bootstrap check passed"
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p release/packages/ajeeb-std
+          cp build/ajeebc release/ajeebc-macos-arm64
+          cp parthi/build/parthi release/parthi-macos-arm64
+          cp parth/build/parth release/parth-macos-arm64
+          cp ajeebc/runtime/ajeeb_runtime.c release/
+          cp packages/ajeeb-std/*.ajb release/packages/ajeeb-std/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ajeeb-macos-arm64
+          path: release/
+
+  build-macos-x86_64:
+    runs-on: macos-13
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install LLVM
+        run: brew install llvm
+
+      - name: Build ajeebc
+        run: |
+          cd ajeebc
+          make rust
+          mkdir -p ../build
+          cp build/ajeeb_compiler ../build/ajeebc
+
+      - name: Build parthi
+        env:
+          AJEEBC_PATH: ${{ github.workspace }}/build/ajeebc
+        run: bash parthi/build.sh
+
+      - name: Build parth
+        run: |
+          cd ajeebc/crates/parth
+          cargo build --release
+          mkdir -p ${{ github.workspace }}/parth/build
+          cp target/release/parth ${{ github.workspace }}/parth/build/parth
+
+      - name: Bootstrap check
+        run: |
+          export PATH="/usr/local/opt/llvm/bin:$PATH"
+          mkdir -p ajeebc/build
+          build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
+          llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          gcc ajeebc/build/compiler.s \
+            ajeebc/runtime/ajeeb_runtime.c \
+            -o ajeebc/build/compiler -lm -Wno-int-to-pointer-cast
+          echo "✓ Self-hosted compiler built"
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p release/packages/ajeeb-std
+          cp build/ajeebc release/ajeebc-macos-x86_64
+          cp parthi/build/parthi release/parthi-macos-x86_64
+          cp parth/build/parth release/parth-macos-x86_64
+          cp ajeebc/runtime/ajeeb_runtime.c release/
+          cp packages/ajeeb-std/*.ajb release/packages/ajeeb-std/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ajeeb-macos-x86_64
+          path: release/
+
+  build-windows-x86_64:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install LLVM (winget)
+        run: |
+          choco install llvm -y
+          echo "C:\Program Files\LLVM\bin" >> $GITHUB_PATH
+
+      - name: Build ajeebc
+        run: |
+          cd ajeebc/crates/ajeeb-compiler
+          cargo build --release
+          mkdir -p ../../build
+          cp target/release/ajeeb_compiler.exe ../../build/ajeebc.exe
+
+      - name: Build parth
+        run: |
+          cd ajeebc/crates/parth
+          cargo build --release
+          mkdir -p ${{ github.workspace }}/parth/build
+          cp target/release/parth.exe ${{ github.workspace }}/parth/build/parth.exe
+
+      - name: Bootstrap check
+        run: |
+          $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
+          mkdir -p ajeebc/build
+          ./build/ajeebc.exe --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
+          llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          gcc ajeebc/build/compiler.s ajeebc/runtime/ajeeb_runtime.c -o ajeebc/build/compiler.exe -lm -Wno-int-to-pointer-cast
+          echo "✓ Self-hosted compiler built"
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p release/packages/ajeeb-std
+          cp build/ajeebc.exe release/ajeebc-windows-x86_64.exe
+          cp parth/build/parth.exe release/parth-windows-x86_64.exe
+          cp ajeebc/runtime/ajeeb_runtime.c release/
+          cp packages/ajeeb-std/*.ajb release/packages/ajeeb-std/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ajeeb-windows-x86_64
+          path: release/
+
   create-release:
-    needs: [build-linux-x86_64, build-linux-aarch64]
+    needs: [build-linux-x86_64, build-linux-aarch64, build-macos-arm64, build-macos-x86_64, build-windows-x86_64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download x86_64 artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ajeeb-linux-x86_64
-          path: release/
+          path: all-artifacts/
 
-      - name: Download aarch64 artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: ajeeb-linux-aarch64
-          path: release-aarch64/
-
-      - name: Merge aarch64 into release
+      - name: Merge artifacts into release
         run: |
-          cp release-aarch64/ajeebc-linux-aarch64 release/
-          cp release-aarch64/parthi-linux-aarch64 release/
-          cp release-aarch64/parth-linux-aarch64 release/
-          cp -n release-aarch64/packages/ajeeb-std/* release/packages/ajeeb-std/ 2>/dev/null || true
+          mkdir -p release/packages/ajeeb-std
+          for dir in all-artifacts/*/; do
+            cp "$dir"ajeebc-* release/ 2>/dev/null || true
+            cp "$dir"parthi-* release/ 2>/dev/null || true
+            cp "$dir"parth-* release/ 2>/dev/null || true
+            cp "$dir"ajeeb_runtime.c release/ 2>/dev/null || true
+            cp -n "$dir"packages/ajeeb-std/* release/packages/ajeeb-std/ 2>/dev/null || true
+          done
+          chmod +x release/ajeebc-* release/parthi-* release/parth-* 2>/dev/null || true
           ls -lh release/
 
       - name: Get tag name
@@ -179,23 +354,49 @@ jobs:
             ## Ajeeb ${{ steps.tag.outputs.tag }}
 
             ### Install karo:
+            **Linux / macOS:**
             ```bash
             curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/install.sh | bash
             ```
+            **Windows (PowerShell):**
+            ```powershell
+            irm https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/install.ps1 | iex
+            ```
 
             ### Zaroorat hai:
-            - `gcc` (ya `clang`)
+            - `gcc` ya `clang`
             - `llc` (LLVM)
 
             ### Platforms:
-            - linux-x86_64
-            - linux-aarch64
+            | Platform | Binary |
+            |----------|--------|
+            | Linux x86_64 | `ajeebc-linux-x86_64` |
+            | Linux aarch64 | `ajeebc-linux-aarch64` |
+            | macOS ARM64 (M1/M2) | `ajeebc-macos-arm64` |
+            | macOS x86_64 | `ajeebc-macos-x86_64` |
+            | Windows x86_64 | `ajeebc-windows-x86_64.exe` |
+
+            ### Components:
+            - **ajeebc** — Ajeeb compiler (Rust bootstrap → self-hosting)
+            - **parthi** — MIR interpreter
+            - **parth** — Project manager CLI
+            - **ajeeb_runtime.c** — Runtime library
+            - **ajeeb-std/** — Standard library
           files: |
             release/ajeebc-linux-x86_64
             release/ajeebc-linux-aarch64
+            release/ajeebc-macos-arm64
+            release/ajeebc-macos-x86_64
+            release/ajeebc-windows-x86_64.exe
             release/parthi-linux-x86_64
             release/parthi-linux-aarch64
+            release/parthi-macos-arm64
+            release/parthi-macos-x86_64
+            release/parthi-windows-x86_64.exe
             release/parth-linux-x86_64
             release/parth-linux-aarch64
+            release/parth-macos-arm64
+            release/parth-macos-x86_64
+            release/parth-windows-x86_64.exe
             release/ajeeb_runtime.c
             release/packages/ajeeb-std/*

@@ -3,7 +3,29 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+
+// ── Cross-platform dynamic loading ─────────────────────────────────────
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+typedef HMODULE dl_handle_t;
+static dl_handle_t dl_open(const char* path) { return LoadLibraryA(path); }
+static void* dl_sym(dl_handle_t h, const char* name) { return (void*)GetProcAddress(h, name); }
+static const char* dl_error(void) {
+    static char buf[256];
+    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                   NULL, GetLastError(), 0, buf, sizeof(buf), NULL);
+    return buf;
+}
+#define RTLD_NOW 0
+#define RTLD_LOCAL 0
+#else
 #include <dlfcn.h>
+typedef void* dl_handle_t;
+static dl_handle_t dl_open(const char* path) { return dlopen(path, RTLD_NOW | RTLD_LOCAL); }
+static void* dl_sym(dl_handle_t h, const char* name) { return dlsym(h, name); }
+static const char* dl_error(void) { return dlerror(); }
+#endif
 
 
 // ── Arena Allocator ──────────────────────────────────────────────────
@@ -1108,25 +1130,43 @@ AjeebValue ajeeb_tls_connect(AjeebValue host, AjeebValue port) {
     
     // Lazy-load OpenSSL
     if (!tls_ssl_handle) {
-        tls_ssl_handle = dlopen("libssl.so.3", RTLD_NOW | RTLD_LOCAL);
-        if (!tls_ssl_handle) tls_ssl_handle = dlopen("libssl.so.1.1", RTLD_NOW | RTLD_LOCAL);
-        if (!tls_ssl_handle) tls_ssl_handle = dlopen("libssl.so", RTLD_NOW | RTLD_LOCAL);
-        if (!tls_ssl_handle) { fprintf(stderr, "[TLS] cannot load libssl\n"); return ajb_int(0); }
-        tls_crypto_handle = dlopen("libcrypto.so.3", RTLD_NOW | RTLD_LOCAL);
-        if (!tls_crypto_handle) tls_crypto_handle = dlopen("libcrypto.so.1.1", RTLD_NOW | RTLD_LOCAL);
-        if (!tls_crypto_handle) tls_crypto_handle = dlopen("libcrypto.so", RTLD_NOW | RTLD_LOCAL);
-        
-        tls_SSL_new = (void* (*)(void*))dlsym(tls_ssl_handle, "SSL_new");
-        tls_SSL_set_fd = (int (*)(void*, int))dlsym(tls_ssl_handle, "SSL_set_fd");
-        tls_SSL_connect = (int (*)(void*))dlsym(tls_ssl_handle, "SSL_connect");
-        tls_SSL_write = (void* (*)(void*, const void*, int))dlsym(tls_ssl_handle, "SSL_write");
-        tls_SSL_read = (void* (*)(void*, void*, int))dlsym(tls_ssl_handle, "SSL_read");
-        tls_SSL_shutdown = (void (*)(void*))dlsym(tls_ssl_handle, "SSL_shutdown");
-        tls_SSL_free = (void (*)(void*))dlsym(tls_ssl_handle, "SSL_free");
-        tls_SSL_CTX_new = (void* (*)(void*))dlsym(tls_ssl_handle, "SSL_CTX_new");
-        tls_SSL_CTX_free = (void (*)(void*))dlsym(tls_ssl_handle, "SSL_CTX_free");
-        tls_TLS_method = (void* (*)(void))dlsym(tls_ssl_handle, "TLS_method");
-        tls_SSL_set_tlsext_host_name = (void (*)(void*, const char*))dlsym(tls_ssl_handle, "SSL_set_tlsext_host_name");
+        tls_ssl_handle = dl_open("libssl.so.3");
+        if (!tls_ssl_handle) tls_ssl_handle = dl_open("libssl.so.1.1");
+        if (!tls_ssl_handle) tls_ssl_handle = dl_open("libssl.so");
+#ifdef __APPLE__
+        if (!tls_ssl_handle) tls_ssl_handle = dl_open("libssl.3.dylib");
+        if (!tls_ssl_handle) tls_ssl_handle = dl_open("libssl.1.1.dylib");
+        if (!tls_ssl_handle) tls_ssl_handle = dl_open("libssl.dylib");
+#endif
+#ifdef _WIN32
+        if (!tls_ssl_handle) tls_ssl_handle = dl_open("libssl-3-x64.dll");
+        if (!tls_ssl_handle) tls_ssl_handle = dl_open("libssl.dll");
+#endif
+        if (!tls_ssl_handle) { fprintf(stderr, "[TLS] cannot load libssl: %s\n", dl_error()); return ajb_int(0); }
+        tls_crypto_handle = dl_open("libcrypto.so.3");
+        if (!tls_crypto_handle) tls_crypto_handle = dl_open("libcrypto.so.1.1");
+        if (!tls_crypto_handle) tls_crypto_handle = dl_open("libcrypto.so");
+#ifdef __APPLE__
+        if (!tls_crypto_handle) tls_crypto_handle = dl_open("libcrypto.3.dylib");
+        if (!tls_crypto_handle) tls_crypto_handle = dl_open("libcrypto.1.1.dylib");
+        if (!tls_crypto_handle) tls_crypto_handle = dl_open("libcrypto.dylib");
+#endif
+#ifdef _WIN32
+        if (!tls_crypto_handle) tls_crypto_handle = dl_open("libcrypto-3-x64.dll");
+        if (!tls_crypto_handle) tls_crypto_handle = dl_open("libcrypto.dll");
+#endif
+
+        tls_SSL_new = (void* (*)(void*))dl_sym(tls_ssl_handle, "SSL_new");
+        tls_SSL_set_fd = (int (*)(void*, int))dl_sym(tls_ssl_handle, "SSL_set_fd");
+        tls_SSL_connect = (int (*)(void*))dl_sym(tls_ssl_handle, "SSL_connect");
+        tls_SSL_write = (void* (*)(void*, const void*, int))dl_sym(tls_ssl_handle, "SSL_write");
+        tls_SSL_read = (void* (*)(void*, void*, int))dl_sym(tls_ssl_handle, "SSL_read");
+        tls_SSL_shutdown = (void (*)(void*))dl_sym(tls_ssl_handle, "SSL_shutdown");
+        tls_SSL_free = (void (*)(void*))dl_sym(tls_ssl_handle, "SSL_free");
+        tls_SSL_CTX_new = (void* (*)(void*))dl_sym(tls_ssl_handle, "SSL_CTX_new");
+        tls_SSL_CTX_free = (void (*)(void*))dl_sym(tls_ssl_handle, "SSL_CTX_free");
+        tls_TLS_method = (void* (*)(void))dl_sym(tls_ssl_handle, "TLS_method");
+        tls_SSL_set_tlsext_host_name = (void (*)(void*, const char*))dl_sym(tls_ssl_handle, "SSL_set_tlsext_host_name");
         
         if (!tls_SSL_new || !tls_SSL_connect || !tls_TLS_method) {
             fprintf(stderr, "[TLS] OpenSSL symbols not found\n");
@@ -1250,20 +1290,20 @@ intptr_t sqlite_exec(intptr_t handle, intptr_t sql) { (void)handle; (void)sql; r
 // ── C ABI FFI ─────────────────────────────────────────────────────────
 int64_t lib_open(int64_t path_ptr) {
     const char* path = (const char*)(intptr_t)path_ptr;
-    void* handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+    dl_handle_t handle = dl_open(path);
     if (!handle) {
-        fprintf(stderr, "[FFI] dlopen error: %s\n", dlerror());
+        fprintf(stderr, "[FFI] dl_open error: %s\n", dl_error());
         return -1;
     }
     return (int64_t)(intptr_t)handle;
 }
 
 int64_t lib_sym(int64_t handle, int64_t name_ptr) {
-    void* lib = (void*)(intptr_t)handle;
+    dl_handle_t lib = (dl_handle_t)(intptr_t)handle;
     const char* name = (const char*)(intptr_t)name_ptr;
-    void* sym = dlsym(lib, name);
+    void* sym = dl_sym(lib, name);
     if (!sym) {
-        fprintf(stderr, "[FFI] dlsym error: %s\n", dlerror());
+        fprintf(stderr, "[FFI] dl_sym error: %s\n", dl_error());
     }
     return (int64_t)(intptr_t)sym;
 }
@@ -1279,6 +1319,18 @@ int64_t lib_call(int64_t fn_ptr, int64_t arg0, int64_t arg1, int64_t arg2,
 }
 
 // ── Time ──────────────────────────────────────────────────────────────
+#ifdef _WIN32
+#include <windows.h>
+
+AjeebValue ajeeb_now_ms(void) {
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    uint64_t t = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+    t /= 10000;  // Convert 100-nanosecond intervals to milliseconds
+    t -= 11644473600000ULL;  // Offset from Unix epoch
+    return ajb_int((int64_t)t);
+}
+#else
 #include <time.h>
 
 AjeebValue ajeeb_now_ms(void) {
@@ -1286,6 +1338,7 @@ AjeebValue ajeeb_now_ms(void) {
     clock_gettime(CLOCK_REALTIME, &ts);
     return ajb_int((int64_t)ts.tv_sec * 1000 + (int64_t)ts.tv_nsec / 1000000);
 }
+#endif
 
 intptr_t now_ms(void) {
     return (intptr_t)ajeeb_now_ms().data.as_int;
