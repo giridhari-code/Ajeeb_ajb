@@ -1,0 +1,14 @@
+class Counter {
+    set value: int;
+    function inc(self) {
+        self.value = self.value + 1;
+    }
+    function get(self): int {
+        return self.value;
+    }
+}
+
+function main(): int {
+    set c: Counter = Counter();
+    return 0;
+}

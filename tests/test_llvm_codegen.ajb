@@ -1,0 +1,81 @@
+// Minimal test: generate LLVM IR text, compile, run
+// This tests the core LLVM IR emission patterns
+
+function llvmOut(out: string, s: string): void { writeAppend(out, s); }
+function llvmNl(out: string): void { writeAppend(out, "\n"); }
+
+function main(): int {
+    set out: string = "build/test_llvm_codegen.ll";
+    writeFile(out, "");
+
+    // Preamble
+    llvmOut(out, "target datalayout = \"e-m:e-i64:64-f80:128-n8:16:32:64-S128\""); llvmNl(out);
+    llvmOut(out, "target triple = \"aarch64-unknown-linux-gnu\""); llvmNl(out);
+    llvmNl(out);
+
+    // Runtime declarations
+    llvmOut(out, "declare i64 @println(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @itoa(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @str_concat(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @strcmp_ajeeb(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @allocBuf(i64)"); llvmNl(out);
+    llvmNl(out);
+
+    // Global buffers
+    llvmOut(out, "@__ajeeb_buf = global [262144 x i8] zeroinitializer"); llvmNl(out);
+    llvmOut(out, "@__ajeeb_outbuf = global [65536 x i8] zeroinitializer"); llvmNl(out);
+    llvmNl(out);
+
+    // String constant
+    llvmOut(out, "@.str.0 = private constant [6 x i8] c\"hello\\00\""); llvmNl(out);
+    llvmNl(out);
+
+    // Helper: __ipow
+    llvmOut(out, "define i64 @__ipow(i64 %base, i64 %exp) {"); llvmNl(out);
+    llvmOut(out, "  %r = alloca i64"); llvmNl(out);
+    llvmOut(out, "  %e = alloca i64"); llvmNl(out);
+    llvmOut(out, "  store i64 1, ptr %r"); llvmNl(out);
+    llvmOut(out, "  store i64 %exp, ptr %e"); llvmNl(out);
+    llvmOut(out, "  br label %loop"); llvmNl(out);
+    llvmOut(out, "loop:"); llvmNl(out);
+    llvmOut(out, "  %ev = load i64, ptr %e"); llvmNl(out);
+    llvmOut(out, "  %pos = icmp sgt i64 %ev, 0"); llvmNl(out);
+    llvmOut(out, "  br i1 %pos, label %body, label %done"); llvmNl(out);
+    llvmOut(out, "body:"); llvmNl(out);
+    llvmOut(out, "  %rv = load i64, ptr %r"); llvmNl(out);
+    llvmOut(out, "  %new = mul i64 %rv, %base"); llvmNl(out);
+    llvmOut(out, "  store i64 %new, ptr %r"); llvmNl(out);
+    llvmOut(out, "  %newe = sub i64 %ev, 1"); llvmNl(out);
+    llvmOut(out, "  store i64 %newe, ptr %e"); llvmNl(out);
+    llvmOut(out, "  br label %loop"); llvmNl(out);
+    llvmOut(out, "done:"); llvmNl(out);
+    llvmOut(out, "  %res = load i64, ptr %r"); llvmNl(out);
+    llvmOut(out, "  ret i64 %res"); llvmNl(out);
+    llvmOut(out, "}"); llvmNl(out);
+    llvmNl(out);
+
+    // main: call println("hello")
+    llvmOut(out, "define i32 @main() {"); llvmNl(out);
+    llvmOut(out, "entry:"); llvmNl(out);
+    llvmOut(out, "  %str_ptr = getelementptr [6 x i8], ptr @.str.0, i64 0, i64 0"); llvmNl(out);
+    llvmOut(out, "  %str_int = ptrtoint ptr %str_ptr to i64"); llvmNl(out);
+    llvmOut(out, "  %ret = call i64 @println(i64 %str_int)"); llvmNl(out);
+    llvmOut(out, "  ret i32 0"); llvmNl(out);
+    llvmOut(out, "}"); llvmNl(out);
+
+    println("LLVM IR written to " + out);
+
+    // Compile
+    set rc: int = exec("llc build/test_llvm_codegen.ll -filetype=obj -o build/test_llvm_codegen.o 2>&1");
+    if (rc != 0) { println("llc FAILED"); return 1; }
+    println("llc OK");
+
+    rc = exec("cc build/test_llvm_codegen.o ajeebc/runtime/ajeeb_runtime.c -o build/test_llvm_codegen -ldl 2>&1");
+    if (rc != 0) { println("link FAILED"); return 1; }
+    println("link OK");
+
+    // Run
+    set runRc: int = exec("./build/test_llvm_codegen 2>&1");
+    println("run exit code: " + itoa(runRc));
+    return 0;
+}

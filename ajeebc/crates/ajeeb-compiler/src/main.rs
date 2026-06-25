@@ -80,8 +80,8 @@ fn main() -> io::Result<()> {
         "build/output.ll"
     };
 
-    let force_llvm = args.iter().any(|a| a == "--llvm");
-    let force_gcc = args.iter().any(|a| a == "--gcc");
+    let force_llvm = args.iter().any(|a| a == "--llvm") || args.iter().any(|a| a == "--backend=llvm");
+    let force_gcc = args.iter().any(|a| a == "--gcc") || args.iter().any(|a| a == "--backend=c");
     let skip_run = args.iter().any(|a| a == "--skip-run");
     let skip_compile = args.iter().any(|a| a == "--skip-compile") || args.iter().any(|a| a == "--interpret");
     let force_run = args.iter().any(|a| a == "--run") || args.iter().any(|a| a == "--interpret");

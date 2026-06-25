@@ -1,0 +1,828 @@
+// Parth M0 — Ajeeb Package Manager (Bootstrap)
+// Single-file build: parser + resolver + builder + runner + main
+// Commands: init, new, build, run, help
+
+// parser.ajb — parth.das config parser
+// Slots: 0=nameOff 1=nameLen 2=verOff 3=verLen 4=authorOff 5=authorLen
+// 6=outOff 7=outLen 8=runtimeOff 9=runtimeLen 10=depCount
+// 11=targetOff 12=targetLen 13=entryOff 14=entryLen
+// 200+ i*4 = dep entries (keyOff keyLen valOff valLen)
+
+function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
+function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
+
+function findChar(src: string, start: int, ch: int): int {
+    set i: int = start;
+    while (i < len(src)) {
+        if (charCode(src, i) == ch) { return i; }
+        i = i + 1;
+    }
+    return len(src);
+}
+
+function trimStart(src: string, start: int): int {
+    while (start < len(src)) {
+        set c: int = charCode(src, start);
+        if (c != 32 && c != 9 && c != 13) { return start; }
+        start = start + 1;
+    }
+    return start;
+}
+
+function trimEnd(src: string, end: int): int {
+    while (end > 0) {
+        set c: int = charCode(src, end - 1);
+        if (c != 32 && c != 9 && c != 13 && c != 10) { return end; }
+        end = end - 1;
+    }
+    return end;
+}
+
+function skipBlankLines(src: string, start: int): int {
+    set i: int = start;
+    while (i < len(src)) {
+        set c: int = charCode(src, i);
+        if (c == 10 || c == 13) { i = i + 1; }
+        else { return i; }
+    }
+    return i;
+}
+
+function extractStr(src: string, start: int, end: int): string {
+    return substring(src, start, end);
+}
+
+function parseKeyValue(src: string, lineStart: int, lineEnd: int, buf: string, slotBase: int): int {
+    set eq: int = findChar(src, lineStart, 61);
+    if (eq >= lineEnd) { return 1; }
+    set keyStart: int = trimStart(src, lineStart);
+    set keyEnd: int = trimEnd(src, eq);
+    // Find value after =, trim whitespace
+    set valStart: int = trimStart(src, eq + 1);
+    set valEnd: int = trimEnd(src, lineEnd);
+    // Strip quotes if present
+    if (valStart < valEnd) {
+        set fc: int = charCode(src, valStart);
+        if (fc == 34) { valStart = valStart + 1; }
+    }
+    if (valEnd > valStart) {
+        set lc: int = charCode(src, valEnd - 1);
+        if (lc == 34) { valEnd = valEnd - 1; }
+    }
+    bw(buf, slotBase, keyStart);
+    bw(buf, slotBase + 1, keyEnd - keyStart);
+    bw(buf, slotBase + 2, valStart);
+    bw(buf, slotBase + 3, valEnd - valStart);
+    return 0;
+}
+
+function parseDasConfig(path: string): int {
+    set src: string = readFile(path);
+    if (len(src) == 0) { return 1; }
+    set buf: string = getStateBuf();
+    set i: int = 0;
+    set section: int = 0;
+    set depCount: int = 0;
+    bw(buf, 10, 0);
+    while (i < len(src)) {
+        i = skipBlankLines(src, i);
+        if (i >= len(src)) { break; }
+        set nl: int = findChar(src, i, 10);
+        set lineEnd: int = nl;
+        if (lineEnd > i && charCode(src, lineEnd - 1) == 13) { lineEnd = lineEnd - 1; }
+        set c: int = charCode(src, i);
+        if (c == 91) {
+            set close: int = findChar(src, i + 1, 93);
+            if (close >= nl || close > i + 40) { i = nl + 1; continue; }
+            set secName: string = extractStr(src, i + 1, close);
+            if (strcmp_ajeeb(secName, "package") == 0) { section = 1; }
+            else if (strcmp_ajeeb(secName, "dependencies") == 0) { section = 2; }
+            else if (strcmp_ajeeb(secName, "build") == 0) { section = 3; }
+            else if (strcmp_ajeeb(secName, "compiler") == 0) { section = 4; }
+            else { section = 0; }
+        } else if (c == 35 || c == 59) {
+            // comment line (; or #)
+        } else if (section == 1 || section == 3 || section == 4) {
+            set eq: int = findChar(src, i, 61);
+            if (eq >= lineEnd) { i = nl + 1; continue; }
+            set vs: int = trimStart(src, eq + 1);
+            set ve: int = trimEnd(src, lineEnd);
+            if (vs < ve && charCode(src, vs) == 34) { vs = vs + 1; }
+            if (ve > vs && charCode(src, ve - 1) == 34) { ve = ve - 1; }
+            set ks: int = trimStart(src, i);
+            set ke: int = trimEnd(src, eq);
+            set key: string = substring(src, ks, ke);
+            if (section == 1) {
+                set db: int = 0;
+                if (strcmp_ajeeb(key, "name") == 0) { db = 0; }
+                else if (strcmp_ajeeb(key, "version") == 0) { db = 2; }
+                else if (strcmp_ajeeb(key, "author") == 0) { db = 4; }
+                else { i = nl + 1; continue; }
+                bw(buf, db, vs);
+                bw(buf, db + 1, ve - vs);
+            } else if (section == 3) {
+                if (strcmp_ajeeb(key, "output") == 0) {
+                    bw(buf, 6, vs);
+                    bw(buf, 7, ve - vs);
+                } else if (strcmp_ajeeb(key, "runtime") == 0) {
+                    bw(buf, 8, vs);
+                    bw(buf, 9, ve - vs);
+                }
+            } else if (section == 4) {
+                if (strcmp_ajeeb(key, "target") == 0) {
+                    bw(buf, 11, vs);
+                    bw(buf, 12, ve - vs);
+                } else if (strcmp_ajeeb(key, "entry") == 0) {
+                    bw(buf, 13, vs);
+                    bw(buf, 14, ve - vs);
+                }
+            }
+        } else if (section == 2) {
+            if (depCount >= 50) { i = nl + 1; continue; }
+            set db: int = 200 + depCount * 4;
+            set r: int = parseKeyValue(src, i, lineEnd, buf, db);
+            if (r == 0) { depCount = depCount + 1; }
+        }
+        i = nl + 1;
+    }
+    bw(buf, 10, depCount);
+    return 0;
+}
+
+function getConfigName(buf: string, src: string): string {
+    set off: int = br(buf, 0); set ln: int = br(buf, 1);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function getConfigVersion(buf: string, src: string): string {
+    set off: int = br(buf, 2); set ln: int = br(buf, 3);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function getConfigAuthor(buf: string, src: string): string {
+    set off: int = br(buf, 4); set ln: int = br(buf, 5);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function getBuildOutput(buf: string, src: string): string {
+    set off: int = br(buf, 6); set ln: int = br(buf, 7);
+    if (ln == 0) { return "build/"; }
+    return substring(src, off, off + ln);
+}
+
+function getBuildRuntime(buf: string, src: string): string {
+    set off: int = br(buf, 8); set ln: int = br(buf, 9);
+    if (ln == 0) { return "runtime/ajeeb_runtime.c"; }
+    return substring(src, off, off + ln);
+}
+
+function getCompilerTarget(buf: string, src: string): string {
+    set off: int = br(buf, 11); set ln: int = br(buf, 12);
+    if (ln == 0) { return "native"; }
+    return substring(src, off, off + ln);
+}
+
+function getCompilerEntry(buf: string, src: string): string {
+    set off: int = br(buf, 13); set ln: int = br(buf, 14);
+    if (ln == 0) { return "src/main.ajb"; }
+    return substring(src, off, off + ln);
+}
+
+function getDepCount(buf: string): int {
+    return br(buf, 10);
+}
+
+function getDepName(buf: string, src: string, idx: int): string {
+    set db: int = 200 + idx * 4;
+    set off: int = br(buf, db); set ln: int = br(buf, db + 1);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function getDepVersion(buf: string, src: string, idx: int): string {
+    set db: int = 200 + idx * 4;
+    set off: int = br(buf, db + 2); set ln: int = br(buf, db + 3);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+// resolver.ajb — Dependency resolver for parth
+// Checks local packages, cache, and fetches from git
+// All errors in Hinglish!
+
+
+function fileExists(path: string): int {
+    set content: string = readFile(path);
+    if (len(content) > 0) { return 1; }
+    // Empty file still exists — try writeFile touch check
+    return 0;
+}
+
+function findPackageLocal(name: string): int {
+    set p1: string = str_concat("packages/", str_concat(name, "/parth.das"));
+    if (fileExists(p1) == 1) { return 1; }
+    set p2: string = str_concat("../packages/", str_concat(name, "/parth.das"));
+    if (fileExists(p2) == 1) { return 1; }
+    return 0;
+}
+
+function findPackageCache(name: string): int {
+    set path: string = str_concat("/root/.parth/cache/", str_concat(name, "/parth.das"));
+    if (fileExists(path) == 1) { return 1; }
+    return 0;
+}
+
+function fetchPackage(name: string, version: string): int {
+    mkdir("/root/.parth");
+    mkdir("/root/.parth/cache");
+    set cachePath: string = str_concat("/root/.parth/cache/", name);
+    mkdir(cachePath);
+    set url: string = str_concat("https://github.com/giridhari-code/", str_concat(name, ".git"));
+    set dlmsg: string = str_concat("  Downloading ", name);
+    dlmsg = str_concat(dlmsg, " @ ");
+    dlmsg = str_concat(dlmsg, version);
+    dlmsg = str_concat(dlmsg, "...");
+    println(dlmsg);
+    set cloneCmd: string = str_concat("git clone --depth 1 ", url);
+    cloneCmd = str_concat(cloneCmd, " ");
+    cloneCmd = str_concat(cloneCmd, cachePath);
+    cloneCmd = str_concat(cloneCmd, "/src");
+    set r: int = exec(cloneCmd);
+    if (r != 0) {
+        println(str_concat("  Download fail: ", str_concat(name, " — internet check karo.")));
+        return r;
+    }
+    // Create parth.das in cache if not present by the clone
+    set dasPath: string = str_concat(cachePath, "/parth.das");
+    if (fileExists(dasPath) == 0) {
+        // Auto-generate minimal parth.das for fetched package
+        set das: string = str_concat("[package]\nname = \"", name);
+        das = str_concat(das, "\"\nversion = \"");
+        das = str_concat(das, version);
+        das = str_concat(das, "\"\n\n[dependencies]\n");
+        writeFile(dasPath, das);
+    }
+    set okmsg: string = str_concat("  ✓ ", name);
+    okmsg = str_concat(okmsg, " download ho gaya!");
+    println(okmsg);
+    return 0;
+}
+
+function resolveAll(buf: string, src: string): int {
+    set dc: int = getDepCount(buf);
+    if (dc == 0) {
+        println("Koi dependency nahi hai. Seedha build karo!");
+        return 0;
+    }
+    set missing: int = 0;
+    set msg: string = str_concat(itoa(dc), " dependency(ies) resolve kar rahe hain...");
+    println(msg);
+    set j: int = 0;
+    while (j < dc) {
+        set dn: string = getDepName(buf, src, j);
+        set dv: string = getDepVersion(buf, src, j);
+        // Check local packages first
+        set r: int = findPackageLocal(dn);
+        if (r > 0) {
+            set foundMsg: string = "  ✓ ";
+            foundMsg = str_concat(foundMsg, dn);
+            foundMsg = str_concat(foundMsg, " @ ");
+            foundMsg = str_concat(foundMsg, dv);
+            foundMsg = str_concat(foundMsg, " [local]");
+            println(foundMsg);
+            j = j + 1;
+            continue;
+        }
+        // Check cache
+        r = findPackageCache(dn);
+        if (r > 0) {
+            set cacheMsg: string = "  ✓ ";
+            cacheMsg = str_concat(cacheMsg, dn);
+            cacheMsg = str_concat(cacheMsg, " @ ");
+            cacheMsg = str_concat(cacheMsg, dv);
+            cacheMsg = str_concat(cacheMsg, " [cache]");
+            println(cacheMsg);
+            j = j + 1;
+            continue;
+        }
+        // Try to fetch from git
+        r = fetchPackage(dn, dv);
+        if (r == 0) {
+            set fetchMsg: string = "  ✓ ";
+            fetchMsg = str_concat(fetchMsg, dn);
+            fetchMsg = str_concat(fetchMsg, " @ ");
+            fetchMsg = str_concat(fetchMsg, dv);
+            fetchMsg = str_concat(fetchMsg, " [fetched]");
+            println(fetchMsg);
+        } else {
+            set errMsg: string = "  ✗ ";
+            errMsg = str_concat(errMsg, dn);
+            errMsg = str_concat(errMsg, " v");
+            errMsg = str_concat(errMsg, dv);
+            errMsg = str_concat(errMsg, " — nahi mila bhai!");
+            println(errMsg);
+            missing = missing + 1;
+        }
+        j = j + 1;
+    }
+    if (missing > 0) {
+        println("");
+        println(str_concat(itoa(missing), " dependency(ies) missing hai!"));
+        println("Check karo: git remote available hai ya nahi.");
+        return 1;
+    }
+    println("Sab dependencies resolve ho gayi! Badhiya!");
+    return 0;
+}
+
+function addDep(name: string, version: string): int {
+    set dasPath: string = "parth.das";
+    set src: string = readFile(dasPath);
+    if (len(src) == 0) {
+        println("Error: parth.das nahi mili! Pehle 'parth init' karo.");
+        return 1;
+    }
+    // Check if dep already exists
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig(dasPath);
+    if (r != 0) { return r; }
+    set dc: int = getDepCount(buf);
+    set j: int = 0;
+    while (j < dc) {
+        set dn: string = getDepName(buf, src, j);
+        if (strcmp_ajeeb(dn, name) == 0) {
+            println(str_concat("Dependency '", str_concat(name, "' pehle se hai!")));
+            return 0;
+        }
+        j = j + 1;
+    }
+    // Append new dep to parth.das
+    set newLine: string = str_concat(name, " = \"");
+    newLine = str_concat(newLine, version);
+    newLine = str_concat(newLine, "\"\n");
+    writeFile(dasPath, str_concat(src, newLine));
+    set addMsg: string = str_concat("✓ ", name);
+    addMsg = str_concat(addMsg, " @ ");
+    addMsg = str_concat(addMsg, version);
+    addMsg = str_concat(addMsg, " add ho gaya!");
+    println(addMsg);
+    return 0;
+}
+
+function removeDep(name: string): int {
+    set dasPath: string = "parth.das";
+    set src: string = readFile(dasPath);
+    if (len(src) == 0) {
+        println("Error: parth.das nahi mili! Pehle 'parth init' karo.");
+        return 1;
+    }
+    // Find and remove the dep line
+    set newSrc: string = "";
+    set i: int = 0;
+    set removed: int = 0;
+    while (i < len(src)) {
+        set nl: int = findChar(src, i, 10);
+        set lineEnd: int = nl;
+        if (lineEnd > i && charCode(src, lineEnd - 1) == 13) { lineEnd = lineEnd - 1; }
+        set line: string = substring(src, i, lineEnd);
+        // Check if this line starts with the dep name followed by =
+        set isDepLine: int = 0;
+        if (len(line) > len(name)) {
+            set prefix: string = substring(line, 0, len(name));
+            if (strcmp_ajeeb(prefix, name) == 0) {
+                set afterName: int = charCode(line, len(name));
+                if (afterName == 32 || afterName == 61) { // space or =
+                    isDepLine = 1;
+                }
+            }
+        }
+        if (isDepLine == 1) {
+            removed = 1;
+        } else {
+            newSrc = str_concat(newSrc, str_concat(line, "\n"));
+        }
+        if (nl < len(src)) { i = nl + 1; } else { i = len(src); }
+    }
+    if (removed == 0) {
+        set emsg: string = str_concat("Dependency '", name);
+        emsg = str_concat(emsg, "' nahi mili.");
+        println(emsg);
+        return 1;
+    }
+    writeFile(dasPath, newSrc);
+    set okmsg: string = str_concat("✓ ", name);
+    okmsg = str_concat(okmsg, " remove ho gaya!");
+    println(okmsg);
+    return 0;
+}
+
+function generateLockfile(): int {
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das nahi mili!");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+    set dc: int = getDepCount(buf);
+    if (dc == 0) {
+        println("Koi dependency nahi hai. Lockfile ki zaroorat nahi.");
+        return 0;
+    }
+    set lockContent: string = "# Auto-generated by parth\n# Do not edit manually\n\n";
+    set i: int = 0;
+    while (i < dc) {
+        set dn: string = getDepName(buf, src, i);
+        set dv: string = getDepVersion(buf, src, i);
+        set p1: string = str_concat("packages/", dn);
+        p1 = str_concat(p1, "/parth.das");
+        set p2: string = str_concat("../packages/", dn);
+        p2 = str_concat(p2, "/parth.das");
+        if (fileExists(p1) == 1 || fileExists(p2) == 1) {
+            lockContent = str_concat(lockContent, "[[package]]\nname = \"");
+            lockContent = str_concat(lockContent, dn);
+            lockContent = str_concat(lockContent, "\"\nversion = \"");
+            lockContent = str_concat(lockContent, dv);
+            lockContent = str_concat(lockContent, "\"\nsource = \"local\"\n\n");
+            set info: string = str_concat("  ✓ ", dn);
+            info = str_concat(info, " @ ");
+            info = str_concat(info, dv);
+            info = str_concat(info, " [local]");
+            println(info);
+        } else {
+            set info2: string = "  ✗ ";
+            info2 = str_concat(info2, dn);
+            info2 = str_concat(info2, " — local mein nahi mila");
+            println(info2);
+        }
+        i = i + 1;
+    }
+    writeFile("parth.lock", lockContent);
+    set doneMsg: string = "\nparth.lock generate ho gaya! (";
+    doneMsg = str_concat(doneMsg, itoa(dc));
+    doneMsg = str_concat(doneMsg, " dependencies)");
+    println(doneMsg);
+    return 0;
+}
+
+// builder.ajb — Project builder for parth
+// Reads config, resolves deps, compiles to native binary
+// All errors in Hinglish!
+
+
+function readSource(path: string): string {
+    set content: string = readFile(path);
+    if (len(content) == 0) {
+        println(str_concat("Chetaavani: file nahi mili — ", path));
+        return "";
+    }
+    return content;
+}
+
+function makeBuildDir(outDir: string): int {
+    mkdir(outDir);
+    return 0;
+}
+
+function findRuntime(runtimePath: string): string {
+    // Check configured path first
+    if (fileExists(runtimePath) == 1) { return runtimePath; }
+    // Try relative to parth itself
+    set p1: string = str_concat("../ajeebc/runtime/", runtimePath);
+    if (fileExists(p1) == 1) { return p1; }
+    set p2: string = str_concat("../runtime/", runtimePath);
+    if (fileExists(p2) == 1) { return p2; }
+    // Try absolute paths for common locations
+    set p3: string = "/root/ajeeb_compiler/runtime/ajeeb_runtime.c";
+    if (fileExists(p3) == 1) { return p3; }
+    set p4: string = "/root/ajeeb_compiler/ajeebc/runtime/ajeeb_runtime.c";
+    if (fileExists(p4) == 1) { return p4; }
+    return runtimePath;
+}
+
+function findAjeebc(): string {
+    // Check PATH first
+    set r: int = exec("which ajeebc > /dev/null 2>&1");
+    if (r == 0) { return "ajeebc"; }
+    // Check relative paths
+    set p1: string = "../build/ajeebc";
+    if (fileExists(p1) == 1) { return p1; }
+    set p2: string = "../ajeebc/build/compiler";
+    if (fileExists(p2) == 1) { return p2; }
+    set p3: string = "../build/ajeeb_native";
+    if (fileExists(p3) == 1) { return p3; }
+    return "ajeebc";
+}
+
+function buildProject(): int {
+    // Parse config
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das padh nahi paaya! File exist karti hai?");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+
+    set name: string = getConfigName(buf, src);
+    set entry: string = getCompilerEntry(buf, src);
+    set outDir: string = getBuildOutput(buf, src);
+    set runtimePath: string = getBuildRuntime(buf, src);
+    set target: string = getCompilerTarget(buf, src);
+
+    println(str_concat("Project:  ", name));
+    println(str_concat("Entry:    ", entry));
+    println(str_concat("Output:   ", outDir));
+    println(str_concat("Target:   ", target));
+
+    // Resolve dependencies
+    r = resolveAll(buf, src);
+    if (r != 0) { return r; }
+
+    // Make build directory
+    makeBuildDir(outDir);
+
+    // Check entry file exists
+    set entrySrc: string = readSource(entry);
+    if (len(entrySrc) == 0) {
+        println(str_concat("Error: entry file nahi mili — ", entry));
+        println("Pehle 'parth init' karo.");
+        return 1;
+    }
+
+    // Find compiler
+    set ajeebc: string = findAjeebc();
+
+    if (strcmp_ajeeb(target, "native") == 0) {
+        // Native build: ajeebc handles C codegen + gcc internally
+        println("");
+        println("Compile ho raha hai (native target)...");
+        set binPath: string = str_concat(outDir, name);
+        set cFile: string = str_concat(outDir, "output.c");
+
+        // Step 0: Ensure runtime is available in project
+        set resolvedRuntime: string = findRuntime(runtimePath);
+        mkdir("runtime");
+        set cpCmd: string = str_concat("cp ", resolvedRuntime);
+        cpCmd = str_concat(cpCmd, " runtime/ajeeb_runtime.c");
+        exec(cpCmd);
+
+        // Step 1: Compile with ajeebc (produces C in build/output.c)
+        set cmd1: string = str_concat(ajeebc, " ");
+        cmd1 = str_concat(cmd1, entry);
+        r = exec(cmd1);
+        if (r != 0) {
+            println("ajeebc compile fail! Neeche dekh lo.");
+            return r;
+        }
+
+        // Step 2: Compile C to binary with gcc
+        set gccCmd: string = str_concat("gcc -no-pie ", cFile);
+        gccCmd = str_concat(gccCmd, " runtime/ajeeb_runtime.c -o ");
+        gccCmd = str_concat(gccCmd, binPath);
+        gccCmd = str_concat(gccCmd, " -lm -ldl -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast 2>&1");
+        r = exec(gccCmd);
+        if (r != 0) {
+            println("gcc link fail!");
+            return r;
+        }
+        println(str_concat("  ✓ Binary → ", binPath));
+        println("");
+        println(str_concat("Build safal! Chalao: ./", str_concat(outDir, name)));
+
+    } else {
+        // Interpreter target: just verify sources parse
+        println("");
+        println("Compile ho raha hai (interpreter target)...");
+        set cmd: string = str_concat(ajeebc, str_concat(" ", entry));
+        r = exec(cmd);
+        if (r != 0) {
+            println("Compile fail! Neeche dekh lo.");
+            return r;
+        }
+        println(str_concat("  ✓ Sources valid. Chalao: parthi ", entry));
+    }
+    return 0;
+}
+
+// runner.ajb — Project runner for parth
+// Build karo aur binary chalao
+// All errors in Hinglish!
+
+
+function findParthi(): string {
+    set r: int = exec("which parthi > /dev/null 2>&1");
+    if (r == 0) { return "parthi"; }
+    set p1: string = "/root/.parth/bin/parthi";
+    if (fileExists(p1) == 1) { return p1; }
+    return "parthi";
+}
+
+function runProject(): int {
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das padh nahi paaya!");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+
+    set name: string = getConfigName(buf, src);
+    set entry: string = getCompilerEntry(buf, src);
+    set outDir: string = getBuildOutput(buf, src);
+    set target: string = getCompilerTarget(buf, src);
+
+    set bldMsg: string = str_concat("Pehle build kar rahe hain '", name);
+    bldMsg = str_concat(bldMsg, "'...");
+    println(bldMsg);
+    r = buildProject();
+    if (r != 0) {
+        println("Build fail! Run fail hoga.");
+        return r;
+    }
+
+    println("");
+    set runMsg: string = str_concat("Chala rahe hain '", name);
+    runMsg = str_concat(runMsg, "'...");
+    println(runMsg);
+    println("---");
+
+    if (strcmp_ajeeb(target, "native") == 0) {
+        set binPath: string = str_concat(outDir, name);
+        r = exec(binPath);
+    } else {
+        set parthi: string = findParthi();
+        set cmd: string = str_concat(parthi, " ");
+        cmd = str_concat(cmd, entry);
+        r = exec(cmd);
+    }
+
+    println("---");
+    if (r != 0) {
+        set errMsg: string = str_concat("Program ne error diya (exit code: ", itoa(r));
+        errMsg = str_concat(errMsg, ")");
+        println(errMsg);
+    }
+    return r;
+}
+
+// main.ajb — Parth CLI: project manager for Ajeeb
+// Commands: init, build, run
+// All errors in Hinglish!
+
+
+function cmdInit(name: string): int {
+    if (len(name) == 0) { name = "project"; }
+
+    mkdir("src");
+    mkdir("build");
+
+    set srcContent: string = "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n";
+    writeFile("src/main.ajb", srcContent);
+
+    set das: string = str_concat("[package]\nname = \"", name);
+    das = str_concat(das, "\"\nversion = \"0.1.0\"\nauthor = \"\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    writeFile("parth.das", das);
+    writeFile("build/.gitkeep", "");
+
+    println(str_concat("✓ Project initialize ho gaya: ", name));
+    return 0;
+}
+
+function cmdNew(name: string): int {
+    if (len(name) == 0) {
+        println("Usage: parth new <project-name>");
+        return 1;
+    }
+
+    mkdir(name);
+    mkdir(str_concat(name, "/src"));
+    mkdir(str_concat(name, "/build"));
+
+    set srcContent: string = "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n";
+    writeFile(str_concat(name, "/src/main.ajb"), srcContent);
+    set das: string = str_concat("[package]\nname = \"", name);
+    das = str_concat(das, "\"\nversion = \"0.1.0\"\nauthor = \"\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    writeFile(str_concat(name, "/parth.das"), das);
+    writeFile(str_concat(name, "/build/.gitkeep"), "");
+    println(str_concat("✓ Project files bana: ", name));
+    println(str_concat("Ab karo: cd ", str_concat(name, " && parth init")));
+    return 0;
+}
+
+function ensureParthBin(): int {
+    mkdir("/root/.parth");
+    mkdir("/root/.parth/bin");
+    return 0;
+}
+
+function cmdInstall(tool: string): int {
+    if (len(tool) == 0) {
+        println("Usage: parth install <ajeebc|parthi>");
+        return 1;
+    }
+    ensureParthBin();
+    set url: string = "";
+    if (strcmp_ajeeb(tool, "ajeebc") == 0) {
+        url = "https://github.com/giridhari-code/ajeebc/releases/latest/download/ajeeb_compiler";
+    } else if (strcmp_ajeeb(tool, "parthi") == 0) {
+        url = "https://github.com/giridhari-code/parthi/releases/latest/download/parthi";
+    } else {
+        println(str_concat("Error: '", str_concat(tool, "' — yeh tool nahi hai bhai!")));
+        println("Available: ajeebc, parthi");
+        return 1;
+    }
+    println(str_concat("Download ho raha hai: ", tool));
+    set curlCmd: string = str_concat("curl -L ", url);
+    curlCmd = str_concat(curlCmd, " -o /root/.parth/bin/");
+    curlCmd = str_concat(curlCmd, tool);
+    curlCmd = str_concat(curlCmd, " && chmod +x /root/.parth/bin/");
+    curlCmd = str_concat(curlCmd, tool);
+    set r: int = exec(curlCmd);
+    if (r != 0) {
+        println(str_concat("Error: ", str_concat(tool, " download fail! Internet check karo.")));
+        return r;
+    }
+    println(str_concat("✓ ", str_concat(tool, " install ho gaya! ~/.parth/bin/ mein hai.")));
+    println("PATH mein daalo: export PATH=\"$HOME/.parth/bin:$PATH\"");
+    return 0;
+}
+
+function main(): int {
+    set argc: int = 0;
+    set i: int = 1;
+    while (i < 10) {
+        set arg: string = readArg(i);
+        if (len(arg) == 0) { break; }
+        argc = i;
+        i = i + 1;
+    }
+
+    if (argc < 1) {
+    println("Usage: parth <init|new|build|run|test|install|generate-lockfile>");
+    println("");
+    println("Commands:");
+    println("  init [name]       Project initialize karo current dir mein");
+    println("  new <name>        Naya project banao");
+    println("  build             ajeebc se compile karo (LLVM + gcc)");
+    println("  run               ParthI interpreter se chalao");
+    println("  test              Tests chalao (tests/ folder)");
+    println("  install <tool>    Tool download karo (ajeebc/parthi)");
+    println("  generate-lockfile Lock file banao dependencies ke liye");
+        return 1;
+    }
+
+    set cmd: string = readArg(1);
+
+    if (strcmp_ajeeb(cmd, "init") == 0) {
+        set projName: string = readArg(2);
+        return cmdInit(projName);
+    }
+
+    if (strcmp_ajeeb(cmd, "new") == 0) {
+        set name: string = readArg(2);
+        return cmdNew(name);
+    }
+
+    if (strcmp_ajeeb(cmd, "build") == 0) {
+        return buildProject();
+    }
+
+    if (strcmp_ajeeb(cmd, "run") == 0) {
+        return runProject();
+    }
+
+    if (strcmp_ajeeb(cmd, "test") == 0) {
+        return runTests();
+    }
+
+    if (strcmp_ajeeb(cmd, "install") == 0) {
+        set tool: string = readArg(2);
+        return cmdInstall(tool);
+    }
+
+    if (strcmp_ajeeb(cmd, "generate-lockfile") == 0) {
+        return generateLockfile();
+    }
+
+    println(str_concat("Error: '", str_concat(cmd, "' — yeh command nahi hai bhai!")));
+    println("Usage: parth <init|new|build|run|test|install>");
+    return 1;
+}
+
+function runTests(): int {
+    set testDir: string = "tests";
+    set i: int = 0;
+    set passed: int = 0;
+    set failed: int = 0;
+    while (i < 1000) {
+        set fname: string = readFile(str_concat(testDir, "/test_"));
+        // Simplified: exec parthi on each .ajb in tests/
+        break;
+    }
+    println("Test runner: parthi pe tests execute karo");
+    return 0;
+}

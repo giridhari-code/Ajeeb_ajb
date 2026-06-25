@@ -1,0 +1,2 @@
+import testdir/testmod;
+function main(): int { return 0; }

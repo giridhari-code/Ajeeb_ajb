@@ -74,7 +74,7 @@ impl Codegen {
         writeln!(g, "declare i32 @snprintf(ptr, i64, ptr, ...)").unwrap();
 
         // Global buffers expected by C runtime
-        writeln!(g, "@__ajeeb_buf = global [16384 x i8] zeroinitializer").unwrap();
+        writeln!(g, "@__ajeeb_buf = global [262144 x i8] zeroinitializer").unwrap();
         writeln!(g, "@__ajeeb_outbuf = global [65536 x i8] zeroinitializer").unwrap();
         writeln!(g, "@stderr = external global ptr").unwrap();
         writeln!(g, "").unwrap();
@@ -147,7 +147,7 @@ impl Codegen {
             | "charCode" | "strcmp_ajeeb" | "chr"
                 => Some(format!("declare i64 @{}(i64, i64)", name)),
             // 3-arg functions
-            "indexOf" => Some(format!("declare i64 @{}(i64, i64, i64)", name)),
+            "indexOf" => Some(format!("declare i64 @{}(i64, i64)", name)),
             "substring" => Some("declare i64 @substring(i64, i64, i64)".into()),
             "replace" => Some("declare i64 @replace(i64, i64, i64)".into()),
             "lib_open" => Some(format!("declare i64 @lib_open(i64)")),
@@ -164,6 +164,9 @@ impl Codegen {
             "malloc" => Some("declare ptr @malloc(i64)".into()),
             "free" => Some("declare void @free(ptr)".into()),
             "array_to_string" => Some("declare i64 @array_to_string(i64, i64)".into()),
+            "__array_lit" => Some("declare i64 @__array_lit(i64, ...)".into()),
+            "__index" => Some("declare i64 @__index(i64, i64)".into()),
+            "__index_assign" => Some("declare i64 @__index_assign(i64, i64, i64)".into()),
             "fprintf" => Some("declare i32 @fprintf(ptr, ptr, ...)".into()),
             "stderr_ptr" => None, // Not a function, handled separately
             _ => None, // Not a known C extern

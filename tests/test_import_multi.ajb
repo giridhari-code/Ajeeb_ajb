@@ -1,0 +1,11 @@
+import lexer;
+import emit;
+
+function hello(): void {
+    println("hello");
+}
+
+function main(): int {
+    hello();
+    return 0;
+}

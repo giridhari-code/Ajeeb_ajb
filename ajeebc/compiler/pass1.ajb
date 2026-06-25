@@ -1,5 +1,38 @@
 // PASS 1: Function Collection + Forward Declarations
 
+function addMethodFn(src: int, buf: string, className: string, nameStart: int, nameLen: int): void {
+    set count: int = rdFnC(buf);
+    if (count >= 600) {
+        return;
+    }
+    set pos: int = rdPos(buf);
+    set off: int = 96 + count * 24;
+    setInt(buf, off, -1);
+    setInt(buf, off+8, 0);
+    setInt(buf, off+16, count);
+    wrFnC(buf, count + 1);
+    set fnFile: string = "build/_fnnames.txt";
+    set ci: int = 0;
+    while (ci < len(className)) {
+        set scratch2: string = getOutbuf();
+        strSet(scratch2, 0, chr(src, nameStart - 1));
+        strSet(scratch2, 0, charCode(className, ci));
+        strSet(scratch2, 1, 0);
+        writeAppend(fnFile, scratch2);
+        ci = ci + 1;
+    }
+    writeAppend(fnFile, "_");
+    set j: int = 0;
+    while (j < nameLen) {
+        set scratch3: string = getOutbuf();
+        strSet(scratch3, 0, chr(src, nameStart + j));
+        strSet(scratch3, 1, 0);
+        writeAppend(fnFile, scratch3);
+        j = j + 1;
+    }
+    writeAppend(fnFile, "\n");
+}
+
 function addFn(src: int, buf: string, nameStart: int): void {
     set count: int = rdFnC(buf);
     if (count >= 600) {
@@ -59,9 +92,15 @@ function collectFns(src: int, buf: string): void {
         skipWS(src, buf);
         set pos: int = rdPos(buf);
         if (chr(src, pos) == 0) { go = 0; }
+        else if (matchKwd(src, buf, "pub") == 1) {
+            pos = pos + 3; wrPos(buf, pos);
+        }
         else if (matchKwd(src, buf, "class") == 1) {
             pos = pos + 5; wrPos(buf, pos); skipWS(src, buf);
-            readIdent(src, buf); skipWS(src, buf);
+            set clsNameStart: int = rdPos(buf);
+            readIdent(src, buf);
+            set clsNameLen: int = rdPos(buf) - clsNameStart;
+            skipWS(src, buf);
             pos = rdPos(buf);
             if (chr(src, pos) == 123) {
                 pos = pos + 1;
@@ -83,15 +122,17 @@ function collectFns(src: int, buf: string): void {
                         pos = pos + 2;
                         while (chr(src, pos) != 0 && !(chr(src, pos) == 42 && chr(src, pos+1) == 47)) { pos = pos + 1; }
                         pos = pos + 2;
-                    } else if (c == 123) { cd = cd + 1; pos = pos + 1; }
+                    }                     else if (c == 123) { cd = cd + 1; pos = pos + 1; }
                     else if (c == 125) { cd = cd - 1; pos = pos + 1; }
+                    else if (c == 112 && chr(src, pos+1) == 117 && chr(src, pos+2) == 98) { pos = pos + 3; }
                     else if (c == 102 && chr(src, pos+1) == 117 && chr(src, pos+2) == 110 && chr(src, pos+3) == 99 && chr(src, pos+4) == 116 && chr(src, pos+5) == 105 && chr(src, pos+6) == 111 && chr(src, pos+7) == 110) {
                         pos = pos + 8;
                         while (isSpace(chr(src, pos)) == 1) { pos = pos + 1; }
                         set fnS: int = pos;
                         while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
                         if (pos > fnS) {
-                            savePos(buf); wrPos(buf, fnS); addFn(src, buf, fnS); restorePos(buf);
+                            set clsName: string = str_concat(identStr(src, clsNameStart, clsNameLen), "");
+                            savePos(buf); wrPos(buf, fnS); addMethodFn(src, buf, clsName, fnS, pos - fnS); restorePos(buf);
                         }
                     } else if (c == 102 && chr(src, pos+1) == 110 && isAlphaNum(chr(src, pos+2)) == 0) {
                         pos = pos + 2;
@@ -99,7 +140,8 @@ function collectFns(src: int, buf: string): void {
                         set fnS2: int = pos;
                         while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
                         if (pos > fnS2) {
-                            savePos(buf); wrPos(buf, fnS2); addFn(src, buf, fnS2); restorePos(buf);
+                            set clsName: string = str_concat(identStr(src, clsNameStart, clsNameLen), "");
+                            savePos(buf); wrPos(buf, fnS2); addMethodFn(src, buf, clsName, fnS2, pos - fnS2); restorePos(buf);
                         }
                     } else { pos = pos + 1; }
                 }
@@ -144,12 +186,42 @@ function collectFns(src: int, buf: string): void {
             pos = pos + 8; wrPos(buf, pos); skipWS(src, buf);
             set fnStart: int = rdPos(buf);
             readIdent(src, buf);
+            set fnEnd: int = rdPos(buf);
+            set fnLen: int = fnEnd - fnStart;
             addFn(src, buf, fnStart);
+            set count: int = rdFnC(buf) - 1;
             skipWS(src, buf); pos = rdPos(buf);
+            set pc: int = 0;
             if (chr(src, pos) == 40) {
-                pos = skipDepth(src, pos, 40, 41);
-                wrPos(buf, pos);
+                pos = pos + 1;
+                skipWS(src, buf); pos = rdPos(buf);
+                while (chr(src, pos) != 41 && chr(src, pos) != 0) {
+                    skipWS(src, buf); pos = rdPos(buf);
+                    if (chr(src, pos) == 41) { break; }
+                    set pStart: int = pos;
+                    while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+                    set pLen: int = pos - pStart;
+                    skipWS(src, buf); pos = rdPos(buf);
+                    if (chr(src, pos) == 58) {
+                        pos = pos + 1;
+                        while (isAlphaNum(chr(src, pos)) == 1 || chr(src, pos) == 91 || chr(src, pos) == 93) { pos = pos + 1; }
+                    }
+                    if (pc < 8) {
+                        set poff: int = 2008 + (count - 1) * 64 + pc * 8;
+                        set scratch: string = getOutbuf();
+                        set pi2: int = 0;
+                        while (pi2 < pLen) { strSet(scratch, pi2, chr(src, pStart + pi2)); pi2 = pi2 + 1; }
+                        strSet(scratch, pLen, 0);
+                        setInt(buf, poff, scratch);
+                    }
+                    pc = pc + 1;
+                    skipWS(src, buf); pos = rdPos(buf);
+                    if (chr(src, pos) == 44) { pos = pos + 1; wrPos(buf, pos); }
+                }
+                if (chr(src, pos) == 41) { pos = pos + 1; wrPos(buf, pos); }
             }
+            set coff: int = 2008 + (count - 1) * 64 + 56;
+            setInt(buf, coff, pc);
             skipWS(src, buf); pos = rdPos(buf);
             if (chr(src, pos) == 58) {
                 pos = pos + 1;
@@ -167,12 +239,42 @@ function collectFns(src: int, buf: string): void {
             pos = pos + 2; wrPos(buf, pos); skipWS(src, buf);
             set fnStart2: int = rdPos(buf);
             readIdent(src, buf);
+            set fnEnd2: int = rdPos(buf);
+            set fnLen2: int = fnEnd2 - fnStart2;
             addFn(src, buf, fnStart2);
+            set fidx2: int = rdFnC(buf) - 1;
             skipWS(src, buf); pos = rdPos(buf);
+            set pc2: int = 0;
             if (chr(src, pos) == 40) {
-                pos = skipDepth(src, pos, 40, 41);
-                wrPos(buf, pos);
+                pos = pos + 1;
+                skipWS(src, buf); pos = rdPos(buf);
+                while (chr(src, pos) != 41 && chr(src, pos) != 0) {
+                    skipWS(src, buf); pos = rdPos(buf);
+                    if (chr(src, pos) == 41) { break; }
+                    set pStart2: int = pos;
+                    while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+                    set pLen2: int = pos - pStart2;
+                    skipWS(src, buf); pos = rdPos(buf);
+                    if (chr(src, pos) == 58) {
+                        pos = pos + 1;
+                        while (isAlphaNum(chr(src, pos)) == 1 || chr(src, pos) == 91 || chr(src, pos) == 93) { pos = pos + 1; }
+                    }
+                    if (pc2 < 8) {
+                        set poff2: int = 2008 + fidx2 * 64 + pc2 * 8;
+                        set scratch2: string = getOutbuf();
+                        set pi3: int = 0;
+                        while (pi3 < pLen2) { strSet(scratch2, pi3, chr(src, pStart2 + pi3)); pi3 = pi3 + 1; }
+                        strSet(scratch2, pLen2, 0);
+                        setInt(buf, poff2, scratch2);
+                    }
+                    pc2 = pc2 + 1;
+                    skipWS(src, buf); pos = rdPos(buf);
+                    if (chr(src, pos) == 44) { pos = pos + 1; wrPos(buf, pos); }
+                }
+                if (chr(src, pos) == 41) { pos = pos + 1; wrPos(buf, pos); }
             }
+            set coff2: int = 2008 + fidx2 * 64 + 56;
+            setInt(buf, coff2, pc2);
             skipWS(src, buf); pos = rdPos(buf);
             if (chr(src, pos) == 58) {
                 pos = pos + 1;
@@ -197,6 +299,7 @@ function emitFwdDecls(src: int, buf: string, out: string): void {
     set i: int = 0;
     while (i < count) {
         emitStr(out, "intptr_t ");
+        set nstart: int = pos;
         while (pos < len(names) && chr(names, pos) != 10) {
             set scratch2: string = getOutbuf();
             strSet(scratch2, 0, chr(names, pos));
@@ -204,8 +307,34 @@ function emitFwdDecls(src: int, buf: string, out: string): void {
             writeAppend(out, scratch2);
             pos = pos + 1;
         }
-        emitStr(out, "();\n");
+        set nlen: int = pos - nstart;
         pos = pos + 1;
+        set coff: int = 2008 + i * 64 + 56;
+        set pcnt: int = getInt(buf, coff);
+        emitStr(out, "(");
+        if (pcnt > 0) {
+            set first: int = 1;
+            set pi: int = 0;
+            while (pi < pcnt) {
+                if (first == 0) { emitStr(out, ", "); }
+                first = 0;
+                emitStr(out, "intptr_t ");
+                set poff: int = 2008 + i * 64 + pi * 8;
+                set pname: string = getInt(buf, poff);
+                if (pname != 0) {
+                    set pj: int = 0;
+                    while (pj < len(pname)) {
+                        set scratch3: string = getOutbuf();
+                        strSet(scratch3, 0, charCode(pname, pj));
+                        strSet(scratch3, 1, 0);
+                        writeAppend(out, scratch3);
+                        pj = pj + 1;
+                    }
+                }
+                pi = pi + 1;
+            }
+        }
+        emitStr(out, ");\n");
         i = i + 1;
     }
 }

@@ -149,6 +149,10 @@ function nextTok(src: int, buf: string): void {
         restorePos(buf); savePos(buf); wrPos(buf, start);
         if (matchKwd(src, buf, "import") == 1) { setTok(buf, 48, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "struct") == 1) { setTok(buf, 49, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "pub") == 1) { setTok(buf, 50, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
         if (matchKwd(src, buf, "break") == 1) { setTok(buf, 45, 0, 0, 0); restorePos(buf); return; }
         restorePos(buf); savePos(buf); wrPos(buf, start);
         if (matchKwd(src, buf, "continue") == 1) { setTok(buf, 46, 0, 0, 0); restorePos(buf); return; }

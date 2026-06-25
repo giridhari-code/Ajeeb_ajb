@@ -43,14 +43,17 @@ fi
 echo "  Compiling with: $AJEEBC"
 echo "  Runtime: $RUNTIME"
 mkdir -p build
-"$AJEEBC" --emit-llvm-only "src/main.ajb" "build/parth.ll"
-echo "  ✓ LLVM IR generated"
+"$AJEEBC" "parth_m1.ajb" "build/output.c"
+echo "  ✓ C codegen generated"
 
-echo "  Assembling with llc..."
-llc "build/parth.ll" -o "build/parth.s"
-echo "  Linking with gcc..."
-gcc -no-pie "build/parth.s" "$RUNTIME" \
-    -o "build/parth" -lm -ldl -Wno-int-to-pointer-cast
+# Add missing runtime declarations (mkdir, exec) that compiler doesn't emit
+# Insert after the last #include line
+sed -i '/#include <stdint.h>/a\intptr_t mkdir(intptr_t path);\nintptr_t exec(intptr_t cmd);' "build/output.c"
+echo "  ✓ Patched runtime declarations"
+
+echo "  Compiling C to binary with gcc..."
+gcc -no-pie "build/output.c" "$RUNTIME" \
+    -o "build/parth_m2" -lm -ldl -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast 2>&1
 
 echo ""
 echo "✅ Parth build complete!"

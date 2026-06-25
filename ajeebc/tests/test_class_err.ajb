@@ -1,0 +1,10 @@
+class Point {
+    x: int = 5;
+    function getX(): int {
+        return x;
+    }
+}
+function main(): int {
+    println("hello");
+    return 0;
+}

@@ -5,6 +5,7 @@ struct User {
 
 function main(): int {
     set user = User { name: "Ajeeb", age: 1 };
-    print(user.name);
+    println(user.name);
+    println(itoa(user.age));
     return 0;
 }

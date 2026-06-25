@@ -61,72 +61,504 @@ function fetchPackage(name: string, version: string): int {
     return 0;
 }
 
+function charToStr(chCode: int): string {
+    if (chCode == 97) { return "a"; }
+    if (chCode == 98) { return "b"; }
+    if (chCode == 99) { return "c"; }
+    if (chCode == 100) { return "d"; }
+    if (chCode == 101) { return "e"; }
+    if (chCode == 102) { return "f"; }
+    if (chCode == 103) { return "g"; }
+    if (chCode == 104) { return "h"; }
+    if (chCode == 105) { return "i"; }
+    if (chCode == 106) { return "j"; }
+    if (chCode == 107) { return "k"; }
+    if (chCode == 108) { return "l"; }
+    if (chCode == 109) { return "m"; }
+    if (chCode == 110) { return "n"; }
+    if (chCode == 111) { return "o"; }
+    if (chCode == 112) { return "p"; }
+    if (chCode == 113) { return "q"; }
+    if (chCode == 114) { return "r"; }
+    if (chCode == 115) { return "s"; }
+    if (chCode == 116) { return "t"; }
+    if (chCode == 117) { return "u"; }
+    if (chCode == 118) { return "v"; }
+    if (chCode == 119) { return "w"; }
+    if (chCode == 120) { return "x"; }
+    if (chCode == 121) { return "y"; }
+    if (chCode == 122) { return "z"; }
+    if (chCode == 48) { return "0"; }
+    if (chCode == 49) { return "1"; }
+    if (chCode == 50) { return "2"; }
+    if (chCode == 51) { return "3"; }
+    if (chCode == 52) { return "4"; }
+    if (chCode == 53) { return "5"; }
+    if (chCode == 54) { return "6"; }
+    if (chCode == 55) { return "7"; }
+    if (chCode == 56) { return "8"; }
+    if (chCode == 57) { return "9"; }
+    if (chCode == 45) { return "-"; }
+    if (chCode == 46) { return "."; }
+    if (chCode == 42) { return "*"; }
+    if (chCode == 94) { return "^"; }
+    if (chCode == 126) { return "~"; }
+    if (chCode == 62) { return ">"; }
+    if (chCode == 61) { return "="; }
+    return "?";
+}
+
+function bufToStr(buf: string, off: int, length: int): string {
+    set result: string = "";
+    set k: int = 0;
+    while (k < length) {
+        result = str_concat(result, charToStr(br(buf, off + k)));
+        k = k + 1;
+    }
+    return result;
+}
+
+function csvGet(csv: string, idx: int): string {
+    // Get the idx-th item from a comma-separated string
+    set start: int = 0;
+    set i: int = 0;
+    set pos: int = 0;
+    while (pos < len(csv)) {
+        if (charCode(csv, pos) == 44) {
+            if (i == idx) {
+                return substring(csv, start, pos);
+            }
+            i = i + 1;
+            start = pos + 1;
+        }
+        pos = pos + 1;
+    }
+    if (i == idx) {
+        return substring(csv, start, len(csv));
+    }
+    return "";
+}
+
+function csvLen(csv: string): int {
+    // Count items in comma-separated string
+    if (len(csv) == 0) { return 0; }
+    set count: int = 1;
+    set i: int = 0;
+    while (i < len(csv)) {
+        if (charCode(csv, i) == 44) { count = count + 1; }
+        i = i + 1;
+    }
+    return count;
+}
+
+function csvContains(csv: string, item: string): int {
+    // Check if item is in comma-separated string
+    set cnt: int = csvLen(csv);
+    set i: int = 0;
+    while (i < cnt) {
+        if (strcmp_ajeeb(csvGet(csv, i), item) == 0) { return 1; }
+        i = i + 1;
+    }
+    return 0;
+}
+
 function resolveAll(buf: string, src: string): int {
     set dc: int = getDepCount(buf);
     if (dc == 0) {
         println("Koi dependency nahi hai. Seedha build karo!");
         return 0;
     }
-    set missing: int = 0;
-    set msg: string = str_concat(itoa(dc), " dependency(ies) resolve kar rahe hain...");
+    set msg: string = str_concat(itoa(dc), " root dependency(ies) resolve kar rahe hain...");
     println(msg);
+    // ─── BFS Resolution ──────────────────────────────────────
+    // Use comma-separated strings for queue and visited set.
+    // All strings are Ajeeb arena-owned — survive parseDasConfig.
+    set allNames: string = "";
+    set allVers: string = "";
+    set visitedNames: string = "";
+    set visitedConstraints: string = "";
+    set conflicts: int = 0;
+    // Seed with root deps
     set j: int = 0;
     while (j < dc) {
         set dn: string = getDepName(buf, src, j);
         set dv: string = getDepVersion(buf, src, j);
-        // Check local packages first
-        set r: int = findPackageLocal(dn);
-        if (r > 0) {
-            set foundMsg: string = "  ✓ ";
-            foundMsg = str_concat(foundMsg, dn);
-            foundMsg = str_concat(foundMsg, " @ ");
-            foundMsg = str_concat(foundMsg, dv);
-            foundMsg = str_concat(foundMsg, " [local]");
-            println(foundMsg);
-            j = j + 1;
-            continue;
+        if (j > 0) {
+            allNames = str_concat(allNames, ",");
+            allVers = str_concat(allVers, ",");
         }
-        // Check cache
-        r = findPackageCache(dn);
-        if (r > 0) {
-            set cacheMsg: string = "  ✓ ";
-            cacheMsg = str_concat(cacheMsg, dn);
-            cacheMsg = str_concat(cacheMsg, " @ ");
-            cacheMsg = str_concat(cacheMsg, dv);
-            cacheMsg = str_concat(cacheMsg, " [cache]");
-            println(cacheMsg);
-            j = j + 1;
-            continue;
-        }
-        // Try to fetch from git
-        r = fetchPackage(dn, dv);
-        if (r == 0) {
-            set fetchMsg: string = "  ✓ ";
-            fetchMsg = str_concat(fetchMsg, dn);
-            fetchMsg = str_concat(fetchMsg, " @ ");
-            fetchMsg = str_concat(fetchMsg, dv);
-            fetchMsg = str_concat(fetchMsg, " [fetched]");
-            println(fetchMsg);
-        } else {
-            set errMsg: string = "  ✗ ";
-            errMsg = str_concat(errMsg, dn);
-            errMsg = str_concat(errMsg, " v");
-            errMsg = str_concat(errMsg, dv);
-            errMsg = str_concat(errMsg, " — nahi mila bhai!");
-            println(errMsg);
-            missing = missing + 1;
-        }
+        allNames = str_concat(allNames, dn);
+        allVers = str_concat(allVers, dv);
         j = j + 1;
     }
-    if (missing > 0) {
+    // BFS: process each dep, expand transitive deps
+    set processed: int = 0;
+    set total: int = csvLen(allNames);
+    while (processed < total) {
+        set nameStr: string = csvGet(allNames, processed);
+        set verStr: string = csvGet(allVers, processed);
+        processed = processed + 1;
+        // Check if already visited
+        if (csvContains(visitedNames, nameStr) == 1) {
+            // Check constraint compatibility
+            set vIdx: int = 0;
+            set vCnt: int = csvLen(visitedNames);
+            while (vIdx < vCnt) {
+                if (strcmp_ajeeb(csvGet(visitedNames, vIdx), nameStr) == 0) {
+                    set oldC: string = csvGet(visitedConstraints, vIdx);
+                    if (strcmp_ajeeb(oldC, verStr) != 0) {
+                        // Different constraints — check if both exact and different
+                        parseConstraint(oldC);
+                        set oldType: int = br(buf, 600);
+                        set oldMaj: int = br(buf, 601);
+                        set oldMin: int = br(buf, 602);
+                        set oldPat: int = br(buf, 603);
+                        parseConstraint(verStr);
+                        set newType: int = br(buf, 600);
+                        set newMaj: int = br(buf, 601);
+                        set newMin: int = br(buf, 602);
+                        set newPat: int = br(buf, 603);
+                        if (oldType == 1 && newType == 1) {
+                            if (oldMaj != newMaj || oldMin != newMin || oldPat != newPat) {
+                                set cmsg: string = "  ✗ Conflict: ";
+                                cmsg = str_concat(cmsg, nameStr);
+                                cmsg = str_concat(cmsg, " wants ");
+                                cmsg = str_concat(cmsg, oldC);
+                                cmsg = str_concat(cmsg, " AND ");
+                                cmsg = str_concat(cmsg, verStr);
+                                println(cmsg);
+                                conflicts = conflicts + 1;
+                            }
+                        }
+                    }
+                    break;
+                }
+                vIdx = vIdx + 1;
+            }
+            continue;
+        }
+        // Add to visited
+        if (len(visitedNames) > 0) {
+            visitedNames = str_concat(visitedNames, ",");
+            visitedConstraints = str_concat(visitedConstraints, ",");
+        }
+        visitedNames = str_concat(visitedNames, nameStr);
+        visitedConstraints = str_concat(visitedConstraints, verStr);
+        // Find package and read its transitive deps
+        set pkgPath: string = findPkgPath(nameStr);
+        if (len(pkgPath) == 0) {
+            set fmsg: string = "  ✗ ";
+            fmsg = str_concat(fmsg, nameStr);
+            fmsg = str_concat(fmsg, " @ ");
+            fmsg = str_concat(fmsg, verStr);
+            fmsg = str_concat(fmsg, " — not found locally");
+            println(fmsg);
+            continue;
+        }
+        set pkgSrc: string = readFile(pkgPath);
+        set pkgBuf: string = getStateBuf();
+        set pkgR: int = parseDasConfig(pkgPath);
+        if (pkgR != 0) { continue; }
+        set tdc: int = getDepCount(pkgBuf);
+        if (tdc > 0) {
+            set tmsg: string = "  ✓ ";
+            tmsg = str_concat(tmsg, nameStr);
+            tmsg = str_concat(tmsg, " @ ");
+            tmsg = str_concat(tmsg, verStr);
+            tmsg = str_concat(tmsg, " (");
+            tmsg = str_concat(tmsg, itoa(tdc));
+            tmsg = str_concat(tmsg, " transitive deps)");
+            println(tmsg);
+        } else {
+            set tmsg2: string = "  ✓ ";
+            tmsg2 = str_concat(tmsg2, nameStr);
+            tmsg2 = str_concat(tmsg2, " @ ");
+            tmsg2 = str_concat(tmsg2, verStr);
+            tmsg2 = str_concat(tmsg2, " [leaf]");
+            println(tmsg2);
+        }
+        set ti: int = 0;
+        while (ti < tdc) {
+            set tdn: string = getDepName(pkgBuf, pkgSrc, ti);
+            set tdv: string = getDepVersion(pkgBuf, pkgSrc, ti);
+            allNames = str_concat(allNames, str_concat(",", tdn));
+            allVers = str_concat(allVers, str_concat(",", tdv));
+            ti = ti + 1;
+        }
+        total = csvLen(allNames);
+    }
+    if (conflicts > 0) {
         println("");
-        println(str_concat(itoa(missing), " dependency(ies) missing hai!"));
-        println("Check karo: git remote available hai ya nahi.");
+        println(str_concat(itoa(conflicts), " conflict(s) detected!"));
         return 1;
     }
-    println("Sab dependencies resolve ho gayi! Badhiya!");
+    println(str_concat("Resolved ", str_concat(itoa(csvLen(visitedNames)), " packages (including transitive).")));
     return 0;
 }
+
+function findPkgPath(name: string): string {
+    set p1: string = str_concat("packages/", name);
+    p1 = str_concat(p1, "/parth.das");
+    if (fileExists(p1) == 1) { return p1; }
+    set p2: string = str_concat("../packages/", name);
+    p2 = str_concat(p2, "/parth.das");
+    if (fileExists(p2) == 1) { return p2; }
+    set p3: string = str_concat("/root/.parth/cache/", name);
+    p3 = str_concat(p3, "/parth.das");
+    if (fileExists(p3) == 1) { return p3; }
+    return "";
+}
+
+function printTree(name: string, constraint: string, prefix: string, isLast: int, depth: int, ancestors: string): int {
+    if (depth > 10) { return 0; }
+    // Cycle detection: check if name is in ancestor set
+    if (csvContains(ancestors, name) == 1) {
+        set line: string = prefix;
+        if (isLast == 1) { line = str_concat(line, "└─ "); }
+        else { line = str_concat(line, "├─ "); }
+        line = str_concat(line, name);
+        if (len(constraint) > 0 && strcmp_ajeeb(constraint, "*") != 0) {
+            line = str_concat(line, "@");
+            line = str_concat(line, constraint);
+        }
+        line = str_concat(line, " (cycle)");
+        println(line);
+        return 0;
+    }
+    // Print current node
+    set line2: string = prefix;
+    if (isLast == 1) { line2 = str_concat(line2, "└─ "); }
+    else { line2 = str_concat(line2, "├─ "); }
+    line2 = str_concat(line2, name);
+    if (len(constraint) > 0 && strcmp_ajeeb(constraint, "*") != 0) {
+        line2 = str_concat(line2, "@");
+        line2 = str_concat(line2, constraint);
+    }
+    println(line2);
+    // Add self to ancestors for children
+    set newAncestors: string = ancestors;
+    if (len(newAncestors) > 0) {
+        newAncestors = str_concat(newAncestors, ",");
+    }
+    newAncestors = str_concat(newAncestors, name);
+    // Find and read the package's parth.das
+    set pkgPath: string = findPkgPath(name);
+    if (len(pkgPath) == 0) { return 0; }
+    set pkgSrc: string = readFile(pkgPath);
+    set pkgBuf: string = getStateBuf();
+    set pkgR: int = parseDasConfig(pkgPath);
+    if (pkgR != 0) { return 0; }
+    set tdc: int = getDepCount(pkgBuf);
+    if (tdc == 0) { return 0; }
+    // Print children
+    set childPrefix: string = prefix;
+    if (isLast == 1) {
+        childPrefix = str_concat(childPrefix, "   ");
+    } else {
+        childPrefix = str_concat(childPrefix, "│  ");
+    }
+    set ci: int = 0;
+    while (ci < tdc) {
+        set cn: string = getDepName(pkgBuf, pkgSrc, ci);
+        set cv: string = getDepVersion(pkgBuf, pkgSrc, ci);
+        set cIsLast: int = 0;
+        if (ci == tdc - 1) { cIsLast = 1; }
+        printTree(cn, cv, childPrefix, cIsLast, depth + 1, newAncestors);
+        ci = ci + 1;
+    }
+    return 0;
+}
+
+function dependencyTree(): int {
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das nahi mili!");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+    // Get project name
+    set projName: string = getConfigName(buf, src);
+    if (len(projName) == 0) { projName = "app"; }
+    set dc: int = getDepCount(buf);
+    if (dc == 0) {
+        println(str_concat(projName, " (no dependencies)"));
+        return 0;
+    }
+    // Print root
+    println(projName);
+    // Print each root dep with tree
+    set j: int = 0;
+    while (j < dc) {
+        set dn: string = getDepName(buf, src, j);
+        set dv: string = getDepVersion(buf, src, j);
+        set isLast: int = 0;
+        if (j == dc - 1) { isLast = 1; }
+        printTree(dn, dv, "", isLast, 0, "");
+        j = j + 1;
+    }
+    return 0;
+}
+
+function parseSpec(spec: string): string {
+    // Returns "name@version" — splits on first '@'
+    // If no '@', version defaults to "*"
+    set atPos: int = findChar(spec, 0, 64);
+    if (atPos < 0) {
+        return str_concat(spec, "@*");
+    }
+    set name: string = substring(spec, 0, atPos);
+    set version: string = substring(spec, atPos + 1, len(spec));
+    if (len(version) == 0) { version = "*"; }
+    return str_concat(name, str_concat("@", version));
+}
+
+// ─── SemVer Parsing ────────────────────────────────────────────
+
+function parseSemver(s: string): int {
+    // Parse "MAJOR.MINOR.PATCH" into slots 500,501,502
+    // Returns 0 on success, 1 on parse error
+    // Stops at '-', '+', or end (ignores pre-release/build metadata)
+    set buf: string = getStateBuf();
+    set i: int = 0;
+    set sLen: int = len(s);
+    set major: int = 0;
+    set minor: int = 0;
+    set patch: int = 0;
+    // Parse major
+    if (i >= sLen) { return 1; }
+    set ch: int = charCode(s, i);
+    if (ch < 48 || ch > 57) { return 1; }
+    while (i < sLen) {
+        ch = charCode(s, i);
+        if (ch < 48 || ch > 57) { break; }
+        major = major * 10 + (ch - 48);
+        i = i + 1;
+    }
+    // Expect '.'
+    if (i >= sLen || charCode(s, i) != 46) { return 1; }
+    i = i + 1;
+    // Parse minor
+    if (i >= sLen) { return 1; }
+    ch = charCode(s, i);
+    if (ch < 48 || ch > 57) { return 1; }
+    while (i < sLen) {
+        ch = charCode(s, i);
+        if (ch < 48 || ch > 57) { break; }
+        minor = minor * 10 + (ch - 48);
+        i = i + 1;
+    }
+    // Expect '.'
+    if (i >= sLen || charCode(s, i) != 46) { return 1; }
+    i = i + 1;
+    // Parse patch
+    if (i >= sLen) { return 1; }
+    ch = charCode(s, i);
+    if (ch < 48 || ch > 57) { return 1; }
+    while (i < sLen) {
+        ch = charCode(s, i);
+        if (ch < 48 || ch > 57) { break; }
+        patch = patch * 10 + (ch - 48);
+        i = i + 1;
+    }
+    bw(buf, 500, major);
+    bw(buf, 501, minor);
+    bw(buf, 502, patch);
+    return 0;
+}
+
+function compareVersions(aOff: int, bOff: int): int {
+    // Compare versions stored at aOff..aOff+2 vs bOff..bOff+2
+    // Returns -1 if a<b, 0 if equal, 1 if a>b
+    set buf: string = getStateBuf();
+    set aMaj: int = br(buf, aOff);
+    set aMin: int = br(buf, aOff + 1);
+    set aPat: int = br(buf, aOff + 2);
+    set bMaj: int = br(buf, bOff);
+    set bMin: int = br(buf, bOff + 1);
+    set bPat: int = br(buf, bOff + 2);
+    if (aMaj < bMaj) { return -1; }
+    if (aMaj > bMaj) { return 1; }
+    if (aMin < bMin) { return -1; }
+    if (aMin > bMin) { return 1; }
+    if (aPat < bPat) { return -1; }
+    if (aPat > bPat) { return 1; }
+    return 0;
+}
+
+// ─── Constraint Parsing ────────────────────────────────────────
+
+function parseConstraint(s: string): int {
+    // Parse constraint string into slots 600-603
+    // Slot 600: type (0=Any,1=Exact,2=Caret,3=Tilde,4=Gte)
+    // Slot 601-603: major, minor, patch
+    // Returns 0 on success, 1 on error
+    set buf: string = getStateBuf();
+    if (len(s) == 0 || strcmp_ajeeb(s, "*") == 0) {
+        bw(buf, 600, 0);
+        return 0;
+    }
+    set verStr: string = s;
+    set cType: int = 1;
+    if (charCode(s, 0) == 94) {
+        cType = 2;
+        verStr = substring(s, 1, len(s));
+    } else if (charCode(s, 0) == 126) {
+        cType = 3;
+        verStr = substring(s, 1, len(s));
+    } else if (charCode(s, 0) == 62 && len(s) > 1 && charCode(s, 1) == 61) {
+        cType = 4;
+        verStr = substring(s, 2, len(s));
+    }
+    set r: int = parseSemver(verStr);
+    if (r != 0) { return 1; }
+    bw(buf, 600, cType);
+    bw(buf, 601, br(buf, 500));
+    bw(buf, 602, br(buf, 501));
+    bw(buf, 603, br(buf, 502));
+    return 0;
+}
+
+function matchesConstraint(verOff: int, cOff: int): int {
+    // Check if version at verOff satisfies constraint at cOff
+    // Returns 1 if matches, 0 if not
+    set buf: string = getStateBuf();
+    set cType: int = br(buf, cOff);
+    if (cType == 0) { return 1; }
+    set cMaj: int = br(buf, cOff + 1);
+    set cMin: int = br(buf, cOff + 2);
+    set cPat: int = br(buf, cOff + 3);
+    set vMaj: int = br(buf, verOff);
+    set vMin: int = br(buf, verOff + 1);
+    set vPat: int = br(buf, verOff + 2);
+    if (cType == 1) {
+        if (vMaj == cMaj && vMin == cMin && vPat == cPat) { return 1; }
+        return 0;
+    }
+    if (cType == 2) {
+        // Caret: ^1.2.3 => >=1.2.3, <2.0.0
+        // ^0.2.3 => >=0.2.3, <0.3.0
+        // ^0.0.3 => >=0.0.3, <0.0.4
+        if (vMaj != cMaj) { return 0; }
+        if (cMaj == 0 && vMin != cMin) { return 0; }
+        if (compareVersions(verOff, cOff + 1) < 0) { return 0; }
+        return 1;
+    }
+    if (cType == 3) {
+        // Tilde: ~1.2.3 => >=1.2.3, <1.3.0
+        if (vMaj != cMaj) { return 0; }
+        if (vMin != cMin) { return 0; }
+        if (compareVersions(verOff, cOff + 1) < 0) { return 0; }
+        return 1;
+    }
+    if (cType == 4) {
+        if (compareVersions(verOff, cOff + 1) >= 0) { return 1; }
+        return 0;
+    }
+    return 0;
+}
+
+// ─── Dependency Management ─────────────────────────────────────
 
 function addDep(name: string, version: string): int {
     set dasPath: string = "parth.das";
@@ -149,11 +581,54 @@ function addDep(name: string, version: string): int {
         }
         j = j + 1;
     }
-    // Append new dep to parth.das
+    // Build the new dep line
     set newLine: string = str_concat(name, " = \"");
     newLine = str_concat(newLine, version);
     newLine = str_concat(newLine, "\"\n");
-    writeFile(dasPath, str_concat(src, newLine));
+    // Insert BEFORE the next section header after [dependencies]
+    // Use findChar to find '[' characters and manually locate sections
+    set depsHdr: int = -1;
+    set si: int = 0;
+    while (si < len(src)) {
+        set ch: int = charCode(src, si);
+        if (ch == 91) { // '['
+            // Check if this is "[dependencies]"
+            set endBr: int = findChar(src, si, 93); // ']'
+            if (endBr > si) {
+                set secName: string = substring(src, si + 1, endBr);
+                if (strcmp_ajeeb(secName, "dependencies") == 0) {
+                    depsHdr = si;
+                    break;
+                }
+            }
+        }
+        si = si + 1;
+    }
+    if (depsHdr < 0) {
+        // No [dependencies] section — append at end
+        writeFile(dasPath, str_concat(src, newLine));
+    } else {
+        // Find the next '[' after [dependencies] header
+        set searchStart: int = depsHdr + 14;
+        set nextSec: int = -1;
+        set si2: int = searchStart;
+        while (si2 < len(src)) {
+            if (charCode(src, si2) == 91) {
+                nextSec = si2;
+                break;
+            }
+            si2 = si2 + 1;
+        }
+        if (nextSec < 0) {
+            // No next section — append at end
+            writeFile(dasPath, str_concat(src, newLine));
+        } else {
+            // Insert before the next section header
+            set before: string = substring(src, 0, nextSec);
+            set after: string = substring(src, nextSec, len(src));
+            writeFile(dasPath, str_concat(str_concat(before, newLine), after));
+        }
+    }
     set addMsg: string = str_concat("✓ ", name);
     addMsg = str_concat(addMsg, " @ ");
     addMsg = str_concat(addMsg, version);
@@ -208,6 +683,405 @@ function removeDep(name: string): int {
     println(okmsg);
     return 0;
 }
+
+// ─── Lockfile v2 helpers ─────────────────────────────────────────
+// Lock data stored as parallel CSV strings:
+//   lockNames, lockVersions, lockChecksums, lockDepLists
+// lockDepLists uses pipe-separated deps per package: "dep1@^1.0.0|dep2@~2.0.0"
+// Buffer slot 750 = lockEntryCount
+
+function readLockfile(): int {
+    set lockPath: string = "parth.lock";
+    set content: string = readFile(lockPath);
+    if (len(content) == 0) { return 0; }
+    set buf: string = getStateBuf();
+    set names: string = "";
+    set versions: string = "";
+    set checksums: string = "";
+    set depLists: string = "";
+    set count: int = 0;
+    set currentName: string = "";
+    set currentVer: string = "";
+    set currentChk: string = "";
+    set currentDeps: string = "";
+    set i: int = 0;
+    set len_: int = len(content);
+    while (i < len_) {
+        // Find line start and end
+        set lineStart: int = i;
+        set lineEnd: int = len_;
+        set nl: int = findChar(content, i, 10);
+        if (nl < len_) { lineEnd = nl; }
+        set trimmed: string = trimLine(content, lineStart, lineEnd);
+        if (len(trimmed) > 0) {
+            // Check for section header [name]
+            set firstCh: int = charCode(trimmed, 0);
+            if (firstCh == 91) {
+                // Save previous entry if any
+                if (len(currentName) > 0) {
+                    if (len(names) > 0) {
+                        names = str_concat(names, ",");
+                        versions = str_concat(versions, ",");
+                        checksums = str_concat(checksums, ",");
+                        depLists = str_concat(depLists, "|");
+                    }
+                    names = str_concat(names, currentName);
+                    versions = str_concat(versions, currentVer);
+                    checksums = str_concat(checksums, currentChk);
+                    depLists = str_concat(depLists, currentDeps);
+                    count = count + 1;
+                    currentName = "";
+                    currentVer = "";
+                    currentChk = "";
+                    currentDeps = "";
+                }
+                // Extract name between [ and ]
+                set closeBr: int = findChar(trimmed, 1, 93);
+                if (closeBr > 1) {
+                    currentName = substring(trimmed, 1, closeBr);
+                }
+            } else {
+                // Parse key = value
+                set eqPos: int = findChar(trimmed, 0, 61);
+                if (eqPos < len(trimmed)) {
+                    set key: string = trimStr(substring(trimmed, 0, eqPos));
+                    set val: string = trimStr(substring(trimmed, eqPos + 1, len(trimmed)));
+                    // Strip quotes from value
+                    if (len(val) > 1) {
+                        if (charCode(val, 0) == 34 && charCode(val, len(val) - 1) == 34) {
+                            val = substring(val, 1, len(val) - 1);
+                        }
+                    }
+                    if (strcmp_ajeeb(key, "version") == 0) {
+                        currentVer = val;
+                    } else if (strcmp_ajeeb(key, "checksum") == 0) {
+                        currentChk = val;
+                    } else if (strcmp_ajeeb(key, "dependencies") == 0) {
+                        currentDeps = val;
+                    }
+                }
+            }
+        }
+        if (nl < len_) { i = nl + 1; } else { i = len_; }
+    }
+    // Save last entry
+    if (len(currentName) > 0) {
+        if (len(names) > 0) {
+            names = str_concat(names, ",");
+            versions = str_concat(versions, ",");
+            checksums = str_concat(checksums, ",");
+            depLists = str_concat(depLists, "|");
+        }
+        names = str_concat(names, currentName);
+        versions = str_concat(versions, currentVer);
+        checksums = str_concat(checksums, currentChk);
+        depLists = str_concat(depLists, currentDeps);
+        count = count + 1;
+    }
+    // Store in buffer slots 751-754 as indices into arena strings
+    // We store the count at slot 750
+    bw(buf, 750, count);
+    return 0;
+}
+
+function writeLockfileFromResolved(resolvedNames: string, resolvedVers: string, resolvedChks: string): int {
+    set content: string = "# parth-lock-v2\n# Auto-generated by parth — do not edit manually\n";
+    set count: int = csvLen(resolvedNames);
+    set i: int = 0;
+    while (i < count) {
+        set nm: string = csvGet(resolvedNames, i);
+        set vr: string = csvGet(resolvedVers, i);
+        set ch: string = csvGet(resolvedChks, i);
+        content = str_concat(content, "\n[");
+        content = str_concat(content, nm);
+        content = str_concat(content, "]\nversion = \"");
+        content = str_concat(content, vr);
+        content = str_concat(content, "\"\n");
+        if (len(ch) > 0) {
+            content = str_concat(content, "checksum = \"");
+            content = str_concat(content, ch);
+            content = str_concat(content, "\"\n");
+        }
+        i = i + 1;
+    }
+    writeFile("parth.lock", content);
+    return 0;
+}
+
+function getLockVersion(lockNames: string, lockVers: string, name: string): string {
+    set count: int = csvLen(lockNames);
+    set i: int = 0;
+    while (i < count) {
+        if (strcmp_ajeeb(csvGet(lockNames, i), name) == 0) {
+            return csvGet(lockVers, i);
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+function trimLine(src: string, start: int, end_: int): string {
+    // Trim whitespace from both ends of a line segment
+    set s: int = start;
+    set e: int = end_;
+    while (s < e) {
+        set c: int = charCode(src, s);
+        if (c != 32 && c != 9 && c != 13 && c != 10) { break; }
+        s = s + 1;
+    }
+    while (e > s) {
+        set c: int = charCode(src, e - 1);
+        if (c != 32 && c != 9 && c != 13 && c != 10) { break; }
+        e = e - 1;
+    }
+    if (s >= e) { return ""; }
+    return substring(src, s, e);
+}
+
+function trimStr(s: string): string {
+    set start: int = 0;
+    set end_: int = len(s);
+    while (start < end_) {
+        set c: int = charCode(s, start);
+        if (c != 32 && c != 9 && c != 13 && c != 10) { break; }
+        start = start + 1;
+    }
+    while (end_ > start) {
+        set c: int = charCode(s, end_ - 1);
+        if (c != 32 && c != 9 && c != 13 && c != 10) { break; }
+        end_ = end_ - 1;
+    }
+    if (start >= end_) { return ""; }
+    return substring(s, start, end_);
+}
+
+// ─── Lockfile-aware resolution ──────────────────────────────────
+
+function resolveAllLockAware(buf: string, src: string): int {
+    set dc: int = getDepCount(buf);
+    if (dc == 0) {
+        println("Koi dependency nahi hai. Seedha build karo!");
+        return 0;
+    }
+    set msg: string = str_concat(itoa(dc), " root dependency(ies) resolve kar rahe hain...");
+    println(msg);
+    // Read existing lockfile
+    set lockNames: string = "";
+    set lockVers: string = "";
+    set lockChks: string = "";
+    readLockfile();
+    set lockBuf: string = getStateBuf();
+    set lockCount: int = br(lockBuf, 750);
+    if (lockCount > 0) {
+        set lockMsg: string = str_concat("  Lockfile mein ", itoa(lockCount));
+        lockMsg = str_concat(lockMsg, " packages mile. Pinned versions use honge.");
+        println(lockMsg);
+    }
+    // BFS resolution
+    set allNames: string = "";
+    set allVers: string = "";
+    set allChks: string = "";
+    set visitedNames: string = "";
+    set visitedConstraints: string = "";
+    set conflicts: int = 0;
+    // Seed with root deps
+    set j: int = 0;
+    while (j < dc) {
+        set dn: string = getDepName(buf, src, j);
+        set dv: string = getDepVersion(buf, src, j);
+        if (j > 0) {
+            allNames = str_concat(allNames, ",");
+            allVers = str_concat(allVers, ",");
+        }
+        allNames = str_concat(allNames, dn);
+        allVers = str_concat(allVers, dv);
+        j = j + 1;
+    }
+    // BFS: process each dep, expand transitive deps
+    set processed: int = 0;
+    set total: int = csvLen(allNames);
+    while (processed < total) {
+        set nameStr: string = csvGet(allNames, processed);
+        set verStr: string = csvGet(allVers, processed);
+        processed = processed + 1;
+        // Check if already visited
+        if (csvContains(visitedNames, nameStr) == 1) {
+            // Check constraint compatibility
+            set vIdx: int = 0;
+            set vCnt: int = csvLen(visitedNames);
+            while (vIdx < vCnt) {
+                if (strcmp_ajeeb(csvGet(visitedNames, vIdx), nameStr) == 0) {
+                    set oldC: string = csvGet(visitedConstraints, vIdx);
+                    if (strcmp_ajeeb(oldC, verStr) != 0) {
+                        parseConstraint(oldC);
+                        set oldType: int = br(buf, 600);
+                        set oldMaj: int = br(buf, 601);
+                        set oldMin: int = br(buf, 602);
+                        set oldPat: int = br(buf, 603);
+                        parseConstraint(verStr);
+                        set newType: int = br(buf, 600);
+                        set newMaj: int = br(buf, 601);
+                        set newMin: int = br(buf, 602);
+                        set newPat: int = br(buf, 603);
+                        if (oldType == 1 && newType == 1) {
+                            if (oldMaj != newMaj || oldMin != newMin || oldPat != newPat) {
+                                set cmsg: string = "  ✗ Conflict: ";
+                                cmsg = str_concat(cmsg, nameStr);
+                                cmsg = str_concat(cmsg, " wants ");
+                                cmsg = str_concat(cmsg, oldC);
+                                cmsg = str_concat(cmsg, " AND ");
+                                cmsg = str_concat(cmsg, verStr);
+                                println(cmsg);
+                                conflicts = conflicts + 1;
+                            }
+                        }
+                    }
+                    break;
+                }
+                vIdx = vIdx + 1;
+            }
+            continue;
+        }
+        // Check lockfile for pinned version
+        set pinnedVer: string = "";
+        if (lockCount > 0) {
+            pinnedVer = getLockVersion(lockNames, lockVers, nameStr);
+        }
+        set resolvedVer: string = verStr;
+        set resolvedChk: string = "";
+        if (len(pinnedVer) > 0) {
+            // Use pinned version from lockfile — check constraint compatibility
+            parseSemver(pinnedVer);
+            set pinMaj: int = br(buf, 500);
+            set pinMin: int = br(buf, 501);
+            set pinPat: int = br(buf, 502);
+            parseConstraint(verStr);
+            set cType: int = br(buf, 600);
+            set cMaj: int = br(buf, 601);
+            set cMin: int = br(buf, 602);
+            set cPat: int = br(buf, 603);
+            set compatible: int = 0;
+            if (cType == 0) {
+                // Wildcard — any version matches
+                compatible = 1;
+            } else if (cType == 1) {
+                // Exact match
+                if (pinMaj == cMaj && pinMin == cMin && pinPat == cPat) {
+                    compatible = 1;
+                }
+            } else if (cType == 2) {
+                // Caret — major must match, version must be >= constraint
+                if (pinMaj == cMaj) {
+                    if (pinMaj > 0 || pinMin == cMin) {
+                        compatible = 1;
+                    }
+                }
+            } else if (cType == 3) {
+                // Tilde — major.minor must match
+                if (pinMaj == cMaj && pinMin == cMin) {
+                    compatible = 1;
+                }
+            } else if (cType == 4) {
+                // GTE — pinned >= constraint
+                if (pinMaj > cMaj || (pinMaj == cMaj && pinMin > cMin) || (pinMaj == cMaj && pinMin == cMin && pinPat >= cPat)) {
+                    compatible = 1;
+                }
+            }
+            if (compatible == 1) {
+                resolvedVer = pinnedVer;
+                set pinMsg: string = "  📌 ";
+                pinMsg = str_concat(pinMsg, nameStr);
+                pinMsg = str_concat(pinMsg, " @ ");
+                pinMsg = str_concat(pinMsg, pinnedVer);
+                pinMsg = str_concat(pinMsg, " (lockfile se pin kiya)");
+                println(pinMsg);
+            } else {
+                set unpinMsg: string = "  ⚠️  ";
+                unpinMsg = str_concat(unpinMsg, nameStr);
+                unpinMsg = str_concat(unpinMsg, " lockfile version ");
+                unpinMsg = str_concat(unpinMsg, pinnedVer);
+                unpinMsg = str_concat(unpinMsg, " constraint se match nahi karta, re-resolve kar rahe hain");
+                println(unpinMsg);
+            }
+        }
+        // Add to visited
+        if (len(visitedNames) > 0) {
+            visitedNames = str_concat(visitedNames, ",");
+            visitedConstraints = str_concat(visitedConstraints, ",");
+        }
+        visitedNames = str_concat(visitedNames, nameStr);
+        visitedConstraints = str_concat(visitedConstraints, resolvedVer);
+        // Find package and read its transitive deps
+        set pkgPath: string = findPkgPath(nameStr);
+        if (len(pkgPath) == 0) {
+            if (len(pinnedVer) > 0 && len(resolvedVer) > 0) {
+                // Package not found locally but has lockfile entry — skip transitive deps
+                if (len(visitedNames) > 0) {
+                    // Already added to visited
+                }
+                set lockMsg2: string = "  📌 ";
+                lockMsg2 = str_concat(lockMsg2, nameStr);
+                lockMsg2 = str_concat(lockMsg2, " @ ");
+                lockMsg2 = str_concat(lockMsg2, resolvedVer);
+                lockMsg2 = str_concat(lockMsg2, " (lockfile, local mein nahi)");
+                println(lockMsg2);
+                continue;
+            }
+            set fmsg: string = "  ✗ ";
+            fmsg = str_concat(fmsg, nameStr);
+            fmsg = str_concat(fmsg, " @ ");
+            fmsg = str_concat(fmsg, verStr);
+            fmsg = str_concat(fmsg, " — not found locally");
+            println(fmsg);
+            continue;
+        }
+        set pkgSrc: string = readFile(pkgPath);
+        set pkgBuf: string = getStateBuf();
+        set pkgR: int = parseDasConfig(pkgPath);
+        if (pkgR != 0) { continue; }
+        set tdc: int = getDepCount(pkgBuf);
+        if (tdc > 0) {
+            set tmsg: string = "  ✓ ";
+            tmsg = str_concat(tmsg, nameStr);
+            tmsg = str_concat(tmsg, " @ ");
+            tmsg = str_concat(tmsg, resolvedVer);
+            tmsg = str_concat(tmsg, " (");
+            tmsg = str_concat(tmsg, itoa(tdc));
+            tmsg = str_concat(tmsg, " transitive deps)");
+            println(tmsg);
+        } else {
+            set tmsg2: string = "  ✓ ";
+            tmsg2 = str_concat(tmsg2, nameStr);
+            tmsg2 = str_concat(tmsg2, " @ ");
+            tmsg2 = str_concat(tmsg2, resolvedVer);
+            tmsg2 = str_concat(tmsg2, " [leaf]");
+            println(tmsg2);
+        }
+        set ti: int = 0;
+        while (ti < tdc) {
+            set tdn: string = getDepName(pkgBuf, pkgSrc, ti);
+            set tdv: string = getDepVersion(pkgBuf, pkgSrc, ti);
+            allNames = str_concat(allNames, str_concat(",", tdn));
+            allVers = str_concat(allVers, str_concat(",", tdv));
+            ti = ti + 1;
+        }
+        total = csvLen(allNames);
+    }
+    if (conflicts > 0) {
+        println("");
+        println(str_concat(itoa(conflicts), " conflict(s) detected!"));
+        return 1;
+    }
+    // Write lockfile with resolved versions
+    writeLockfileFromResolved(visitedNames, visitedConstraints, "");
+    set doneMsg: string = "Resolved ";
+    doneMsg = str_concat(doneMsg, itoa(csvLen(visitedNames)));
+    doneMsg = str_concat(doneMsg, " packages. Lockfile updated.");
+    println(doneMsg);
+    return 0;
+}
+
+// ─── Existing generate-lockfile (legacy format, kept for compat) ──
 
 function generateLockfile(): int {
     set buf: string = getStateBuf();

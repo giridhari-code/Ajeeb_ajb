@@ -295,12 +295,10 @@ impl Codegen {
                                 // Array indexing → GEP + load (offset = idx + 1 for length prefix)
                                 let ptr = self.fresh();
                                 write!(self.body, "  {} = inttoptr i64 {} to ptr\n", ptr, obj).unwrap();
-                                let offset = self.fresh();
                                 let one = self.fresh();
                                 write!(self.body, "  {} = add i64 1, {}\n", one, idx).unwrap();
-                                write!(self.body, "  {} = add i64 0, {}\n", offset, one).unwrap();
                                 let elem_ptr = self.fresh();
-                                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, ptr, offset).unwrap();
+                                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, ptr, one).unwrap();
                                 let val = self.fresh();
                                 write!(self.body, "  {} = load i64, ptr {}\n", val, elem_ptr).unwrap();
                                 if let Some(ref dest_name) = dest {
@@ -326,12 +324,10 @@ impl Codegen {
                                 // Array index assign → GEP + store (offset = idx + 1 for length prefix)
                                 let ptr = self.fresh();
                                 write!(self.body, "  {} = inttoptr i64 {} to ptr\n", ptr, obj).unwrap();
-                                let offset = self.fresh();
                                 let one = self.fresh();
                                 write!(self.body, "  {} = add i64 1, {}\n", one, idx).unwrap();
-                                write!(self.body, "  {} = add i64 0, {}\n", offset, one).unwrap();
                                 let elem_ptr = self.fresh();
-                                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, ptr, offset).unwrap();
+                                write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, ptr, one).unwrap();
                                 write!(self.body, "  store i64 {}, ptr {}\n", val, elem_ptr).unwrap();
                             }
                             if let Some(ref dest_name) = dest {

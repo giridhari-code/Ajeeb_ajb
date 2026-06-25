@@ -1,0 +1,1 @@
+import emit_test; function main(): int { println("ok"); return 0; }

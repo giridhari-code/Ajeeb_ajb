@@ -1,0 +1,10 @@
+class Counter {
+    value: int;
+    function inc(self) {
+        self.value = self.value + 1;
+    }
+}
+set c = Counter();
+c.value = 42;
+c.inc();
+println(c.value);

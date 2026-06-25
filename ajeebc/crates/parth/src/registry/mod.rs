@@ -291,6 +291,17 @@ pub fn ensure_package(name: &str, version: &str, expected_checksum: &str) -> Res
             ));
         }
     }
+    // Verify signature if a signature file exists
+    let sig_dir = signatures_dir().join(sanitize_pkg_segment(name));
+    let sig_path = sig_dir.join(format!("{}.sig", sanitize_pkg_segment(version)));
+    if sig_path.exists() {
+        if let Err(e) = crypto::verify_signature(name, version) {
+            return Err(format!(
+                "Signature verification failed for '{}@{}': {}. Package may be tampered!",
+                name, version, e
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -379,6 +390,8 @@ pub fn make_lock_entry(name: &str, version: &str) -> Result<LockEntry, String> {
         checksum,
         dependencies: deps,
         registry: String::new(),
+        signature: String::new(),
+        signer: String::new(),
     })
 }
 
@@ -568,8 +581,9 @@ mod tests {
 
     #[test]
     fn test_yank_unyank() {
+        let _guard = HOME_LOCK.lock().unwrap();
         let tmp = std::env::temp_dir().join(format!("parth_test_yank_{}", std::process::id()));
-        // Override parth_home by overriding the metadata_dir behavior
+        let _ = fs::remove_dir_all(&tmp);
         let original_home = std::env::var("HOME").ok();
         std::env::set_var("HOME", &tmp);
 
@@ -588,7 +602,9 @@ mod tests {
 
     #[test]
     fn test_key_generation() {
+        let _guard = HOME_LOCK.lock().unwrap();
         let tmp = std::env::temp_dir().join(format!("parth_test_key_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
         let original_home = std::env::var("HOME").ok();
         std::env::set_var("HOME", &tmp);
 
@@ -602,5 +618,252 @@ mod tests {
 
         let _ = fs::remove_dir_all(&tmp);
         if let Some(h) = original_home { std::env::set_var("HOME", h); }
+    }
+
+    // ── M2.5 Signing Tests ──────────────────────────────────────────
+
+    use std::sync::Mutex;
+    static HOME_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn test_sign_package_success() {
+        let _guard = HOME_LOCK.lock().unwrap();
+        let tmp = std::env::temp_dir().join(format!("parth_test_sign_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let original_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &tmp);
+
+        // Create a fake package in cache
+        let pkg_dir = package_cache_dir("test-sign-pkg", "1.0.0");
+        fs::create_dir_all(&pkg_dir).unwrap();
+        fs::write(pkg_dir.join("parth.das"), "[package]\nname = \"test-sign-pkg\"\nversion = \"1.0.0\"\n").unwrap();
+        fs::create_dir_all(pkg_dir.join("src")).unwrap();
+        fs::write(pkg_dir.join("src/main.ajb"), "fn main(): int { return 42; }").unwrap();
+
+        // Sign the package
+        let sig = sign_package("test-sign-pkg", "1.0.0", "default").unwrap();
+        assert!(!sig.signature_hex.is_empty());
+        assert!(!sig.hash.is_empty());
+        assert!(!sig.public_key_hex.is_empty());
+        assert!(sig.timestamp > 0);
+
+        // Signature file should exist
+        let sig_path = signatures_dir().join("test-sign-pkg").join("1.0.0.sig");
+        assert!(sig_path.exists());
+
+        let _ = fs::remove_dir_all(&tmp);
+        if let Some(h) = original_home { std::env::set_var("HOME", h); }
+    }
+
+    #[test]
+    fn test_sign_package_not_in_cache() {
+        let _guard = HOME_LOCK.lock().unwrap();
+        let tmp = std::env::temp_dir().join(format!("parth_test_sign_nocache_{}", std::process::id()));
+        let original_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &tmp);
+
+        let result = sign_package("nonexistent-pkg", "1.0.0", "default");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not in cache"));
+
+        let _ = fs::remove_dir_all(&tmp);
+        if let Some(h) = original_home { std::env::set_var("HOME", h); }
+    }
+
+    #[test]
+    fn test_verify_signature_success() {
+        let _guard = HOME_LOCK.lock().unwrap();
+        let tmp = std::env::temp_dir().join(format!("parth_test_verify_ok_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let original_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &tmp);
+
+        // Create and sign a package
+        let pkg_dir = package_cache_dir("test-verify-pkg", "1.0.0");
+        fs::create_dir_all(&pkg_dir).unwrap();
+        fs::write(pkg_dir.join("parth.das"), "[package]\nname = \"test-verify-pkg\"\nversion = \"1.0.0\"\n").unwrap();
+        fs::create_dir_all(pkg_dir.join("src")).unwrap();
+        fs::write(pkg_dir.join("src/main.ajb"), "fn main(): int { return 42; }").unwrap();
+
+        sign_package("test-verify-pkg", "1.0.0", "default").unwrap();
+
+        // Verify should succeed
+        let sig = verify_signature("test-verify-pkg", "1.0.0").unwrap();
+        assert!(!sig.signature_hex.is_empty());
+
+        let _ = fs::remove_dir_all(&tmp);
+        if let Some(h) = original_home { std::env::set_var("HOME", h); }
+    }
+
+    #[test]
+    fn test_verify_signature_tampered() {
+        let _guard = HOME_LOCK.lock().unwrap();
+        let tmp = std::env::temp_dir().join(format!("parth_test_verify_tamper_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let original_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &tmp);
+
+        // Create and sign a package
+        let pkg_dir = package_cache_dir("test-tamper-pkg", "1.0.0");
+        fs::create_dir_all(&pkg_dir).unwrap();
+        fs::write(pkg_dir.join("parth.das"), "[package]\nname = \"test-tamper-pkg\"\nversion = \"1.0.0\"\n").unwrap();
+        fs::create_dir_all(pkg_dir.join("src")).unwrap();
+        fs::write(pkg_dir.join("src/main.ajb"), "fn main(): int { return 42; }").unwrap();
+
+        sign_package("test-tamper-pkg", "1.0.0", "default").unwrap();
+
+        // Tamper with the package content
+        fs::write(pkg_dir.join("src/main.ajb"), "fn main(): int { return 99; }").unwrap();
+
+        // Verify should fail (hash mismatch)
+        let result = verify_signature("test-tamper-pkg", "1.0.0");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("hash mismatch"));
+
+        let _ = fs::remove_dir_all(&tmp);
+        if let Some(h) = original_home { std::env::set_var("HOME", h); }
+    }
+
+    #[test]
+    fn test_verify_signature_missing() {
+        let _guard = HOME_LOCK.lock().unwrap();
+        let tmp = std::env::temp_dir().join(format!("parth_test_verify_miss_{}", std::process::id()));
+        let original_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &tmp);
+
+        let result = verify_signature("unsigned-pkg", "1.0.0");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No signature found"));
+
+        let _ = fs::remove_dir_all(&tmp);
+        if let Some(h) = original_home { std::env::set_var("HOME", h); }
+    }
+
+    #[test]
+    fn test_sign_verify_roundtrip() {
+        let _guard = HOME_LOCK.lock().unwrap();
+        let tmp = std::env::temp_dir().join(format!("parth_test_sign_roundtrip_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let original_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &tmp);
+
+        // Create package
+        let pkg_dir = package_cache_dir("roundtrip-pkg", "2.0.0");
+        fs::create_dir_all(&pkg_dir).unwrap();
+        fs::write(pkg_dir.join("parth.das"), "[package]\nname = \"roundtrip-pkg\"\nversion = \"2.0.0\"\n").unwrap();
+        fs::create_dir_all(pkg_dir.join("src")).unwrap();
+        fs::write(pkg_dir.join("src/lib.ajb"), "fn helper(): int { return 1; }").unwrap();
+
+        // Sign
+        let sig1 = sign_package("roundtrip-pkg", "2.0.0", "test-signer").unwrap();
+        assert_eq!(sig1.signer, "test-signer");
+
+        // Verify
+        let sig2 = verify_signature("roundtrip-pkg", "2.0.0").unwrap();
+        assert_eq!(sig1.signature_hex, sig2.signature_hex);
+        assert_eq!(sig1.hash, sig2.hash);
+        assert_eq!(sig1.public_key_hex, sig2.public_key_hex);
+
+        let _ = fs::remove_dir_all(&tmp);
+        if let Some(h) = original_home { std::env::set_var("HOME", h); }
+    }
+
+    #[test]
+    fn test_ensure_package_verifies_signature() {
+        let _guard = HOME_LOCK.lock().unwrap();
+        let tmp = std::env::temp_dir().join(format!("parth_test_ensure_sig_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let original_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &tmp);
+
+        // Create and sign a package
+        let pkg_dir = package_cache_dir("ensure-sig-pkg", "1.0.0");
+        fs::create_dir_all(&pkg_dir).unwrap();
+        fs::write(pkg_dir.join("parth.das"), "[package]\nname = \"ensure-sig-pkg\"\nversion = \"1.0.0\"\n").unwrap();
+        fs::create_dir_all(pkg_dir.join("src")).unwrap();
+        fs::write(pkg_dir.join("src/main.ajb"), "fn main(): int { return 1; }").unwrap();
+
+        sign_package("ensure-sig-pkg", "1.0.0", "default").unwrap();
+
+        // ensure_package should pass (checksum matches, signature valid)
+        let checksum = compute_dir_checksum(&pkg_dir).unwrap();
+        let result = ensure_package("ensure-sig-pkg", "1.0.0", &checksum);
+        assert!(result.is_ok());
+
+        // Tamper and ensure_package should fail
+        fs::write(pkg_dir.join("src/main.ajb"), "fn main(): int { return 2; }").unwrap();
+        let result = ensure_package("ensure-sig-pkg", "1.0.0", &checksum);
+        assert!(result.is_err());
+
+        let _ = fs::remove_dir_all(&tmp);
+        if let Some(h) = original_home { std::env::set_var("HOME", h); }
+    }
+
+    #[test]
+    fn test_read_signature_none() {
+        let _guard = HOME_LOCK.lock().unwrap();
+        let tmp = std::env::temp_dir().join(format!("parth_test_read_sig_{}", std::process::id()));
+        let original_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &tmp);
+
+        let result = read_signature("no-such-pkg", "1.0.0");
+        assert!(result.is_none());
+
+        let _ = fs::remove_dir_all(&tmp);
+        if let Some(h) = original_home { std::env::set_var("HOME", h); }
+    }
+
+    #[test]
+    fn test_lockfile_signature_roundtrip() {
+        let _guard = HOME_LOCK.lock().unwrap();
+        let tmp = std::env::temp_dir().join(format!("parth_test_lock_sig_{}", std::process::id()));
+        let _ = fs::create_dir_all(&tmp);
+
+        let mut lock = super::super::types::LockFile::new();
+        lock.insert("signed-pkg".to_string(), super::super::types::LockEntry {
+            version: "1.0.0".to_string(),
+            checksum: "abc123".to_string(),
+            dependencies: vec![],
+            registry: String::new(),
+            signature: "deadbeef".to_string(),
+            signer: "cafebabe".to_string(),
+        });
+        lock.insert("unsigned-pkg".to_string(), super::super::types::LockEntry {
+            version: "2.0.0".to_string(),
+            checksum: "def456".to_string(),
+            dependencies: vec![],
+            registry: String::new(),
+            signature: String::new(),
+            signer: String::new(),
+        });
+
+        // Write lock
+        let lock_path = tmp.join("parth.lock");
+        let mut content = format!("# {}\n", "parth-lock-v2");
+        let mut names: Vec<&String> = lock.keys().collect();
+        names.sort();
+        for name in names {
+            if let Some(entry) = lock.get(name) {
+                content.push_str(&format!("\n[{}]\n", name));
+                content.push_str(&format!("version = \"{}\"\n", entry.version));
+                content.push_str(&format!("checksum = \"{}\"\n", entry.checksum));
+                if !entry.signature.is_empty() {
+                    content.push_str(&format!("signature = \"{}\"\n", entry.signature));
+                }
+                if !entry.signer.is_empty() {
+                    content.push_str(&format!("signer = \"{}\"\n", entry.signer));
+                }
+            }
+        }
+        fs::write(&lock_path, content).unwrap();
+
+        // Read it back using resolver
+        let read = super::super::resolver::read_lock(&tmp);
+        assert_eq!(read["signed-pkg"].signature, "deadbeef");
+        assert_eq!(read["signed-pkg"].signer, "cafebabe");
+        assert!(read["unsigned-pkg"].signature.is_empty());
+        assert!(read["unsigned-pkg"].signer.is_empty());
+
+        let _ = fs::remove_dir_all(&tmp);
     }
 }

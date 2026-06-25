@@ -1,0 +1,10 @@
+class Counter {
+    set value: int;
+    function get(self): int {
+        return self.value;
+    }
+}
+
+function main(): int {
+    return 0;
+}

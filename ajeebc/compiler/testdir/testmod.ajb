@@ -1,0 +1,1 @@
+function emitStr(out: string, s: string): void { writeAppend(out, s); }

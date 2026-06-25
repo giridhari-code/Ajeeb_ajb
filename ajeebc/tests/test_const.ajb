@@ -1,0 +1,7 @@
+function main(): int {
+    const MAX: int = 100;
+    const PI: int = 3;
+    set x: int = PI + MAX;
+    println(itoa(x));
+    return 0;
+}

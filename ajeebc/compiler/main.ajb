@@ -8,19 +8,20 @@
 // Slots 0-49:   reserved
 // Slots 50-53:  lexer state (tokType, _, tokStrOff, tokStrLen)
 // Slot 60:      lexer position
-// Slots 128-383: scope table (scCnt at 256, entries at 128+i*4)
-// Slots 256-383: function table (ftCnt at 256, entries at 257+i*5)
+// Slots 128-383: scope table (64 entries, 4 slots each: NP, NL, Ty, Tmp)
+// Slot 384:      scope count (scCnt)
+// Slots 385+:    function table (ftCnt at 385, entries at 386+i*5)
 // Slots 400-499: temporary block list during parsing
 // Slot 498:     call nesting depth counter (for arg temp storage)
-// Bytes 12000+: arg temp storage during parsing (per-depth, 64 bytes each)
+// Bytes 160000+: arg temp storage during parsing (per-depth, 64 bytes each)
 // Slot 502:     block id counter
 // Slot 504:     current block instruction count
 // Slot 506:     current block MIR offset
 // Slot 508:     temp counter
-// Slot 510:     MIR allocator head (starts at 1024)
+// Slot 510:     MIR allocator head (starts at 16384)
 // Slot 511:     HIR allocator head (starts at 512)
-// Slots 512+:   HIR nodes
-// Slots 1024+:  MIR nodes
+// Slots 512+:   HIR nodes (up to slot 16383)
+// Slots 16384+: MIR nodes
 
 // --- HIR TAGS ---
 // 0=Program 1=Fn 2=Block 3=Set 4=Assign 5=If 6=While 7=For
@@ -48,6 +49,26 @@
 function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
 function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
 
+// ============================================================
+// Source-map: tracks which src string each HIR fn came from
+// Slot 460: count, Slots 461+: (fnOff, src) pairs, 2 slots each
+// ============================================================
+function srcMapInit(buf: string): void { bw(buf, 460, 0); }
+function srcMapAdd(buf: string, fnOff: int, src: string): void {
+    set n: int = br(buf, 460);
+    bw(buf, 461 + n * 2, fnOff);
+    bw(buf, 462 + n * 2, src);
+    bw(buf, 460, n + 1);
+}
+function srcMapLookup(buf: string, fnOff: int): int {
+    set n: int = br(buf, 460); set i: int = 0;
+    while (i < n) {
+        if (br(buf, 461 + i * 2) == fnOff) { return br(buf, 462 + i * 2); }
+        i = i + 1;
+    }
+    return 0;
+}
+
 function mallac(buf: string, slots: int): int {
     set h: int = br(buf, 510); bw(buf, 510, h + slots); return h;
 }
@@ -60,6 +81,35 @@ function nameEq(src: string, ap: int, al: int, bp: int, bl: int): int {
         i = i + 1;
     }
     return 1;
+}
+
+// ============================================================
+// Class name registry (slots 70-99: count at 70, names at 71+i*2)
+// ============================================================
+function isClassName(src: string, buf: string, no: int, nl: int): int {
+    set cnt: int = br(buf, 70);
+    set i: int = 0;
+    while (i < cnt) {
+        set cno: int = br(buf, 71 + i * 2);
+        set cnl: int = br(buf, 72 + i * 2);
+        if (cnl == nl) {
+            set j: int = 0;
+            set mok: int = 1;
+            while (j < cnl) {
+                if (charCode(src, cno + j) != charCode(src, no + j)) { mok = 0; break; }
+                j = j + 1;
+            }
+            if (mok == 1) { return 1; }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+function registerClassName(buf: string, no: int, nl: int): void {
+    set cnt: int = br(buf, 70);
+    bw(buf, 71 + cnt * 2, no);
+    bw(buf, 72 + cnt * 2, nl);
+    bw(buf, 70, cnt + 1);
 }
 
 // ============================================================
@@ -128,6 +178,26 @@ function hArray(buf: string, ec: int): int {
 function hIndex(buf: string, arr: int, idx: int): int {
     set o: int = halloc(buf, 3); bw(buf, o, 19); bw(buf, o + 1, arr); bw(buf, o + 2, idx); return o;
 }
+function hDot(buf: string, obj: int, fo: int, fl: int, arrow: int): int {
+    set o: int = halloc(buf, 4); bw(buf, o, 20); bw(buf, o + 1, obj);
+    bw(buf, o + 2, fo); bw(buf, o + 3, fl); return o;
+}
+function hNew(buf: string, cn: int, cnl: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 21); bw(buf, o + 1, cn); bw(buf, o + 2, cnl); return o;
+}
+
+// ============================================================
+// Class preamble buffer (outbuf offset 30000-65535)
+// ============================================================
+function cpInit(buf: string): void { bw(buf, 380, 0); bw(buf, 381, 0); writeFile("build/_cp.txt", ""); writeFile("build/_mp.txt", ""); }
+function cpAppend(buf: string, s: string): void {
+    writeAppend("build/_cp.txt", s);
+}
+function mpAppend(buf: string, s: string): void {
+    writeAppend("build/_mp.txt", s);
+}
+function cpAppendStr(buf: string, s: string): void { cpAppend(buf, s); }
+function mpAppendStr(buf: string, s: string): void { mpAppend(buf, s); }
 
 // ============================================================
 // Lexer
@@ -136,6 +206,8 @@ function lexInit(buf: string): void { bw(buf, 50, 0); bw(buf, 51, 0); bw(buf, 60
 function tokType(buf: string): int { return br(buf, 50); }
 function tokStrOff(buf: string): int { return br(buf, 52); }
 function tokStrLen(buf: string): int { return br(buf, 53); }
+function savePos(buf: string): void { bw(buf, 61, br(buf, 60)); }
+function restorePos(buf: string): void { bw(buf, 60, br(buf, 61)); }
 function lexSkipWS(src: string, buf: string): void {
     set p: int = br(buf, 60);
     while (p < len(src)) {
@@ -193,7 +265,8 @@ function nextTok(src: string, buf: string): void {
     else if (c == 44) { bw(buf, 50, 10); }
     else if (c == 37) { bw(buf, 50, 28); }
     else if (c == 43) { set c2: int = charCode(src, p + 1); if (c2 == 43) { bw(buf, 60, p + 2); bw(buf, 50, 30); } else if (c2 == 61) { bw(buf, 60, p + 2); bw(buf, 50, 32); } else { bw(buf, 50, 11); } }
-    else if (c == 45) { set c2: int = charCode(src, p + 1); if (c2 == 45) { bw(buf, 60, p + 2); bw(buf, 50, 31); } else if (c2 == 61) { bw(buf, 60, p + 2); bw(buf, 50, 33); } else { bw(buf, 50, 12); } }
+    else if (c == 45) { set c2: int = charCode(src, p + 1); if (c2 == 45) { bw(buf, 60, p + 2); bw(buf, 50, 31); } else if (c2 == 61) { bw(buf, 60, p + 2); bw(buf, 50, 33); } else if (c2 == 62) { bw(buf, 60, p + 2); bw(buf, 50, 37); } else { bw(buf, 50, 12); } }
+    else if (c == 46) { bw(buf, 50, 36); }
     else if (c == 42) { set c2: int = charCode(src, p + 1); if (c2 == 42) { bw(buf, 60, p + 2); bw(buf, 50, 29); } else if (c2 == 61) { bw(buf, 60, p + 2); bw(buf, 50, 34); } else { bw(buf, 50, 13); } }
     else if (c == 47) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 60, p + 2); bw(buf, 50, 35); } else { bw(buf, 50, 14); } }
     else if (c == 58) { bw(buf, 50, 25); }
@@ -240,6 +313,10 @@ function parseType(src: string, buf: string): int {
     if (isKwd(src, buf, "string")) { nextTok(src, buf); return 2; }
     if (isKwd(src, buf, "bool")) { nextTok(src, buf); return 3; }
     if (isKwd(src, buf, "void")) { nextTok(src, buf); return 5; }
+    if (tokType(buf) == 3 && isClassName(src, buf, tokStrOff(buf), tokStrLen(buf))) {
+        nextTok(src, buf);
+        return 1;
+    }
     return 0;
 }
 function parseFnDef(src: string, buf: string, retTy: int): int {
@@ -269,6 +346,7 @@ function parseFnDef(src: string, buf: string, retTy: int): int {
     set rt: int = 5;
     if (expectTok(src, buf, 25) == 1) { rt = parseType(src, buf); }
     set fnOff: int = hFn(buf, nameOff, nameLen, rt, paramCount);
+    srcMapAdd(buf, fnOff, src);
     set pi: int = 0;
     while (pi < paramCount) {
         bw(buf, fnOff + 5 + pi * 3, getInt(pBuf, pi * 24));
@@ -359,11 +437,80 @@ function parseAtom(src: string, buf: string): int {
     set tt: int = tokType(buf);
     if (tt == 1) { set so: int = tokStrOff(buf); set sl: int = tokStrLen(buf); nextTok(src, buf); return hInt(buf, parseIntFromSrc(src, so, sl)); }
     if (tt == 2) { set so: int = tokStrOff(buf); set sl: int = tokStrLen(buf); nextTok(src, buf); return hStr(buf, so, sl); }
-    if (tt == 3) { set so: int = tokStrOff(buf); set sl: int = tokStrLen(buf); nextTok(src, buf); 
+    if (tt == 3) { set so: int = tokStrOff(buf); set sl: int = tokStrLen(buf);
+        if (isKwd(src, buf, "new")) {
+            nextTok(src, buf);
+            set cnOff: int = tokStrOff(buf); set cnLen: int = tokStrLen(buf);
+            nextTok(src, buf);
+            return hNew(buf, cnOff, cnLen);
+        }
+        if (isKwd(src, buf, "self")) {
+            nextTok(src, buf);
+            if (tokType(buf) == 36 || tokType(buf) == 37) {
+                set objNode: int = hIdent(buf, so, sl);
+                while (tokType(buf) == 36 || tokType(buf) == 37) {
+                    set isArrow: int = 0;
+                    if (tokType(buf) == 37) { isArrow = 1; }
+                    nextTok(src, buf);
+                    set fdOff: int = tokStrOff(buf); set fdLen: int = tokStrLen(buf);
+                    nextTok(src, buf);
+                    if (tokType(buf) == 5) {
+                        nextTok(src, buf);
+                        set sargBuf: string = getStateBuf(); set sac: int = 0;
+                        set sargBase: int = 160000 + 30 * 64;
+                        setInt(sargBuf, sargBase, objNode); sac = 1;
+                        while (tokType(buf) != 6 && tokType(buf) != 0) {
+                            set sarg: int = parseExpr(src, buf);
+                            setInt(sargBuf, sargBase + sac * 8, sarg); sac = sac + 1;
+                            if (tokType(buf) == 10) { nextTok(src, buf); }
+                        }
+                        if (tokType(buf) == 6) { nextTok(src, buf); }
+                        set scallNode: int = hCall(buf, fdOff, fdLen, sac);
+                        set sj: int = 0;
+                        while (sj < sac) { bw(buf, scallNode + 4 + sj, getInt(sargBuf, sargBase + sj * 8)); sj = sj + 1; }
+                        objNode = scallNode;
+                    } else {
+                        objNode = hDot(buf, objNode, fdOff, fdLen, isArrow);
+                    }
+                }
+                return objNode;
+            }
+            return hIdent(buf, so, sl);
+        }
+        nextTok(src, buf);
+        if (tokType(buf) == 36 || tokType(buf) == 37) {
+            set objNode: int = hIdent(buf, so, sl);
+            while (tokType(buf) == 36 || tokType(buf) == 37) {
+                set isArrow: int = 0;
+                if (tokType(buf) == 37) { isArrow = 1; }
+                nextTok(src, buf);
+                set fdOff: int = tokStrOff(buf); set fdLen: int = tokStrLen(buf);
+                nextTok(src, buf);
+                if (tokType(buf) == 5) {
+                    nextTok(src, buf);
+                    set argBuf2: string = getStateBuf(); set ac2: int = 0;
+                    set argBase2: int = 160000 + 30 * 64;
+                    setInt(argBuf2, argBase2, objNode); ac2 = 1;
+                    while (tokType(buf) != 6 && tokType(buf) != 0) {
+                        set arg2: int = parseExpr(src, buf);
+                        setInt(argBuf2, argBase2 + ac2 * 8, arg2); ac2 = ac2 + 1;
+                        if (tokType(buf) == 10) { nextTok(src, buf); }
+                    }
+                    if (tokType(buf) == 6) { nextTok(src, buf); }
+                    set callNode2: int = hCall(buf, fdOff, fdLen, ac2);
+                    set j2: int = 0;
+                    while (j2 < ac2) { bw(buf, callNode2 + 4 + j2, getInt(argBuf2, argBase2 + j2 * 8)); j2 = j2 + 1; }
+                    objNode = callNode2;
+                } else {
+                    objNode = hDot(buf, objNode, fdOff, fdLen, isArrow);
+                }
+            }
+            return objNode;
+        }
         if (tokType(buf) == 5) { 
             set depth: int = br(buf, 498); bw(buf, 498, depth + 1);
             set argBuf: string = getStateBuf(); set ac: int = 0;
-            set argBase: int = 12000 + depth * 64;
+            set argBase: int = 160000 + depth * 64;
             nextTok(src, buf);
             while (tokType(buf) != 6) {
                 set arg: int = parseExpr(src, buf);
@@ -405,7 +552,7 @@ function parseAtom(src: string, buf: string): int {
     if (tt == 26) {
         nextTok(src, buf);
         set elemBuf: string = getStateBuf(); set ec: int = 0;
-        set elemBase: int = 12000 + 15 * 64;
+        set elemBase: int = 160000 + 15 * 64;
         while (tokType(buf) != 27 && tokType(buf) != 0) {
             set elem: int = parseExpr(src, buf);
             setInt(elemBuf, elemBase + ec * 8, elem); ec = ec + 1;
@@ -532,9 +679,118 @@ function parseStmt(src: string, buf: string): int {
         if (tokType(buf) == 9) { nextTok(src, buf); }
         return hContinue(buf);
     }
-    if (isKwd(src, buf, "function")) {
+    if (isKwd(src, buf, "function") || isKwd(src, buf, "fn")) {
         set fno: int = parseFnDef(src, buf, 5);
         return fno;
+    }
+    if (isKwd(src, buf, "class") || isKwd(src, buf, "struct")) {
+        set isCls: int = 1;
+        if (isKwd(src, buf, "struct")) { isCls = 0; }
+        nextTok(src, buf);
+        set cnOff: int = tokStrOff(buf); set cnLen: int = tokStrLen(buf);
+        registerClassName(buf, cnOff, cnLen);
+        nextTok(src, buf);
+        if (tokType(buf) == 7) { nextTok(src, buf); }
+        cpAppendStr(buf, "typedef struct {\n");
+        while (tokType(buf) != 8 && tokType(buf) != 0) {
+            if (isKwd(src, buf, "pub")) { nextTok(src, buf); continue; }
+            if (isKwd(src, buf, "function") || isKwd(src, buf, "fn")) {
+                if (isCls == 0) { nextTok(src, buf); continue; }
+                set methRetTy: int = 5;
+                nextTok(src, buf);
+                set methNameOff: int = tokStrOff(buf); set methNameLen: int = tokStrLen(buf);
+                nextTok(src, buf);
+                mpAppendStr(buf, "intptr_t ");
+                mpAppendStr(buf, substring(src, cnOff, cnOff + cnLen));
+                mpAppendStr(buf, "_");
+                mpAppendStr(buf, substring(src, methNameOff, methNameOff + methNameLen));
+                mpAppendStr(buf, "(");
+                mpAppendStr(buf, substring(src, cnOff, cnOff + cnLen));
+                mpAppendStr(buf, "* self");
+                set mParamCount: int = 1;
+                if (tokType(buf) == 5) {
+                    nextTok(src, buf);
+                    while (tokType(buf) != 6 && tokType(buf) != 0) {
+                        mpAppendStr(buf, ", intptr_t ");
+                        mpAppendStr(buf, substring(src, tokStrOff(buf), tokStrOff(buf) + tokStrLen(buf)));
+                        nextTok(src, buf);
+                        if (tokType(buf) == 25) { nextTok(src, buf); if (tokType(buf) == 1 || tokType(buf) == 13 || tokType(buf) == 14 || tokType(buf) == 15 || tokType(buf) == 16 || tokType(buf) == 3) { nextTok(src, buf); } }
+                        mParamCount = mParamCount + 1;
+                        if (tokType(buf) == 10) { nextTok(src, buf); }
+                    }
+                    if (tokType(buf) == 6) { nextTok(src, buf); }
+                }
+                if (tokType(buf) == 25) { nextTok(src, buf); methRetTy = parseType(src, buf); }
+                mpAppendStr(buf, ") {\n");
+                if (tokType(buf) == 7) {
+                    set depth: int = 1; nextTok(src, buf);
+                    while (depth > 0 && tokType(buf) != 0) {
+                        if (tokType(buf) == 7) { depth = depth + 1; }
+                        if (tokType(buf) == 8) { depth = depth - 1; }
+                        if (depth > 0) { nextTok(src, buf); }
+                    }
+                    if (tokType(buf) == 8) { nextTok(src, buf); }
+                }
+                mpAppendStr(buf, "    return 0;\n}\n\n");
+            } else {
+                set fdOff: int = tokStrOff(buf); set fdLen: int = tokStrLen(buf);
+                nextTok(src, buf);
+                cpAppendStr(buf, "    intptr_t ");
+                cpAppendStr(buf, substring(src, fdOff, fdOff + fdLen));
+                if (tokType(buf) == 25) { nextTok(src, buf); parseType(src, buf); }
+                if (tokType(buf) == 15) { nextTok(src, buf); parseExpr(src, buf); }
+                cpAppendStr(buf, ";\n");
+                if (tokType(buf) == 9) { nextTok(src, buf); }
+            }
+        }
+        if (tokType(buf) == 8) { nextTok(src, buf); }
+        cpAppendStr(buf, "} "); cpAppendStr(buf, substring(src, cnOff, cnOff + cnLen)); cpAppendStr(buf, ";\n\n");
+        return 0;
+    }
+    if (isKwd(src, buf, "pub")) {
+        nextTok(src, buf);
+        return parseStmt(src, buf);
+    }
+    if (isKwd(src, buf, "const")) {
+        nextTok(src, buf);
+        if (tokType(buf) != 3) { return 0; }
+        set cno: int = tokStrOff(buf); set cnl: int = tokStrLen(buf);
+        nextTok(src, buf);
+        set cty: int = 0;
+        if (tokType(buf) == 25) { nextTok(src, buf); cty = parseType(src, buf); }
+        if (tokType(buf) == 15) { nextTok(src, buf); }
+        set cval: int = parseExpr(src, buf);
+        if (tokType(buf) == 9) { nextTok(src, buf); }
+        return hSet(buf, cno, cnl, cty, cval);
+    }
+    if (isKwd(src, buf, "import")) {
+        nextTok(src, buf);
+        if (tokType(buf) == 3) {
+            set modOff: int = tokStrOff(buf);
+            set modLen: int = tokStrLen(buf);
+            set pathBuf: string = getOutbuf();
+            set pi: int = 0;
+            set prefix: string = "compiler/";
+            while (pi < len(prefix)) { strSet(pathBuf, pi, charCode(prefix, pi)); pi = pi + 1; }
+            set mj: int = 0;
+            while (mj < modLen) { strSet(pathBuf, pi + mj, charCode(src, modOff + mj)); mj = mj + 1; }
+            set suffix: string = ".ajb";
+            set si: int = 0;
+            while (si < len(suffix)) { strSet(pathBuf, pi + mj + si, charCode(suffix, si)); si = si + 1; }
+            strSet(pathBuf, pi + mj + si, 0);
+            set importSrc: string = readFile(pathBuf);
+            savePos(buf);
+            if (len(importSrc) > 0) {
+                nextTok(importSrc, buf);
+                while (tokType(buf) != 0) {
+                    parseStmt(importSrc, buf);
+                }
+            }
+            restorePos(buf);
+            nextTok(src, buf);
+        }
+        if (tokType(buf) == 9) { nextTok(src, buf); }
+        return 0;
     }
     set expr: int = parseExpr(src, buf);
     expectTok(src, buf, 9);
@@ -565,7 +821,7 @@ function parseProgram(src: string, buf: string): int {
 // ============================================================
 // MIR helpers (write head at 510)
 // ============================================================
-function minit(buf: string): void { bw(buf, 510, 1024); }
+function minit(buf: string): void { bw(buf, 510, 16384); }
 function mInstr(buf: string, op: int, dst: int, s1: int, s2: int, ext: int): void {
     set blk: int = br(buf, 506); set ic: int = br(buf, 504);
     set io: int = blk + 6 + ic * 6; bw(buf, io, 3); bw(buf, io + 1, op);
@@ -608,10 +864,10 @@ function mFnParamCount(bbuf: string, fo: int): int { return br(bbuf, fo + 6); }
 // ============================================================
 function scInit(buf: string): void {
     set k: int = 0; while (k < 256) { bw(buf, 128 + k, 0); k = k + 1; }
-    bw(buf, 256, 0); bw(buf, 257, 0);
+    bw(buf, 384, 0); bw(buf, 385, 0);
 }
-function scCnt(buf: string): int { return br(buf, 256); }
-function scSetCnt(buf: string, v: int): void { bw(buf, 256, v); }
+function scCnt(buf: string): int { return br(buf, 384); }
+function scSetCnt(buf: string, v: int): void { bw(buf, 384, v); }
 function scNP(buf: string, i: int): int { return br(buf, 128 + i * 4); }
 function scNL(buf: string, i: int): int { return br(buf, 129 + i * 4); }
 function scTy(buf: string, i: int): int { return br(buf, 130 + i * 4); }
@@ -745,6 +1001,20 @@ function lowerExpr(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src
         set offTmp: int = freshTemp(mirBuf);
         appendInstr(mirBuf, 2, offTmp, mulTmp, 8, 1);
         appendInstr(mirBuf, 9, t, arrTmp, 0, offTmp);
+        return t;
+    }
+    if (tag == 20) {
+        set objOff: int = br(hirBuf, hOff + 1);
+        set fo: int = br(hirBuf, hOff + 2); set fl: int = br(hirBuf, hOff + 3);
+        set objTmp: int = lowerExpr(hirBuf, objOff, mirBuf, scBuf, src);
+        set t: int = freshTemp(mirBuf);
+        appendInstr(mirBuf, 13, t, objTmp, fo, fl);
+        return t;
+    }
+    if (tag == 21) {
+        set cn: int = br(hirBuf, hOff + 1); set cnl: int = br(hirBuf, hOff + 2);
+        set t: int = freshTemp(mirBuf);
+        appendInstr(mirBuf, 14, t, cn, cnl, 0);
         return t;
     }
     return 0;
@@ -937,7 +1207,10 @@ function lowerProgram(hirBuf: string, progOff: int, mirBuf: string, scBuf: strin
         set sOff: int = br(hirBuf, progOff + 2 + j);
         set stmtTag: int = br(hirBuf, sOff);
         if (stmtTag == 1) {
-            set mirFn: int = lowerFnDef(hirBuf, sOff, mirBuf, scBuf, src);
+            set fnSrc: int = srcMapLookup(hirBuf, sOff);
+            if (fnSrc == 0) { fnSrc = src; }
+            set mirFn: int = lowerFnDef(hirBuf, sOff, mirBuf, scBuf, fnSrc);
+            srcMapAdd(mirBuf, mirFn, fnSrc);
             setInt(fnList, fnCount * 8, mirFn);
             fnCount = fnCount + 1;
         }
@@ -1268,6 +1541,15 @@ function emitCBlockCode(buf: string, boff: int, out: string, src: string, scBuf:
             emitCOut(out, " = str_concat(t"); emitCInt(out, s1);
             emitCOut(out, ", t"); emitCInt(out, s2);
             emitCOut(out, ");"); emitNewline(out);
+        } else if (op == 13) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = t"); emitCInt(out, s1);
+            emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 14) {
+            set cnStr: string = substring(src, s1, s1 + s2);
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = allocBuf(sizeof("); emitCOut(out, cnStr);
+            emitCOut(out, "));"); emitNewline(out);
         }
         j = j + 1;
     }
@@ -1305,12 +1587,14 @@ function emitCHeader(out: string): void {
     emitCOut(out, "intptr_t array_to_string(intptr_t, intptr_t);"); emitNewline(out);
     emitCOut(out, "intptr_t arr_len(intptr_t);"); emitNewline(out);
     emitCOut(out, "intptr_t __array_lit(intptr_t, ...);"); emitNewline(out);
+    emitCOut(out, "intptr_t __index(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t __index_assign(intptr_t, intptr_t, intptr_t);"); emitNewline(out);
     emitCOut(out, "intptr_t exec(intptr_t);"); emitNewline(out);
     emitCOut(out, "intptr_t mkdir(intptr_t);"); emitNewline(out);
     emitCOut(out, "intptr_t print(intptr_t);"); emitNewline(out);
     emitCOut(out, "intptr_t allocBuf(intptr_t);"); emitNewline(out);
     emitNewline(out);
-    emitCOut(out, "char __ajeeb_buf[16384];"); emitNewline(out);
+    emitCOut(out, "char __ajeeb_buf[262144];"); emitNewline(out);
     emitCOut(out, "char __ajeeb_outbuf[65536];"); emitNewline(out);
     emitNewline(out);
     emitCOut(out, "intptr_t __ipow(intptr_t base, intptr_t exp) { intptr_t r = 1; while (exp > 0) { r = r * base; exp = exp - 1; } return r; }"); emitNewline(out);
@@ -1323,7 +1607,24 @@ function emitCFn(buf: string, foff: int, out: string, src: string, isEntryMain: 
     set bc: int = mFnBlockCount(buf, foff);
     set lc: int = mFnLocalCount(buf, foff);
     set pc: int = mFnParamCount(buf, foff);
-    set maxT: int = lc - 1;
+    set bi2: int = 0; set maxTemp: int = pc - 1;
+    while (bi2 < bc) {
+        set blkOff: int = mFnBlock(buf, foff, bi2);
+        set ic: int = mBlockInstrCount(buf, blkOff);
+        set ii: int = 0;
+        while (ii < ic) {
+            set ioff: int = mBlockInstr(buf, blkOff, ii);
+            set dd: int = mInstrDst(buf, ioff);
+            set ss1: int = mInstrS1(buf, ioff);
+            set ss2: int = mInstrS2(buf, ioff);
+            if (dd > maxTemp) { maxTemp = dd; }
+            if (ss1 > maxTemp) { maxTemp = ss1; }
+            if (ss2 > maxTemp) { maxTemp = ss2; }
+            ii = ii + 1;
+        }
+        bi2 = bi2 + 1;
+    }
+    set maxT: int = maxTemp;
     set j: int = 0;
     if (isEntryMain == 1) { emitCOut(out, "int main(void) {"); }
     else { emitCOut(out, "intptr_t "); emitCOut(out, fnName); emitCOut(out, "(");
@@ -1363,6 +1664,23 @@ function emitCProg(buf: string, progOff: int, outPath: string, src: string): voi
     set out: string = outPath;
     writeFile(out, "");
     emitCHeader(out);
+    set cpText: string = readFile("build/_cp.txt");
+    if (len(cpText) > 0) {
+        set ci: int = 0;
+        while (ci < len(cpText)) {
+            writeByte(out, charCode(cpText, ci));
+            ci = ci + 1;
+        }
+    }
+    set mpText: string = readFile("build/_mp.txt");
+    if (len(mpText) > 0) {
+        set mi: int = 0;
+        while (mi < len(mpText)) {
+            writeByte(out, charCode(mpText, mi));
+            mi = mi + 1;
+        }
+    }
+    if (len(cpText) > 0 || len(mpText) > 0) { emitNewline(out); }
     set cnt: int = br(buf, progOff + 1);
     set j: int = 0;
     set entryFnOff: int = 0; set entryNo: int = 0; set entryNl: int = 0;
@@ -1370,13 +1688,15 @@ function emitCProg(buf: string, progOff: int, outPath: string, src: string): voi
     j = 0;
     while (j < cnt) {
         set fnOff: int = br(buf, progOff + 2 + j);
+        set fnSrc: int = srcMapLookup(buf, fnOff);
+        if (fnSrc == 0) { fnSrc = src; }
         set no: int = mFnNameOff(buf, fnOff);
         set nl: int = mFnNameLen(buf, fnOff);
         if (nl == 4) {
-            set c0: int = charCode(src, no);
-            set c1: int = charCode(src, no + 1);
-            set c2: int = charCode(src, no + 2);
-            set c3: int = charCode(src, no + 3);
+            set c0: int = charCode(fnSrc, no);
+            set c1: int = charCode(fnSrc, no + 1);
+            set c2: int = charCode(fnSrc, no + 2);
+            set c3: int = charCode(fnSrc, no + 3);
             if (c0 == 109 && c1 == 97 && c2 == 105 && c3 == 110) {
                 entryFnOff = fnOff; entryNo = no; entryNl = nl; entryIsMain = 1;
             }
@@ -1386,11 +1706,13 @@ function emitCProg(buf: string, progOff: int, outPath: string, src: string): voi
     j = 0;
     while (j < cnt) {
         set fnOff: int = br(buf, progOff + 2 + j);
+        set fnSrc2: int = srcMapLookup(buf, fnOff);
+        if (fnSrc2 == 0) { fnSrc2 = src; }
         set no: int = mFnNameOff(buf, fnOff);
         set nl: int = mFnNameLen(buf, fnOff);
         set pc: int = mFnParamCount(buf, fnOff);
         if (entryIsMain == 1 && fnOff == entryFnOff) { j = j + 1; continue; }
-        set fnName: string = substring(src, no, no + nl);
+        set fnName: string = substring(fnSrc2, no, no + nl);
         emitCOut(out, "intptr_t "); emitCOut(out, fnName); emitCOut(out, "(");
         set k: int = 0;
         while (k < pc) {
@@ -1403,7 +1725,9 @@ function emitCProg(buf: string, progOff: int, outPath: string, src: string): voi
     }
     emitNewline(out);
     if (entryFnOff != 0 && entryIsMain == 0) {
-        set entryName: string = substring(src, entryNo, entryNo + entryNl);
+        set entryFnSrc: int = srcMapLookup(buf, entryFnOff);
+        if (entryFnSrc == 0) { entryFnSrc = src; }
+        set entryName: string = substring(entryFnSrc, entryNo, entryNo + entryNl);
         emitCOut(out, "int main(void) {"); emitNewline(out);
         emitCOut(out, "    return (int)"); emitCOut(out, entryName); emitCOut(out, "();"); emitNewline(out);
         emitCOut(out, "}"); emitNewline(out); emitNewline(out);
@@ -1413,7 +1737,9 @@ function emitCProg(buf: string, progOff: int, outPath: string, src: string): voi
         set fnOff: int = br(buf, progOff + 2 + j);
         set isEntry: int = 0;
         if (entryIsMain == 1 && fnOff == entryFnOff) { isEntry = 1; }
-        emitCFn(buf, fnOff, out, src, isEntry);
+        set fnSrc3: int = srcMapLookup(buf, fnOff);
+        if (fnSrc3 == 0) { fnSrc3 = src; }
+        emitCFn(buf, fnOff, out, fnSrc3, isEntry);
         j = j + 1;
     }
 }
@@ -1436,8 +1762,9 @@ function stageError(sn: int, msg: string): void {
 }
 
 function detectBackend(): int {
-    if (exec("which gcc > /dev/null 2>&1") == 0) { return 1; }
+    // Default: LLVM first, then GCC fallback
     if (exec("which llc > /dev/null 2>&1") == 0) { return 2; }
+    if (exec("which gcc > /dev/null 2>&1") == 0) { return 1; }
     return 0;
 }
 
@@ -1470,11 +1797,13 @@ function printHelp(): void {
     println("");
     println("Options:");
     println("  -o <path>      Output binary path (default: build/<name>)");
-    println("  --gcc, -g      Force GCC backend (C codegen then gcc)");
-    println("  --llvm, -l     Force LLVM backend (MIR then llc then ld)");
+    println("  --gcc, -g, --backend=c   Force GCC backend (C codegen then gcc)");
+    println("  --llvm, -l, --backend=llvm  Force LLVM backend (MIR then llc then ld)");
     println("  --interpret, -i  Sirf interpreter run karo, skip codegen");
     println("  --dry-run, -d  Commands dikhao, execute mat karo");
     println("  -h, --help     Ye help message dikhao");
+    println("");
+    println("Default: LLVM (with automatic fallback to GCC if LLVM fails)");
     println("");
     println("Pipeline:");
     println("  Lex then Parse then Semantic then HIR then MIR then Codegen then Link");
@@ -1501,8 +1830,8 @@ function main(): int {
         if (a == "--help" || a == "-h") { bw(buf, 393, 1); }
         else if (a == "--dry-run" || a == "-d") { bw(buf, 390, 1); }
         else if (a == "--interpret" || a == "-i") { bw(buf, 391, 1); }
-        else if (a == "--llvm" || a == "-l") { bw(buf, 392, 2); }
-        else if (a == "--gcc" || a == "-g") { bw(buf, 392, 1); }
+        else if (a == "--llvm" || a == "-l" || a == "--backend=llvm") { bw(buf, 392, 2); }
+        else if (a == "--gcc" || a == "-g" || a == "--backend=c") { bw(buf, 392, 1); }
         else if (a == "-o") { argIdx = argIdx + 1; outPath = readArg(argIdx); }
         else if (charCode(a, 0) != 45) { if (len(inPath) == 0) { inPath = a; } }
         argIdx = argIdx + 1;
@@ -1543,6 +1872,14 @@ function main(): int {
     // ============================================================
     // Stage 1: READ
     // ============================================================
+    // --- Print mode ---
+    if (doInterpret == 1) { println("Mode: Interpreter"); }
+    else if (backend == 2) { println("Backend: LLVM (llc then as then ld)"); }
+    else { println("Backend: GCC (C codegen then gcc)"); }
+
+    // ============================================================
+    // Stage 1: READ
+    // ============================================================
     stageInfo(1, "Reading " + inPath);
     set src: string = readFile(inPath);
     if (len(src) == 0) { stageError(1, "File empty ya nahi mila: " + inPath); return 1; }
@@ -1553,6 +1890,8 @@ function main(): int {
     stageInfo(2, "Compiling (lex then parse then semantic then HIR then MIR)");
     set state: string = getStateBuf();
     hinit(state);
+    srcMapInit(state);
+    cpInit(state);
     set hirProg: int = parseProgram(src, state);
     if (hirProg == 0) { stageError(3, "Parse error"); return 1; }
     stageInfo(3, "Parse OK");
@@ -1580,11 +1919,18 @@ function main(): int {
     // ============================================================
     set cFile: string = str_concat(binPath, ".c");
 
+    if (len(cFile) == 0) {
+        println("ERROR: cFile is empty");
+        return 1;
+    }
+    writeFile("/tmp/ajeeb_ck0.txt", "ck0");
+
     if (dryRun == 1) {
         stageInfo(9, "[dry-run] C codegen to " + cFile);
     } else {
-        stageInfo(9, "C codegen to " + cFile);
+        writeFile("/tmp/ajeeb_ck1.txt", "ck1");
         emitCProg(state, mirProg, cFile, src);
+        writeFile("/tmp/ajeeb_ck2.txt", "ck2");
     }
 
     // ============================================================
@@ -1593,8 +1939,47 @@ function main(): int {
     set runtime: string = "runtime/ajeeb_runtime.c";
 
     if (backend == 2) {
-        stageInfo(10, "LLVM path coming soon, falling back to GCC");
-        backend = 1;
+        // LLVM backend: emit .ll → llc → as → cc
+        set llFile: string = str_concat(binPath, ".ll");
+        set sFile: string = str_concat(binPath, ".s");
+        set oFile: string = str_concat(binPath, ".o");
+
+        if (dryRun == 1) {
+            stageInfo(9, "[dry-run] LLVM codegen to " + llFile);
+        } else {
+            stageInfo(9, "LLVM codegen to " + llFile);
+            emitLLVMProg(state, mirProg, llFile, src);
+            stageInfo(10, "Compiling " + llFile + " to " + binPath);
+            set llcCmd: string = "llc " + llFile + " -o " + sFile + " 2>&1";
+            set rc1: int = exec(llcCmd);
+            if (rc1 != 0) {
+                println("⚠️  LLVM failed (llc), falling back to GCC...");
+                backend = 1;
+            } else {
+                set asCmd: string = "as " + sFile + " -o " + oFile + " 2>&1";
+                set rc2: int = exec(asCmd);
+                if (rc2 != 0) {
+                    println("⚠️  LLVM failed (as), falling back to GCC...");
+                    backend = 1;
+                } else {
+                    set linkCmd: string = "cc " + oFile + " runtime/ajeeb_runtime.c -o " + binPath + " -ldl 2>&1";
+                    set rc3: int = exec(linkCmd);
+                    if (rc3 != 0) {
+                        println("⚠️  LLVM failed (link), falling back to GCC...");
+                        backend = 1;
+                    }
+                }
+            }
+        }
+        if (backend == 2) {
+            // LLVM succeeded
+            println("");
+            println("═══════════════════════════════");
+            println("Build: ./" + binPath);
+            println("═══════════════════════════════");
+            return 0;
+        }
+        // If we fell through, continue to GCC path
     }
 
     if (backend == 1) {

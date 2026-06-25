@@ -1,0 +1,13 @@
+class Point {
+    x: int
+    y: int
+}
+
+function getX(p: Point): int {
+    return p.x;
+}
+
+function main(): int {
+    println("dot access test");
+    return 0;
+}

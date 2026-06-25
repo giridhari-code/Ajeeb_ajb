@@ -1,29 +1,40 @@
 # Ajeeb Compiler — Agent Guide
 
+## Quick Start
+```bash
+# Build (no Rust needed if binaries exist)
+cd ajeebc && make native
+
+# Run tests
+make test
+
+# Verify self-hosting
+make bootstrap
+
+# Or use Parth
+parth build file.ajb
+parth run file.ajb
+parth test
+```
+
 ## Bootstrap Self-hosting Check
 ```bash
 bash tests/bootstrap_check.sh
 ```
-This runs the 4-step pipeline:
-1. Rust interpreter compiles `compiler/compiler.ajb` → `build/output.c`
-2. GCC compiles output.c + runtime → `build/ajeeb_native`
-3. `build/ajeeb_native` compiles `compiler/compiler.ajb` → `build/output2.c`
-4. `diff` and `sha256sum` verify output.c ≡ output2.c
-
-## Cargo Tests
-```bash
-cargo test
-```
+This runs the verification pipeline:
+1. `ajeebc` compiles `compiler/compiler.ajb` → native binary
+2. Native binary re-compiles `compiler/compiler.ajb` → C code
+3. Verify Gen1 and Gen2 produce identical output
 
 ## Ajeeb Interpreter Tests
 Run individual .ajb files:
 ```bash
-cargo run -p ajeeb-compiler --bin ajeeb_compiler tests/<test_file>.ajb
+cd ajeebc && ./build/ajeebc tests/<test_file>.ajb --interpret
 ```
 Key test files: test_simple, test_small, test_strings, test_math, test_for, test_if, test_while, test_array, cross_simple, compiler_test
 
 ## After Any Change
-1. Run `cargo test`
+1. Run `cd ajeebc && make test`
 2. Run `bash tests/bootstrap_check.sh`
 3. Run a few key .ajb interpreter tests (e.g. `cross_simple.ajb`, `test_strings.ajb`)
 
@@ -40,6 +51,20 @@ Key test files: test_simple, test_small, test_strings, test_math, test_for, test
 ## Key Bug Fix: LLVM Codegen String `==` Does Pointer Comparison
 **Root cause:** The LLVM codegen's `Eq` operator (`icmp eq i64`) compares string POINTERS, not string contents. `substring` creates a new arena allocation, so `substring(src,1,8) == "package"` compares different addresses and returns false even when contents match.
 **Fix:** Use `strcmp_ajeeb(str1, str2) == 0` instead of `str1 == str2` for all string equality checks in Ajeeb code compiled via the LLVM backend.
+
+## Key Bug Fix: Import Handler savePos Clobbered by nextTok (stmt.ajb)
+**Root cause:** The import handler used `savePos(buf)`/`restorePos(buf)` to save/restore the lexer position across recursive parses. But `savePos` writes to buffer slot 8 (byte offset 8), and `nextTok` in `lexer.ajb` also uses `savePos`/`restorePos` internally for backtracking (lines 113-157). Every `nextTok` call during the recursive parse of the imported file overwrote the import handler's saved position. After restore, the position pointed into the middle of the next statement (e.g., at `int` in `function main(): int {`), causing the parser to enter the wrong branch and eventually hit the empty `}` handler (t==38) which is a no-op, creating an infinite loop.
+
+**Additional sub-bug:** `identStr()` returns `getOutbuf()`, a shared buffer. After reading the module name, `getOutbuf()` is called again for `scratchO`, clobbering the module name. The `savedModName = str_concat(modName, "")` copy fixed this.
+
+**Additional sub-bug:** After `restorePos` + `wrSrc`, `tokType(buf)` is stale (0 from EOF of the imported file). The main loop `while (tokType(buf) != 0)` would exit immediately after the first import.
+
+**Fix (3 parts):**
+1. Use `savedModName = str_concat(modName, "")` before `getOutbuf()` clobbers it
+2. Use `wrB(buf, 900, rdPos(buf))` / `wrPos(buf, rdB(buf, 900))` instead of `savePos`/`restorePos` — slot 900 is not used by `nextTok`
+3. After restore, call `nextTok(src, buf)` to re-sync the token state from the original source
+
+**Verification:** Single import works ✓, multiple imports work ✓, `compiler.ajb` produces 2661 lines / 51 functions ✓, bootstrap check passes ✓.
 
 ## compiler.ajb Split — Phase 7 Complete
 **compiler.ajb (1279L) → 6 files (max 364L):**

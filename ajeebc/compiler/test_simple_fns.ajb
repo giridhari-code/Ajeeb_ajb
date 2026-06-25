@@ -1,0 +1,3 @@
+function isDigit(c: int): int { return 0; }
+function isAlpha(c: int): int { return 0; }
+function main(): int { println("ok"); return 0; }

@@ -1,0 +1,7 @@
+class Counter {
+    set value: int;
+}
+
+function main(): int {
+    return 0;
+}

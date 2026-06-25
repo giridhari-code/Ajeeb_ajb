@@ -16,6 +16,10 @@ pub struct LockEntry {
     pub checksum: String,
     pub dependencies: Vec<PkgDep>,
     pub registry: String,
+    /// Hex-encoded Ed25519 signature of the checksum (empty if unsigned)
+    pub signature: String,
+    /// Hex-encoded Ed25519 public key of the signer (empty if unsigned)
+    pub signer: String,
 }
 
 pub type LockFile = HashMap<String, LockEntry>;

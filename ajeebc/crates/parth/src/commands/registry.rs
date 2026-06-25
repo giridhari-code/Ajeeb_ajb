@@ -41,6 +41,18 @@ pub fn cmd_install(args: &[String]) {
             match registry::link_local_package(&local_path, &name) {
                 Ok(path) => {
                     println!("✓ Installed '{}' from local path: {}", name, path.display());
+                    // Verify signature if available
+                    let pkg_version = if version.is_empty() {
+                        registry::read_package_version(&local_path).unwrap_or_default()
+                    } else {
+                        version.clone()
+                    };
+                    if !pkg_version.is_empty() {
+                        match registry::verify_signature(&name, &pkg_version) {
+                            Ok(_) => println!("🔑 Signature verified for '{}@{}'", name, pkg_version),
+                            Err(e) => eprintln!("⚠️  Warning: signature not verified for '{}@{}': {}", name, pkg_version, e),
+                        }
+                    }
                     if Path::new("parth.das").exists() {
                         let deps = vec![types::PkgDep { name: name.clone(), version_req: format!("={}", version) }];
                         config::update_deps(Path::new("parth.das"), &deps).unwrap_or_else(|e| {
@@ -59,6 +71,11 @@ pub fn cmd_install(args: &[String]) {
             match registry::download_package(&name, &version, "") {
                 Ok(path) => {
                     println!("✓ Installed '{}@{}' to {}", name, version, path.display());
+                    // Verify signature if available
+                    match registry::verify_signature(&name, &version) {
+                        Ok(_) => println!("🔑 Signature verified for '{}@{}'", name, version),
+                        Err(e) => eprintln!("⚠️  Warning: signature not verified for '{}@{}': {}", name, version, e),
+                    }
                     if Path::new("parth.das").exists() {
                         let deps = vec![types::PkgDep { name: name.clone(), version_req: format!("={}", version) }];
                         config::update_deps(Path::new("parth.das"), &deps).unwrap_or_else(|e| {
@@ -104,7 +121,11 @@ pub fn cmd_publish(_args: &[String]) {
 
     match registry::sign_package(&cfg.pkg_name, &cfg.pkg_version, "default") {
         Ok(sig) => println!("🔑 Signed (hash: {}...)", &sig.hash[..16]),
-        Err(e) => eprintln!("Warning: signing failed: {}", e),
+        Err(e) => {
+            eprintln!("❌ Publish failed: package signing is required but failed: {}", e);
+            eprintln!("   Generate a keypair with `parth keygen` and try again.");
+            std::process::exit(1);
+        }
     }
 
     println!("✓ Published '{}@{}' (checksum: {}...)", cfg.pkg_name, cfg.pkg_version, &checksum[..16]);

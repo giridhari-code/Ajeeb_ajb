@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <time.h>
 
 // ── Cross-platform dynamic loading ─────────────────────────────────────
 #ifdef _WIN32
@@ -423,7 +424,37 @@ void ajeeb_string_free(AjeebValue v);
 // ── Leak Detection ─────────────────────────────────────────────────
 // Call at program exit. Asserts no net allocation leaks.
 
+// ── Performance Counters ─────────────────────────────────────────
+static long long cnt_writeAppend = 0;
+static long long cnt_writeAppend_bytes = 0;
+static long long cnt_writeFile = 0;
+static long long cnt_writeFile_bytes = 0;
+static long long cnt_readFile = 0;
+static long long cnt_readFile_bytes = 0;
+static long long cnt_getOutbuf = 0;
+static long long ns_writeAppend = 0;
+static long long ns_writeFile = 0;
+static long long ns_readFile = 0;
+static long long ns_parseAdd = 0;
+static long long ns_import = 0;
+static long long timer_anchor = 0;
+
+static long long now_ns(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+}
+
 void ajeeb_leak_check(void) {
+    fprintf(stderr, "[Perf] writeAppend: %lld calls, %lld bytes, %lld us\n",
+        cnt_writeAppend, cnt_writeAppend_bytes, ns_writeAppend / 1000);
+    fprintf(stderr, "[Perf] writeFile:  %lld calls, %lld bytes, %lld us\n",
+        cnt_writeFile, cnt_writeFile_bytes, ns_writeFile / 1000);
+    fprintf(stderr, "[Perf] readFile:   %lld calls, %lld bytes, %lld us\n",
+        cnt_readFile, cnt_readFile_bytes, ns_readFile / 1000);
+    fprintf(stderr, "[Perf] getOutbuf:  %lld calls\n", cnt_getOutbuf);
+    fprintf(stderr, "[Perf] parseAdd:   %lld us\n", ns_parseAdd / 1000);
+    fprintf(stderr, "[Perf] import:     %lld us\n", ns_import / 1000);
     // Report RC heap stats
     int rc_leaked = rc_total_allocs - rc_total_frees;
     if (rc_leaked > 0) {
@@ -469,7 +500,7 @@ static void auto_init_atexit(void) {
 
 // ── Original Runtime Functions (ported to Arena + AjeebValue) ──────
 
-extern char __ajeeb_buf[16384];
+extern char __ajeeb_buf[262144];
 extern char __ajeeb_outbuf[65536];
 
 static char* saved_argv[256];
@@ -628,6 +659,19 @@ intptr_t __array_lit(intptr_t count, ...) {
     return (intptr_t)arr;
 }
 
+intptr_t __index(intptr_t arr, intptr_t idx) {
+    if (arr == 0) return 0;
+    int64_t* p = (int64_t*)arr;
+    return p[idx + 1];
+}
+
+intptr_t __index_assign(intptr_t arr, intptr_t idx, intptr_t val) {
+    if (arr == 0) return 0;
+    int64_t* p = (int64_t*)arr;
+    p[idx + 1] = val;
+    return val;
+}
+
 void strSet(intptr_t s, intptr_t i, intptr_t c) {
     ((char*)s)[i] = (char)c;
     ((char*)s)[i + 1] = '\0';
@@ -638,6 +682,7 @@ intptr_t getStateBuf(void) {
 }
 
 intptr_t getOutbuf(void) {
+    cnt_getOutbuf++;
     __ajeeb_outbuf[0] = '\0';
     return (intptr_t)__ajeeb_outbuf;
 }
@@ -661,19 +706,23 @@ intptr_t readArg(intptr_t n) {
 // ── String Functions (Arena-Allocated) ─────────────────────────────
 
 AjeebValue ajeeb_readFile(AjeebValue path) {
-    if (path.tag != AJB_STRING) return ajb_string("", 0);
+    cnt_readFile++;
+    long long t0 = now_ns();
+    if (path.tag != AJB_STRING) { ns_readFile += now_ns() - t0; return ajb_string("", 0); }
     const char* fname = path.string;
     FILE* f = fopen(fname, "rb");
-    if (!f) return ajb_string("", 0);
+    if (!f) { ns_readFile += now_ns() - t0; return ajb_string("", 0); }
     fseek(f, 0, SEEK_END);
     long sz = ftell(f);
+    cnt_readFile_bytes += sz;
     rewind(f);
     Arena* a = get_arena();
     char* content = (char*)arena_alloc(a, (size_t)sz + 1);
-    if (!content) { fclose(f); return ajb_string("", 0); }
+    if (!content) { fclose(f); ns_readFile += now_ns() - t0; return ajb_string("", 0); }
     fread(content, 1, sz, f);
     content[sz] = '\0';
     fclose(f);
+    ns_readFile += now_ns() - t0;
     return ajb_string(content, (size_t)sz);
 }
 
@@ -699,21 +748,31 @@ int64_t mkdir(int64_t path_ptr) {
 }
 
 void writeFile(intptr_t path, intptr_t content) {
+    cnt_writeFile++;
+    long long t0 = now_ns();
     const char* fname = (const char*)path;
     const char* data = (const char*)content;
+    size_t dlen = strlen(data);
+    cnt_writeFile_bytes += dlen;
     FILE* f = fopen(fname, "wb");
-    if (!f) return;
-    fwrite(data, 1, strlen(data), f);
+    if (!f) { ns_writeFile += now_ns() - t0; return; }
+    fwrite(data, 1, dlen, f);
     fclose(f);
+    ns_writeFile += now_ns() - t0;
 }
 
 void writeAppend(intptr_t path, intptr_t content) {
+    cnt_writeAppend++;
+    long long t0 = now_ns();
     const char* fname = (const char*)path;
     const char* data = (const char*)content;
+    size_t dlen = strlen(data);
+    cnt_writeAppend_bytes += dlen;
     FILE* f = get_cached_file(fname);
-    if (!f) return;
-    fwrite(data, 1, strlen(data), f);
+    if (!f) { ns_writeAppend += now_ns() - t0; return; }
+    fwrite(data, 1, dlen, f);
     fflush(f);
+    ns_writeAppend += now_ns() - t0;
 }
 
 void writeByte(intptr_t path, intptr_t byte) {
@@ -820,10 +879,14 @@ AjeebValue ajeeb_indexOf(AjeebValue s, AjeebValue search, int64_t start) {
     return ajb_int(-1);
 }
 
-intptr_t indexOf(intptr_t s, intptr_t search, intptr_t start) {
+intptr_t indexOf_3(intptr_t s, intptr_t search, intptr_t start) {
     AjeebValue vs = ajb_string((const char*)s, strlen((const char*)s));
     AjeebValue vsearch = ajb_string((const char*)search, strlen((const char*)search));
     return (intptr_t)ajeeb_indexOf(vs, vsearch, (int64_t)start).data.as_int;
+}
+
+intptr_t indexOf(intptr_t s, intptr_t search) {
+    return indexOf_3(s, search, 0);
 }
 
 AjeebValue ajeeb_contains(AjeebValue s, AjeebValue search) {
@@ -1449,4 +1512,17 @@ intptr_t array_to_string(intptr_t ptr, int64_t len) {
     pos++;
     out[pos] = '\0';
     return (intptr_t)out;
+}
+
+// ── Timer hooks for Ajeeb-level profiling ────────────────────────
+void timerStart(void) {
+    timer_anchor = now_ns();
+}
+
+void timerStopParseAdd(void) {
+    ns_parseAdd += now_ns() - timer_anchor;
+}
+
+void timerStopImport(void) {
+    ns_import += now_ns() - timer_anchor;
 }

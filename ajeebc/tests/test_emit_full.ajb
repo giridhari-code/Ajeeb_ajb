@@ -1,0 +1,33 @@
+function emitStr(out: string, s: string): void { writeAppend(out, s); }
+function emitI(out: string, n: int): void { writeAppend(out, itoa(n)); }
+
+function emitEscapedStr(out: string, src: int, soff: int, slen: int): void {
+    emitStr(out, "(intptr_t)\"");
+    set i: int = 0;
+    while (i < slen) {
+        set c: int = chr(src, soff + i);
+        if (c == 10) { writeByte(out, 92); writeByte(out, 110); }
+        else if (c == 9) { writeByte(out, 92); writeByte(out, 116); }
+        else if (c == 34) { writeByte(out, 92); writeByte(out, 34); }
+        else if (c == 92) {
+            if (i + 1 < slen) {
+                set next: int = chr(src, soff + i + 1);
+                if (next == 110) { writeByte(out, 92); writeByte(out, 110); i = i + 1; }
+                else if (next == 116) { writeByte(out, 92); writeByte(out, 116); i = i + 1; }
+                else if (next == 48) { writeByte(out, 92); writeByte(out, 48); i = i + 1; }
+                else if (next == 34) { writeByte(out, 92); writeByte(out, 34); i = i + 1; }
+                else if (next == 92) { writeByte(out, 92); writeByte(out, 92); i = i + 1; }
+                else { writeByte(out, 92); writeByte(out, next); i = i + 1; }
+            } else {
+                writeByte(out, 92); writeByte(out, 92);
+            }
+        }
+        else {
+            writeByte(out, c);
+        }
+        i = i + 1;
+    }
+    emitStr(out, "\"");
+}
+
+function main(): int { println("ok"); return 0; }

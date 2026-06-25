@@ -1,0 +1,32 @@
+// Regression test for parser block body fix
+// Tests that if/while/for/else with { } block bodies parse correctly
+
+function main(): int {
+    set x: int = 10;
+
+    // if with block body
+    if (x > 5) {
+        println("if-ok");
+    }
+
+    // if-else with block bodies
+    if (x > 20) {
+        println("big");
+    } else {
+        println("small");
+    }
+
+    // while with block body
+    set i: int = 0;
+    while (i < 3) {
+        println("while-ok");
+        i = i + 1;
+    }
+
+    // for with block body
+    for j: int = 0 to 2 {
+        println("for-ok");
+    }
+
+    return 0;
+}

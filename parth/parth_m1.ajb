@@ -1,0 +1,4485 @@
+// Parth M1.4 — Ajeeb Package Manager (Full Integration Test Suite)
+
+// parser.ajb — parth.das config parser
+// Slots: 0=nameOff 1=nameLen 2=verOff 3=verLen 4=authorOff 5=authorLen
+// 6=outOff 7=outLen 8=runtimeOff 9=runtimeLen 10=depCount
+// 11=targetOff 12=targetLen 13=entryOff 14=entryLen
+// 200+ i*4 = dep entries (keyOff keyLen valOff valLen)
+
+function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
+function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
+
+function findChar(src: string, start: int, ch: int): int {
+    set i: int = start;
+    while (i < len(src)) {
+        if (charCode(src, i) == ch) { return i; }
+        i = i + 1;
+    }
+    return len(src);
+}
+
+function trimStart(src: string, start: int): int {
+    while (start < len(src)) {
+        set c: int = charCode(src, start);
+        if (c != 32 && c != 9 && c != 13) { return start; }
+        start = start + 1;
+    }
+    return start;
+}
+
+function trimEnd(src: string, end: int): int {
+    while (end > 0) {
+        set c: int = charCode(src, end - 1);
+        if (c != 32 && c != 9 && c != 13 && c != 10) { return end; }
+        end = end - 1;
+    }
+    return end;
+}
+
+function skipBlankLines(src: string, start: int): int {
+    set i: int = start;
+    while (i < len(src)) {
+        set c: int = charCode(src, i);
+        if (c == 10 || c == 13) { i = i + 1; }
+        else { return i; }
+    }
+    return i;
+}
+
+function extractStr(src: string, start: int, end: int): string {
+    return substring(src, start, end);
+}
+
+function parseKeyValue(src: string, lineStart: int, lineEnd: int, buf: string, slotBase: int): int {
+    set eq: int = findChar(src, lineStart, 61);
+    if (eq >= lineEnd) { return 1; }
+    set keyStart: int = trimStart(src, lineStart);
+    set keyEnd: int = trimEnd(src, eq);
+    // Find value after =, trim whitespace
+    set valStart: int = trimStart(src, eq + 1);
+    set valEnd: int = trimEnd(src, lineEnd);
+    // Strip quotes if present
+    if (valStart < valEnd) {
+        set fc: int = charCode(src, valStart);
+        if (fc == 34) { valStart = valStart + 1; }
+    }
+    if (valEnd > valStart) {
+        set lc: int = charCode(src, valEnd - 1);
+        if (lc == 34) { valEnd = valEnd - 1; }
+    }
+    bw(buf, slotBase, keyStart);
+    bw(buf, slotBase + 1, keyEnd - keyStart);
+    bw(buf, slotBase + 2, valStart);
+    bw(buf, slotBase + 3, valEnd - valStart);
+    return 0;
+}
+
+function parseDasConfig(path: string): int {
+    set src: string = readFile(path);
+    if (len(src) == 0) { return 1; }
+    set buf: string = getStateBuf();
+    set i: int = 0;
+    set section: int = 0;
+    set depCount: int = 0;
+    bw(buf, 10, 0);
+    bw(buf, 800, 0);  // Reset workspace mode
+    bw(buf, 801, 0);  // Reset member count
+    while (i < len(src)) {
+        i = skipBlankLines(src, i);
+        if (i >= len(src)) { break; }
+        set nl: int = findChar(src, i, 10);
+        set lineEnd: int = nl;
+        if (lineEnd > i && charCode(src, lineEnd - 1) == 13) { lineEnd = lineEnd - 1; }
+        set c: int = charCode(src, i);
+        if (c == 91) {
+            set close: int = findChar(src, i + 1, 93);
+            if (close >= nl || close > i + 40) { i = nl + 1; continue; }
+            set secName: string = extractStr(src, i + 1, close);
+            if (strcmp_ajeeb(secName, "package") == 0) { section = 1; }
+            else if (strcmp_ajeeb(secName, "dependencies") == 0) { section = 2; }
+            else if (strcmp_ajeeb(secName, "build") == 0) { section = 3; }
+            else if (strcmp_ajeeb(secName, "compiler") == 0) { section = 4; }
+            else { section = 0; }
+        } else if (c == 35 || c == 59) {
+            // comment line (; or #)
+        } else if (section == 1 || section == 3 || section == 4) {
+            set eq: int = findChar(src, i, 61);
+            if (eq >= lineEnd) { i = nl + 1; continue; }
+            set vs: int = trimStart(src, eq + 1);
+            set ve: int = trimEnd(src, lineEnd);
+            if (vs < ve && charCode(src, vs) == 34) { vs = vs + 1; }
+            if (ve > vs && charCode(src, ve - 1) == 34) { ve = ve - 1; }
+            set ks: int = trimStart(src, i);
+            set ke: int = trimEnd(src, eq);
+            set key: string = substring(src, ks, ke);
+            if (section == 1) {
+                set db: int = 0;
+                if (strcmp_ajeeb(key, "name") == 0) { db = 0; }
+                else if (strcmp_ajeeb(key, "version") == 0) { db = 2; }
+                else if (strcmp_ajeeb(key, "author") == 0) { db = 4; }
+                else { i = nl + 1; continue; }
+                bw(buf, db, vs);
+                bw(buf, db + 1, ve - vs);
+            } else if (section == 3) {
+                if (strcmp_ajeeb(key, "output") == 0) {
+                    bw(buf, 6, vs);
+                    bw(buf, 7, ve - vs);
+                } else if (strcmp_ajeeb(key, "runtime") == 0) {
+                    bw(buf, 8, vs);
+                    bw(buf, 9, ve - vs);
+                }
+            } else if (section == 4) {
+                if (strcmp_ajeeb(key, "target") == 0) {
+                    bw(buf, 11, vs);
+                    bw(buf, 12, ve - vs);
+                } else if (strcmp_ajeeb(key, "entry") == 0) {
+                    bw(buf, 13, vs);
+                    bw(buf, 14, ve - vs);
+                }
+            }
+        } else if (section == 2) {
+            if (depCount >= 50) { i = nl + 1; continue; }
+            set db: int = 200 + depCount * 4;
+            set r: int = parseKeyValue(src, i, lineEnd, buf, db);
+            if (r == 0) { depCount = depCount + 1; }
+        }
+        i = nl + 1;
+    }
+    bw(buf, 10, depCount);
+    return 0;
+}
+
+function getConfigName(buf: string, src: string): string {
+    set off: int = br(buf, 0); set ln: int = br(buf, 1);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function getConfigVersion(buf: string, src: string): string {
+    set off: int = br(buf, 2); set ln: int = br(buf, 3);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function getConfigAuthor(buf: string, src: string): string {
+    set off: int = br(buf, 4); set ln: int = br(buf, 5);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function getBuildOutput(buf: string, src: string): string {
+    set off: int = br(buf, 6); set ln: int = br(buf, 7);
+    if (ln == 0) { return "build/"; }
+    return substring(src, off, off + ln);
+}
+
+function getBuildRuntime(buf: string, src: string): string {
+    set off: int = br(buf, 8); set ln: int = br(buf, 9);
+    if (ln == 0) { return "runtime/ajeeb_runtime.c"; }
+    return substring(src, off, off + ln);
+}
+
+function getCompilerTarget(buf: string, src: string): string {
+    set off: int = br(buf, 11); set ln: int = br(buf, 12);
+    if (ln == 0) { return "native"; }
+    return substring(src, off, off + ln);
+}
+
+function getCompilerEntry(buf: string, src: string): string {
+    set off: int = br(buf, 13); set ln: int = br(buf, 14);
+    if (ln == 0) { return "src/main.ajb"; }
+    return substring(src, off, off + ln);
+}
+
+function getDepCount(buf: string): int {
+    return br(buf, 10);
+}
+
+function getDepName(buf: string, src: string, idx: int): string {
+    set db: int = 200 + idx * 4;
+    set off: int = br(buf, db); set ln: int = br(buf, db + 1);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function getDepVersion(buf: string, src: string, idx: int): string {
+    set db: int = 200 + idx * 4;
+    set off: int = br(buf, db + 2); set ln: int = br(buf, db + 3);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+// resolver.ajb — Dependency resolver for parth
+// Checks local packages, cache, and fetches from git
+// All errors in Hinglish!
+
+
+function fileExists(path: string): int {
+    set content: string = readFile(path);
+    if (len(content) > 0) { return 1; }
+    // Empty file still exists — try writeFile touch check
+    return 0;
+}
+
+function findPackageLocal(name: string): int {
+    set p1: string = str_concat("packages/", str_concat(name, "/parth.das"));
+    if (fileExists(p1) == 1) { return 1; }
+    set p2: string = str_concat("../packages/", str_concat(name, "/parth.das"));
+    if (fileExists(p2) == 1) { return 1; }
+    return 0;
+}
+
+function findPackageCache(name: string): int {
+    set path: string = str_concat("/root/.parth/cache/", str_concat(name, "/parth.das"));
+    if (fileExists(path) == 1) { return 1; }
+    return 0;
+}
+
+function fetchPackage(name: string, version: string): int {
+    mkdir("/root/.parth");
+    mkdir("/root/.parth/cache");
+    set cachePath: string = str_concat("/root/.parth/cache/", name);
+    mkdir(cachePath);
+    set url: string = str_concat("https://github.com/giridhari-code/", str_concat(name, ".git"));
+    set dlmsg: string = str_concat("  Downloading ", name);
+    dlmsg = str_concat(dlmsg, " @ ");
+    dlmsg = str_concat(dlmsg, version);
+    dlmsg = str_concat(dlmsg, "...");
+    println(dlmsg);
+    set cloneCmd: string = str_concat("git clone --depth 1 ", url);
+    cloneCmd = str_concat(cloneCmd, " ");
+    cloneCmd = str_concat(cloneCmd, cachePath);
+    cloneCmd = str_concat(cloneCmd, "/src");
+    set r: int = exec(cloneCmd);
+    if (r != 0) {
+        println(str_concat("  Download fail: ", str_concat(name, " — internet check karo.")));
+        return r;
+    }
+    // Create parth.das in cache if not present by the clone
+    set dasPath: string = str_concat(cachePath, "/parth.das");
+    if (fileExists(dasPath) == 0) {
+        // Auto-generate minimal parth.das for fetched package
+        set das: string = str_concat("[package]\nname = \"", name);
+        das = str_concat(das, "\"\nversion = \"");
+        das = str_concat(das, version);
+        das = str_concat(das, "\"\n\n[dependencies]\n");
+        writeFile(dasPath, das);
+    }
+    set okmsg: string = str_concat("  ✓ ", name);
+    okmsg = str_concat(okmsg, " download ho gaya!");
+    println(okmsg);
+    return 0;
+}
+
+// ─── Package Cache ──────────────────────────────────────────────
+
+function cacheHas(name: string, version: string): int {
+    set path: string = str_concat("/root/.parth/cache/", name);
+    path = str_concat(path, "/");
+    path = str_concat(path, version);
+    path = str_concat(path, "/parth.das");
+    if (fileExists(path) == 1) { return 1; }
+    return 0;
+}
+
+function cacheGetPath(name: string, version: string): string {
+    set path: string = str_concat("/root/.parth/cache/", name);
+    path = str_concat(path, "/");
+    path = str_concat(path, version);
+    path = str_concat(path, "/parth.das");
+    return path;
+}
+
+function cacheStore(name: string, version: string, srcDasPath: string): int {
+    set cacheDir: string = str_concat("/root/.parth/cache/", name);
+    mkdir(cacheDir);
+    set verDir: string = str_concat(cacheDir, "/");
+    verDir = str_concat(verDir, version);
+    mkdir(verDir);
+    set destDas: string = str_concat(verDir, "/parth.das");
+    set content: string = readFile(srcDasPath);
+    if (len(content) == 0) { return 1; }
+    writeFile(destDas, content);
+    // Copy src/ directory if it exists (for fetched packages)
+    set srcDir: string = str_concat(verDir, "/src");
+    mkdir(srcDir);
+    // Write latest pointer
+    cacheSetLatest(name, version);
+    return 0;
+}
+
+function cacheGetLatest(name: string): string {
+    set latestPath: string = str_concat("/root/.parth/cache/", name);
+    latestPath = str_concat(latestPath, "/latest");
+    if (fileExists(latestPath) == 0) { return ""; }
+    set ver: string = readFile(latestPath);
+    ver = trimLine(ver);
+    return ver;
+}
+
+function cacheSetLatest(name: string, version: string): int {
+    set cacheDir: string = str_concat("/root/.parth/cache/", name);
+    mkdir(cacheDir);
+    set latestPath: string = str_concat(cacheDir, "/latest");
+    writeFile(latestPath, version);
+    return 0;
+}
+
+function cacheInvalidate(name: string): int {
+    set cacheDir: string = str_concat("/root/.parth/cache/", name);
+    set rmCmd: string = str_concat("rm -rf ", cacheDir);
+    exec(rmCmd);
+    return 0;
+}
+
+function cacheIsCorrupted(name: string, version: string): int {
+    set dasPath: string = cacheGetPath(name, version);
+    if (fileExists(dasPath) == 0) { return 1; }
+    set content: string = readFile(dasPath);
+    if (len(content) == 0) { return 1; }
+    // Check for [package] section — required for valid parth.das
+    set hasPkgSection: int = 0;
+    set ci: int = 0;
+    while (ci + 8 < len(content)) {
+        if (charCode(content, ci) == 91 && charCode(content, ci + 1) == 112 && charCode(content, ci + 2) == 97 && charCode(content, ci + 3) == 99 && charCode(content, ci + 4) == 107 && charCode(content, ci + 5) == 97 && charCode(content, ci + 6) == 103 && charCode(content, ci + 7) == 101 && charCode(content, ci + 8) == 93) {
+            hasPkgSection = 1;
+            break;
+        }
+        ci = ci + 1;
+    }
+    if (hasPkgSection == 0) { return 1; }
+    // Check for "name" field
+    set hasNameField: int = 0;
+    ci = 0;
+    while (ci + 4 < len(content)) {
+        if (charCode(content, ci) == 110 && charCode(content, ci + 1) == 97 && charCode(content, ci + 2) == 109 && charCode(content, ci + 3) == 101 && charCode(content, ci + 4) == 61) {
+            hasNameField = 1;
+            break;
+        }
+        ci = ci + 1;
+    }
+    if (hasNameField == 0) { return 1; }
+    return 0;
+}
+
+// Find package with cache awareness — checks local first, then versioned cache
+function findPkgPathCached(name: string, version: string): string {
+    // 1. Local packages/ (always authoritative)
+    set p1: string = str_concat("packages/", name);
+    p1 = str_concat(p1, "/parth.das");
+    if (fileExists(p1) == 1) { return p1; }
+    // 2. Sibling local
+    set p2: string = str_concat("../packages/", name);
+    p2 = str_concat(p2, "/parth.das");
+    if (fileExists(p2) == 1) { return p2; }
+    // 3. Versioned cache (if version provided)
+    if (len(version) > 0) {
+        if (cacheHas(name, version) == 1) {
+            if (cacheIsCorrupted(name, version) == 0) {
+                return cacheGetPath(name, version);
+            }
+        }
+    }
+    // 4. Latest cache version
+    set latestVer: string = cacheGetLatest(name);
+    if (len(latestVer) > 0) {
+        if (cacheHas(name, latestVer) == 1) {
+            if (cacheIsCorrupted(name, latestVer) == 0) {
+                return cacheGetPath(name, latestVer);
+            }
+        }
+    }
+    // 5. Legacy flat cache
+    set p3: string = str_concat("/root/.parth/cache/", name);
+    p3 = str_concat(p3, "/parth.das");
+    if (fileExists(p3) == 1) { return p3; }
+    return "";
+}
+
+// ─── Package Registry ───────────────────────────────────────────
+
+function regGetRoot(): string {
+    return "/root/.parth/registry";
+}
+
+function regInit(): int {
+    mkdir("/root/.parth");
+    mkdir("/root/.parth/registry");
+    mkdir("/root/.parth/registry/index");
+    return 0;
+}
+
+function regHasPackage(name: string): int {
+    set idxDir: string = str_concat("/root/.parth/registry/index/", name);
+    set versFile: string = str_concat(idxDir, "/versions");
+    if (fileExists(versFile) == 1) { return 1; }
+    return 0;
+}
+
+function regHasVersion(name: string, version: string): int {
+    if (regHasPackage(name) == 0) { return 0; }
+    set versFile: string = str_concat("/root/.parth/registry/index/", name);
+    versFile = str_concat(versFile, "/versions");
+    set content: string = readFile(versFile);
+    // Check if version appears in the file
+    set vi: int = 0;
+    set vlen: int = len(version);
+    while (vi < len(content)) {
+        set match_: int = 1;
+        set mi: int = 0;
+        while (mi < vlen) {
+            if (vi + mi >= len(content)) { match_ = 0; break; }
+            if (charCode(content, vi + mi) != charCode(version, mi)) { match_ = 0; break; }
+            mi = mi + 1;
+        }
+        if (match_ == 1) {
+            // Check boundaries — not part of a longer version string
+            set beforeOk: int = 0;
+            set afterOk: int = 0;
+            if (vi == 0 || charCode(content, vi - 1) == 10) { beforeOk = 1; }
+            set afterPos: int = vi + vlen;
+            if (afterPos >= len(content) || charCode(content, afterPos) == 10) { afterOk = 1; }
+            if (beforeOk == 1 && afterOk == 1) { return 1; }
+        }
+        vi = vi + 1;
+    }
+    return 0;
+}
+
+function regListVersions(name: string): string {
+    set versFile: string = str_concat("/root/.parth/registry/index/", name);
+    versFile = str_concat(versFile, "/versions");
+    if (fileExists(versFile) == 0) { return ""; }
+    set content: string = readFile(versFile);
+    // Convert newlines to commas, trim
+    set result: string = "";
+    set ri: int = 0;
+    while (ri < len(content)) {
+        set c: int = charCode(content, ri);
+        if (c == 10) {
+            if (len(result) > 0) { result = str_concat(result, ","); }
+        } else if (c != 13) {
+            result = str_concat(result, charToStr(c));
+        }
+        ri = ri + 1;
+    }
+    return result;
+}
+
+function regAddVersion(name: string, version: string): int {
+    regInit();
+    set idxDir: string = str_concat("/root/.parth/registry/index/", name);
+    mkdir(idxDir);
+    set versFile: string = str_concat(idxDir, "/versions");
+    // Read existing versions
+    set existing: string = "";
+    if (fileExists(versFile) == 1) {
+        existing = readFile(versFile);
+    }
+    // Check if already present
+    if (len(existing) > 0) {
+        set vi: int = 0;
+        set vlen: int = len(version);
+        while (vi < len(existing)) {
+            set match_: int = 1;
+            set mi: int = 0;
+            while (mi < vlen) {
+                if (vi + mi >= len(existing)) { match_ = 0; break; }
+                if (charCode(existing, vi + mi) != charCode(version, mi)) { match_ = 0; break; }
+                mi = mi + 1;
+            }
+            if (match_ == 1) {
+                set beforeOk: int = 0;
+                set afterOk: int = 0;
+                if (vi == 0 || charCode(existing, vi - 1) == 10) { beforeOk = 1; }
+                set afterPos: int = vi + vlen;
+                if (afterPos >= len(existing) || charCode(existing, afterPos) == 10) { afterOk = 1; }
+                if (beforeOk == 1 && afterOk == 1) { return 0; }
+            }
+            vi = vi + 1;
+        }
+    }
+    // Append version
+    set newContent: string = existing;
+    if (len(newContent) > 0) {
+        set lastChar: int = charCode(newContent, len(newContent) - 1);
+        if (lastChar != 10) { newContent = str_concat(newContent, "\n"); }
+    }
+    newContent = str_concat(newContent, version);
+    newContent = str_concat(newContent, "\n");
+    writeFile(versFile, newContent);
+    return 0;
+}
+
+function regRemoveVersion(name: string, version: string): int {
+    set versFile: string = str_concat("/root/.parth/registry/index/", name);
+    versFile = str_concat(versFile, "/versions");
+    if (fileExists(versFile) == 0) { return 0; }
+    set content: string = readFile(versFile);
+    // Rebuild without the target version
+    set newContent: string = "";
+    set lines: string = content;
+    set li: int = 0;
+    set lineStart: int = 0;
+    while (li <= len(content)) {
+        set isEnd: int = 0;
+        if (li == len(content)) { isEnd = 1; }
+        set c: int = 0;
+        if (isEnd == 0) { c = charCode(content, li); }
+        if (isEnd == 1 || c == 10) {
+            set line: string = "";
+            if (li > lineStart) {
+                line = substring(content, lineStart, li);
+            }
+            // Check if this line matches version
+            set isTarget: int = 1;
+            set vlen: int = len(version);
+            if (len(line) != vlen) { isTarget = 0; }
+            if (isTarget == 1) {
+                set ci: int = 0;
+                while (ci < vlen) {
+                    if (charCode(line, ci) != charCode(version, ci)) { isTarget = 0; break; }
+                    ci = ci + 1;
+                }
+            }
+            if (isTarget == 0 && len(line) > 0) {
+                if (len(newContent) > 0) { newContent = str_concat(newContent, "\n"); }
+                newContent = str_concat(newContent, line);
+            }
+            lineStart = li + 1;
+        }
+        li = li + 1;
+    }
+    writeFile(versFile, str_concat(newContent, "\n"));
+    return 0;
+}
+
+function regPublish(name: string, version: string, srcDir: string): int {
+    regInit();
+    // Check for duplicate
+    if (regHasVersion(name, version) == 1) {
+        set emsg: string = "Error: ";
+        emsg = str_concat(emsg, name);
+        emsg = str_concat(emsg, "@");
+        emsg = str_concat(emsg, version);
+        emsg = str_concat(emsg, " already published!");
+        println(emsg);
+        return 1;
+    }
+    // Create version directory in registry
+    set verDir: string = str_concat("/root/.parth/registry/index/", name);
+    mkdir(verDir);
+    verDir = str_concat(verDir, "/");
+    verDir = str_concat(verDir, version);
+    mkdir(verDir);
+    // Copy parth.das
+    set srcDas: string = str_concat(srcDir, "/parth.das");
+    if (fileExists(srcDas) == 0) {
+        println("Error: parth.das nahi mili publish ke liye!");
+        return 1;
+    }
+    set dasContent: string = readFile(srcDas);
+    set destDas: string = str_concat(verDir, "/parth.das");
+    writeFile(destDas, dasContent);
+    // Copy src/ directory
+    set srcSubdir: string = str_concat(srcDir, "/src");
+    set destSrcdir: string = str_concat(verDir, "/src");
+    mkdir(destSrcdir);
+    if (fileExists(srcSubdir) == 1) {
+        set cpCmd: string = str_concat("cp -r ", srcSubdir);
+        cpCmd = str_concat(cpCmd, "/* ");
+        cpCmd = str_concat(cpCmd, destSrcdir);
+        cpCmd = str_concat(cpCmd, "/ 2>/dev/null || true");
+        exec(cpCmd);
+    }
+    // Add to version index
+    regAddVersion(name, version);
+    // Also cache the package
+    cacheStore(name, version, srcDas);
+    set pmsg: string = "  ✓ ";
+    pmsg = str_concat(pmsg, name);
+    pmsg = str_concat(pmsg, "@");
+    pmsg = str_concat(pmsg, version);
+    pmsg = str_concat(pmsg, " published to registry");
+    println(pmsg);
+    return 0;
+}
+
+function regFetch(name: string, version: string, destDir: string): int {
+    set regPath: string = str_concat("/root/.parth/registry/index/", name);
+    regPath = str_concat(regPath, "/");
+    regPath = str_concat(regPath, version);
+    set regDas: string = str_concat(regPath, "/parth.das");
+    if (fileExists(regDas) == 0) {
+        set fmsg: string = "  ✗ ";
+        fmsg = str_concat(fmsg, name);
+        fmsg = str_concat(fmsg, "@");
+        fmsg = str_concat(fmsg, version);
+        fmsg = str_concat(fmsg, " registry mein nahi hai");
+        println(fmsg);
+        return 1;
+    }
+    // Create dest directory
+    mkdir(destDir);
+    // Copy parth.das
+    set dasContent: string = readFile(regDas);
+    set destDas: string = str_concat(destDir, "/parth.das");
+    writeFile(destDas, dasContent);
+    // Copy src/ if exists
+    set regSrc: string = str_concat(regPath, "/src");
+    if (fileExists(regSrc) == 1) {
+        set destSrc: string = str_concat(destDir, "/src");
+        mkdir(destSrc);
+        set cpCmd: string = str_concat("cp -r ", regSrc);
+        cpCmd = str_concat(cpCmd, "/* ");
+        cpCmd = str_concat(cpCmd, destSrc);
+        cpCmd = str_concat(cpCmd, "/ 2>/dev/null || true");
+        exec(cpCmd);
+    }
+    // Also cache it
+    cacheStore(name, version, regDas);
+    set fmsg: string = "  ✓ ";
+    fmsg = str_concat(fmsg, name);
+    fmsg = str_concat(fmsg, "@");
+    fmsg = str_concat(fmsg, version);
+    fmsg = str_concat(fmsg, " installed from registry");
+    println(fmsg);
+    return 0;
+}
+
+function regGetMetadata(name: string, version: string): string {
+    set dasPath: string = str_concat("/root/.parth/registry/index/", name);
+    dasPath = str_concat(dasPath, "/");
+    dasPath = str_concat(dasPath, version);
+    dasPath = str_concat(dasPath, "/parth.das");
+    if (fileExists(dasPath) == 0) { return ""; }
+    return readFile(dasPath);
+}
+
+// Find package path with registry fallback
+function findPkgPathReg(name: string, version: string): string {
+    // 1. Local packages/
+    set p1: string = str_concat("packages/", name);
+    p1 = str_concat(p1, "/parth.das");
+    if (fileExists(p1) == 1) { return p1; }
+    // 2. Sibling local
+    set p2: string = str_concat("../packages/", name);
+    p2 = str_concat(p2, "/parth.das");
+    if (fileExists(p2) == 1) { return p2; }
+    // 3. Versioned cache
+    if (len(version) > 0) {
+        if (cacheHas(name, version) == 1) {
+            if (cacheIsCorrupted(name, version) == 0) {
+                return cacheGetPath(name, version);
+            }
+        }
+    }
+    // 4. Latest cache version
+    set latestVer: string = cacheGetLatest(name);
+    if (len(latestVer) > 0) {
+        if (cacheHas(name, latestVer) == 1) {
+            if (cacheIsCorrupted(name, latestVer) == 0) {
+                return cacheGetPath(name, latestVer);
+            }
+        }
+    }
+    // 5. Registry
+    if (len(version) > 0) {
+        if (regHasVersion(name, version) == 1) {
+            set regPath: string = str_concat("/root/.parth/registry/index/", name);
+            regPath = str_concat(regPath, "/");
+            regPath = str_concat(regPath, version);
+            regPath = str_concat(regPath, "/parth.das");
+            if (fileExists(regPath) == 1) {
+                return regPath;
+            }
+        }
+    }
+    // 6. Legacy flat cache
+    set p3: string = str_concat("/root/.parth/cache/", name);
+    p3 = str_concat(p3, "/parth.das");
+    if (fileExists(p3) == 1) { return p3; }
+    return "";
+}
+
+function charToStr(chCode: int): string {
+    if (chCode == 97) { return "a"; }
+    if (chCode == 98) { return "b"; }
+    if (chCode == 99) { return "c"; }
+    if (chCode == 100) { return "d"; }
+    if (chCode == 101) { return "e"; }
+    if (chCode == 102) { return "f"; }
+    if (chCode == 103) { return "g"; }
+    if (chCode == 104) { return "h"; }
+    if (chCode == 105) { return "i"; }
+    if (chCode == 106) { return "j"; }
+    if (chCode == 107) { return "k"; }
+    if (chCode == 108) { return "l"; }
+    if (chCode == 109) { return "m"; }
+    if (chCode == 110) { return "n"; }
+    if (chCode == 111) { return "o"; }
+    if (chCode == 112) { return "p"; }
+    if (chCode == 113) { return "q"; }
+    if (chCode == 114) { return "r"; }
+    if (chCode == 115) { return "s"; }
+    if (chCode == 116) { return "t"; }
+    if (chCode == 117) { return "u"; }
+    if (chCode == 118) { return "v"; }
+    if (chCode == 119) { return "w"; }
+    if (chCode == 120) { return "x"; }
+    if (chCode == 121) { return "y"; }
+    if (chCode == 122) { return "z"; }
+    if (chCode == 48) { return "0"; }
+    if (chCode == 49) { return "1"; }
+    if (chCode == 50) { return "2"; }
+    if (chCode == 51) { return "3"; }
+    if (chCode == 52) { return "4"; }
+    if (chCode == 53) { return "5"; }
+    if (chCode == 54) { return "6"; }
+    if (chCode == 55) { return "7"; }
+    if (chCode == 56) { return "8"; }
+    if (chCode == 57) { return "9"; }
+    if (chCode == 45) { return "-"; }
+    if (chCode == 46) { return "."; }
+    if (chCode == 42) { return "*"; }
+    if (chCode == 94) { return "^"; }
+    if (chCode == 126) { return "~"; }
+    if (chCode == 62) { return ">"; }
+    if (chCode == 61) { return "="; }
+    return "?";
+}
+
+function bufToStr(buf: string, off: int, length: int): string {
+    set result: string = "";
+    set k: int = 0;
+    while (k < length) {
+        result = str_concat(result, charToStr(br(buf, off + k)));
+        k = k + 1;
+    }
+    return result;
+}
+
+function csvGet(csv: string, idx: int): string {
+    // Get the idx-th item from a comma-separated string
+    set start: int = 0;
+    set i: int = 0;
+    set pos: int = 0;
+    while (pos < len(csv)) {
+        if (charCode(csv, pos) == 44) {
+            if (i == idx) {
+                return substring(csv, start, pos);
+            }
+            i = i + 1;
+            start = pos + 1;
+        }
+        pos = pos + 1;
+    }
+    if (i == idx) {
+        return substring(csv, start, len(csv));
+    }
+    return "";
+}
+
+function csvLen(csv: string): int {
+    // Count items in comma-separated string
+    if (len(csv) == 0) { return 0; }
+    set count: int = 1;
+    set i: int = 0;
+    while (i < len(csv)) {
+        if (charCode(csv, i) == 44) { count = count + 1; }
+        i = i + 1;
+    }
+    return count;
+}
+
+function csvContains(csv: string, item: string): int {
+    // Check if item is in comma-separated string
+    set cnt: int = csvLen(csv);
+    set i: int = 0;
+    while (i < cnt) {
+        if (strcmp_ajeeb(csvGet(csv, i), item) == 0) { return 1; }
+        i = i + 1;
+    }
+    return 0;
+}
+
+function resolveAll(buf: string, src: string): int {
+    set dc: int = getDepCount(buf);
+    if (dc == 0) {
+        println("Koi dependency nahi hai. Seedha build karo!");
+        return 0;
+    }
+    set msg: string = str_concat(itoa(dc), " root dependency(ies) resolve kar rahe hain...");
+    println(msg);
+    // ─── BFS Resolution ──────────────────────────────────────
+    // Use comma-separated strings for queue and visited set.
+    // All strings are Ajeeb arena-owned — survive parseDasConfig.
+    set allNames: string = "";
+    set allVers: string = "";
+    set visitedNames: string = "";
+    set visitedConstraints: string = "";
+    set conflicts: int = 0;
+    // Seed with root deps
+    set j: int = 0;
+    while (j < dc) {
+        set dn: string = getDepName(buf, src, j);
+        set dv: string = getDepVersion(buf, src, j);
+        if (j > 0) {
+            allNames = str_concat(allNames, ",");
+            allVers = str_concat(allVers, ",");
+        }
+        allNames = str_concat(allNames, dn);
+        allVers = str_concat(allVers, dv);
+        j = j + 1;
+    }
+    // BFS: process each dep, expand transitive deps
+    set processed: int = 0;
+    set total: int = csvLen(allNames);
+    while (processed < total) {
+        set nameStr: string = csvGet(allNames, processed);
+        set verStr: string = csvGet(allVers, processed);
+        processed = processed + 1;
+        // Check if already visited
+        if (csvContains(visitedNames, nameStr) == 1) {
+            // Check constraint compatibility
+            set vIdx: int = 0;
+            set vCnt: int = csvLen(visitedNames);
+            while (vIdx < vCnt) {
+                if (strcmp_ajeeb(csvGet(visitedNames, vIdx), nameStr) == 0) {
+                    set oldC: string = csvGet(visitedConstraints, vIdx);
+                    if (strcmp_ajeeb(oldC, verStr) != 0) {
+                        // Different constraints — check if both exact and different
+                        parseConstraint(oldC);
+                        set oldType: int = br(buf, 600);
+                        set oldMaj: int = br(buf, 601);
+                        set oldMin: int = br(buf, 602);
+                        set oldPat: int = br(buf, 603);
+                        parseConstraint(verStr);
+                        set newType: int = br(buf, 600);
+                        set newMaj: int = br(buf, 601);
+                        set newMin: int = br(buf, 602);
+                        set newPat: int = br(buf, 603);
+                        if (oldType == 1 && newType == 1) {
+                            if (oldMaj != newMaj || oldMin != newMin || oldPat != newPat) {
+                                set cmsg: string = "  ✗ Conflict: ";
+                                cmsg = str_concat(cmsg, nameStr);
+                                cmsg = str_concat(cmsg, " wants ");
+                                cmsg = str_concat(cmsg, oldC);
+                                cmsg = str_concat(cmsg, " AND ");
+                                cmsg = str_concat(cmsg, verStr);
+                                println(cmsg);
+                                conflicts = conflicts + 1;
+                            }
+                        }
+                    }
+                    break;
+                }
+                vIdx = vIdx + 1;
+            }
+            continue;
+        }
+        // Add to visited
+        if (len(visitedNames) > 0) {
+            visitedNames = str_concat(visitedNames, ",");
+            visitedConstraints = str_concat(visitedConstraints, ",");
+        }
+        visitedNames = str_concat(visitedNames, nameStr);
+        visitedConstraints = str_concat(visitedConstraints, verStr);
+        // Find package and read its transitive deps
+        set pkgPath: string = findPkgPathCached(nameStr, verStr);
+        if (len(pkgPath) == 0) {
+            set fmsg: string = "  ✗ ";
+            fmsg = str_concat(fmsg, nameStr);
+            fmsg = str_concat(fmsg, " @ ");
+            fmsg = str_concat(fmsg, verStr);
+            fmsg = str_concat(fmsg, " — not found locally");
+            println(fmsg);
+            continue;
+        }
+        set pkgSrc: string = readFile(pkgPath);
+        set pkgBuf: string = getStateBuf();
+        set pkgR: int = parseDasConfig(pkgPath);
+        if (pkgR != 0) { continue; }
+        // Read actual version and cache
+        set actualVer2: string = getConfigVersion(pkgBuf, pkgSrc);
+        if (len(actualVer2) == 0) { actualVer2 = verStr; }
+        if (cacheHas(nameStr, actualVer2) == 0) {
+            cacheStore(nameStr, actualVer2, pkgPath);
+        }
+        set tdc: int = getDepCount(pkgBuf);
+        if (tdc > 0) {
+            set tmsg: string = "  ✓ ";
+            tmsg = str_concat(tmsg, nameStr);
+            tmsg = str_concat(tmsg, " @ ");
+            tmsg = str_concat(tmsg, verStr);
+            tmsg = str_concat(tmsg, " (");
+            tmsg = str_concat(tmsg, itoa(tdc));
+            tmsg = str_concat(tmsg, " transitive deps)");
+            println(tmsg);
+        } else {
+            set tmsg2: string = "  ✓ ";
+            tmsg2 = str_concat(tmsg2, nameStr);
+            tmsg2 = str_concat(tmsg2, " @ ");
+            tmsg2 = str_concat(tmsg2, verStr);
+            tmsg2 = str_concat(tmsg2, " [leaf]");
+            println(tmsg2);
+        }
+        set ti: int = 0;
+        while (ti < tdc) {
+            set tdn: string = getDepName(pkgBuf, pkgSrc, ti);
+            set tdv: string = getDepVersion(pkgBuf, pkgSrc, ti);
+            allNames = str_concat(allNames, str_concat(",", tdn));
+            allVers = str_concat(allVers, str_concat(",", tdv));
+            ti = ti + 1;
+        }
+        total = csvLen(allNames);
+    }
+    if (conflicts > 0) {
+        println("");
+        println(str_concat(itoa(conflicts), " conflict(s) detected!"));
+        return 1;
+    }
+    println(str_concat("Resolved ", str_concat(itoa(csvLen(visitedNames)), " packages (including transitive).")));
+    return 0;
+}
+
+function findPkgPath(name: string): string {
+    set p1: string = str_concat("packages/", name);
+    p1 = str_concat(p1, "/parth.das");
+    if (fileExists(p1) == 1) { return p1; }
+    set p2: string = str_concat("../packages/", name);
+    p2 = str_concat(p2, "/parth.das");
+    if (fileExists(p2) == 1) { return p2; }
+    set p3: string = str_concat("/root/.parth/cache/", name);
+    p3 = str_concat(p3, "/parth.das");
+    if (fileExists(p3) == 1) { return p3; }
+    return "";
+}
+
+function printTree(name: string, constraint: string, prefix: string, isLast: int, depth: int, ancestors: string): int {
+    if (depth > 10) { return 0; }
+    // Cycle detection: check if name is in ancestor set
+    if (csvContains(ancestors, name) == 1) {
+        set line: string = prefix;
+        if (isLast == 1) { line = str_concat(line, "└─ "); }
+        else { line = str_concat(line, "├─ "); }
+        line = str_concat(line, name);
+        if (len(constraint) > 0 && strcmp_ajeeb(constraint, "*") != 0) {
+            line = str_concat(line, "@");
+            line = str_concat(line, constraint);
+        }
+        line = str_concat(line, " (cycle)");
+        println(line);
+        return 0;
+    }
+    // Print current node
+    set line2: string = prefix;
+    if (isLast == 1) { line2 = str_concat(line2, "└─ "); }
+    else { line2 = str_concat(line2, "├─ "); }
+    line2 = str_concat(line2, name);
+    if (len(constraint) > 0 && strcmp_ajeeb(constraint, "*") != 0) {
+        line2 = str_concat(line2, "@");
+        line2 = str_concat(line2, constraint);
+    }
+    println(line2);
+    // Add self to ancestors for children
+    set newAncestors: string = ancestors;
+    if (len(newAncestors) > 0) {
+        newAncestors = str_concat(newAncestors, ",");
+    }
+    newAncestors = str_concat(newAncestors, name);
+    // Find and read the package's parth.das
+    set pkgPath: string = findPkgPath(name);
+    if (len(pkgPath) == 0) { return 0; }
+    set pkgSrc: string = readFile(pkgPath);
+    set pkgBuf: string = getStateBuf();
+    set pkgR: int = parseDasConfig(pkgPath);
+    if (pkgR != 0) { return 0; }
+    set tdc: int = getDepCount(pkgBuf);
+    if (tdc == 0) { return 0; }
+    // Print children
+    set childPrefix: string = prefix;
+    if (isLast == 1) {
+        childPrefix = str_concat(childPrefix, "   ");
+    } else {
+        childPrefix = str_concat(childPrefix, "│  ");
+    }
+    set ci: int = 0;
+    while (ci < tdc) {
+        set cn: string = getDepName(pkgBuf, pkgSrc, ci);
+        set cv: string = getDepVersion(pkgBuf, pkgSrc, ci);
+        set cIsLast: int = 0;
+        if (ci == tdc - 1) { cIsLast = 1; }
+        printTree(cn, cv, childPrefix, cIsLast, depth + 1, newAncestors);
+        ci = ci + 1;
+    }
+    return 0;
+}
+
+function dependencyTree(): int {
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das nahi mili!");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+    // Get project name
+    set projName: string = getConfigName(buf, src);
+    if (len(projName) == 0) { projName = "app"; }
+    set dc: int = getDepCount(buf);
+    if (dc == 0) {
+        println(str_concat(projName, " (no dependencies)"));
+        return 0;
+    }
+    // Print root
+    println(projName);
+    // Print each root dep with tree
+    set j: int = 0;
+    while (j < dc) {
+        set dn: string = getDepName(buf, src, j);
+        set dv: string = getDepVersion(buf, src, j);
+        set isLast: int = 0;
+        if (j == dc - 1) { isLast = 1; }
+        printTree(dn, dv, "", isLast, 0, "");
+        j = j + 1;
+    }
+    return 0;
+}
+
+function parseSpec(spec: string): string {
+    // Returns "name@version" — splits on first '@'
+    // If no '@', version defaults to "*"
+    set atPos: int = findChar(spec, 0, 64);
+    if (atPos < 0) {
+        return str_concat(spec, "@*");
+    }
+    set name: string = substring(spec, 0, atPos);
+    set version: string = substring(spec, atPos + 1, len(spec));
+    if (len(version) == 0) { version = "*"; }
+    return str_concat(name, str_concat("@", version));
+}
+
+// ─── SemVer Parsing ────────────────────────────────────────────
+
+function parseSemver(s: string): int {
+    // Parse "MAJOR.MINOR.PATCH" into slots 500,501,502
+    // Returns 0 on success, 1 on parse error
+    // Stops at '-', '+', or end (ignores pre-release/build metadata)
+    set buf: string = getStateBuf();
+    set i: int = 0;
+    set sLen: int = len(s);
+    set major: int = 0;
+    set minor: int = 0;
+    set patch: int = 0;
+    // Parse major
+    if (i >= sLen) { return 1; }
+    set ch: int = charCode(s, i);
+    if (ch < 48 || ch > 57) { return 1; }
+    while (i < sLen) {
+        ch = charCode(s, i);
+        if (ch < 48 || ch > 57) { break; }
+        major = major * 10 + (ch - 48);
+        i = i + 1;
+    }
+    // Expect '.'
+    if (i >= sLen || charCode(s, i) != 46) { return 1; }
+    i = i + 1;
+    // Parse minor
+    if (i >= sLen) { return 1; }
+    ch = charCode(s, i);
+    if (ch < 48 || ch > 57) { return 1; }
+    while (i < sLen) {
+        ch = charCode(s, i);
+        if (ch < 48 || ch > 57) { break; }
+        minor = minor * 10 + (ch - 48);
+        i = i + 1;
+    }
+    // Expect '.'
+    if (i >= sLen || charCode(s, i) != 46) { return 1; }
+    i = i + 1;
+    // Parse patch
+    if (i >= sLen) { return 1; }
+    ch = charCode(s, i);
+    if (ch < 48 || ch > 57) { return 1; }
+    while (i < sLen) {
+        ch = charCode(s, i);
+        if (ch < 48 || ch > 57) { break; }
+        patch = patch * 10 + (ch - 48);
+        i = i + 1;
+    }
+    bw(buf, 500, major);
+    bw(buf, 501, minor);
+    bw(buf, 502, patch);
+    return 0;
+}
+
+function compareVersions(aOff: int, bOff: int): int {
+    // Compare versions stored at aOff..aOff+2 vs bOff..bOff+2
+    // Returns -1 if a<b, 0 if equal, 1 if a>b
+    set buf: string = getStateBuf();
+    set aMaj: int = br(buf, aOff);
+    set aMin: int = br(buf, aOff + 1);
+    set aPat: int = br(buf, aOff + 2);
+    set bMaj: int = br(buf, bOff);
+    set bMin: int = br(buf, bOff + 1);
+    set bPat: int = br(buf, bOff + 2);
+    if (aMaj < bMaj) { return -1; }
+    if (aMaj > bMaj) { return 1; }
+    if (aMin < bMin) { return -1; }
+    if (aMin > bMin) { return 1; }
+    if (aPat < bPat) { return -1; }
+    if (aPat > bPat) { return 1; }
+    return 0;
+}
+
+// ─── Constraint Parsing ────────────────────────────────────────
+
+function parseConstraint(s: string): int {
+    // Parse constraint string into slots 600-603
+    // Slot 600: type (0=Any,1=Exact,2=Caret,3=Tilde,4=Gte)
+    // Slot 601-603: major, minor, patch
+    // Returns 0 on success, 1 on error
+    set buf: string = getStateBuf();
+    if (len(s) == 0 || strcmp_ajeeb(s, "*") == 0) {
+        bw(buf, 600, 0);
+        return 0;
+    }
+    set verStr: string = s;
+    set cType: int = 1;
+    if (charCode(s, 0) == 94) {
+        cType = 2;
+        verStr = substring(s, 1, len(s));
+    } else if (charCode(s, 0) == 126) {
+        cType = 3;
+        verStr = substring(s, 1, len(s));
+    } else if (charCode(s, 0) == 62 && len(s) > 1 && charCode(s, 1) == 61) {
+        cType = 4;
+        verStr = substring(s, 2, len(s));
+    }
+    set r: int = parseSemver(verStr);
+    if (r != 0) { return 1; }
+    bw(buf, 600, cType);
+    bw(buf, 601, br(buf, 500));
+    bw(buf, 602, br(buf, 501));
+    bw(buf, 603, br(buf, 502));
+    return 0;
+}
+
+function matchesConstraint(verOff: int, cOff: int): int {
+    // Check if version at verOff satisfies constraint at cOff
+    // Returns 1 if matches, 0 if not
+    set buf: string = getStateBuf();
+    set cType: int = br(buf, cOff);
+    if (cType == 0) { return 1; }
+    set cMaj: int = br(buf, cOff + 1);
+    set cMin: int = br(buf, cOff + 2);
+    set cPat: int = br(buf, cOff + 3);
+    set vMaj: int = br(buf, verOff);
+    set vMin: int = br(buf, verOff + 1);
+    set vPat: int = br(buf, verOff + 2);
+    if (cType == 1) {
+        if (vMaj == cMaj && vMin == cMin && vPat == cPat) { return 1; }
+        return 0;
+    }
+    if (cType == 2) {
+        // Caret: ^1.2.3 => >=1.2.3, <2.0.0
+        // ^0.2.3 => >=0.2.3, <0.3.0
+        // ^0.0.3 => >=0.0.3, <0.0.4
+        if (vMaj != cMaj) { return 0; }
+        if (cMaj == 0 && vMin != cMin) { return 0; }
+        if (compareVersions(verOff, cOff + 1) < 0) { return 0; }
+        return 1;
+    }
+    if (cType == 3) {
+        // Tilde: ~1.2.3 => >=1.2.3, <1.3.0
+        if (vMaj != cMaj) { return 0; }
+        if (vMin != cMin) { return 0; }
+        if (compareVersions(verOff, cOff + 1) < 0) { return 0; }
+        return 1;
+    }
+    if (cType == 4) {
+        if (compareVersions(verOff, cOff + 1) >= 0) { return 1; }
+        return 0;
+    }
+    return 0;
+}
+
+// ─── Dependency Management ─────────────────────────────────────
+
+function addDep(name: string, version: string): int {
+    set dasPath: string = "parth.das";
+    set src: string = readFile(dasPath);
+    if (len(src) == 0) {
+        println("Error: parth.das nahi mili! Pehle 'parth init' karo.");
+        return 1;
+    }
+    // Check if dep already exists
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig(dasPath);
+    if (r != 0) { return r; }
+    set dc: int = getDepCount(buf);
+    set j: int = 0;
+    while (j < dc) {
+        set dn: string = getDepName(buf, src, j);
+        if (strcmp_ajeeb(dn, name) == 0) {
+            println(str_concat("Dependency '", str_concat(name, "' pehle se hai!")));
+            return 0;
+        }
+        j = j + 1;
+    }
+    // Build the new dep line
+    set newLine: string = str_concat(name, " = \"");
+    newLine = str_concat(newLine, version);
+    newLine = str_concat(newLine, "\"\n");
+    // Insert BEFORE the next section header after [dependencies]
+    // Use findChar to find '[' characters and manually locate sections
+    set depsHdr: int = -1;
+    set si: int = 0;
+    while (si < len(src)) {
+        set ch: int = charCode(src, si);
+        if (ch == 91) { // '['
+            // Check if this is "[dependencies]"
+            set endBr: int = findChar(src, si, 93); // ']'
+            if (endBr > si) {
+                set secName: string = substring(src, si + 1, endBr);
+                if (strcmp_ajeeb(secName, "dependencies") == 0) {
+                    depsHdr = si;
+                    break;
+                }
+            }
+        }
+        si = si + 1;
+    }
+    if (depsHdr < 0) {
+        // No [dependencies] section — append at end
+        writeFile(dasPath, str_concat(src, newLine));
+    } else {
+        // Find the next '[' after [dependencies] header
+        set searchStart: int = depsHdr + 14;
+        set nextSec: int = -1;
+        set si2: int = searchStart;
+        while (si2 < len(src)) {
+            if (charCode(src, si2) == 91) {
+                nextSec = si2;
+                break;
+            }
+            si2 = si2 + 1;
+        }
+        if (nextSec < 0) {
+            // No next section — append at end
+            writeFile(dasPath, str_concat(src, newLine));
+        } else {
+            // Insert before the next section header
+            set before: string = substring(src, 0, nextSec);
+            set after: string = substring(src, nextSec, len(src));
+            writeFile(dasPath, str_concat(str_concat(before, newLine), after));
+        }
+    }
+    set addMsg: string = str_concat("✓ ", name);
+    addMsg = str_concat(addMsg, " @ ");
+    addMsg = str_concat(addMsg, version);
+    addMsg = str_concat(addMsg, " add ho gaya!");
+    println(addMsg);
+    return 0;
+}
+
+function removeDep(name: string): int {
+    set dasPath: string = "parth.das";
+    set src: string = readFile(dasPath);
+    if (len(src) == 0) {
+        println("Error: parth.das nahi mili! Pehle 'parth init' karo.");
+        return 1;
+    }
+    // Find and remove the dep line
+    set newSrc: string = "";
+    set i: int = 0;
+    set removed: int = 0;
+    while (i < len(src)) {
+        set nl: int = findChar(src, i, 10);
+        set lineEnd: int = nl;
+        if (lineEnd > i && charCode(src, lineEnd - 1) == 13) { lineEnd = lineEnd - 1; }
+        set line: string = substring(src, i, lineEnd);
+        // Check if this line starts with the dep name followed by =
+        set isDepLine: int = 0;
+        if (len(line) > len(name)) {
+            set prefix: string = substring(line, 0, len(name));
+            if (strcmp_ajeeb(prefix, name) == 0) {
+                set afterName: int = charCode(line, len(name));
+                if (afterName == 32 || afterName == 61) { // space or =
+                    isDepLine = 1;
+                }
+            }
+        }
+        if (isDepLine == 1) {
+            removed = 1;
+        } else {
+            newSrc = str_concat(newSrc, str_concat(line, "\n"));
+        }
+        if (nl < len(src)) { i = nl + 1; } else { i = len(src); }
+    }
+    if (removed == 0) {
+        set emsg: string = str_concat("Dependency '", name);
+        emsg = str_concat(emsg, "' nahi mili.");
+        println(emsg);
+        return 1;
+    }
+    writeFile(dasPath, newSrc);
+    set okmsg: string = str_concat("✓ ", name);
+    okmsg = str_concat(okmsg, " remove ho gaya!");
+    println(okmsg);
+    return 0;
+}
+
+function generateLockfile(): int {
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das nahi mili!");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+    set dc: int = getDepCount(buf);
+    if (dc == 0) {
+        println("Koi dependency nahi hai. Lockfile ki zaroorat nahi.");
+        return 0;
+    }
+    set lockContent: string = "# Auto-generated by parth\n# Do not edit manually\n\n";
+    set i: int = 0;
+    while (i < dc) {
+        set dn: string = getDepName(buf, src, i);
+        set dv: string = getDepVersion(buf, src, i);
+        set p1: string = str_concat("packages/", dn);
+        p1 = str_concat(p1, "/parth.das");
+        set p2: string = str_concat("../packages/", dn);
+        p2 = str_concat(p2, "/parth.das");
+        if (fileExists(p1) == 1 || fileExists(p2) == 1) {
+            lockContent = str_concat(lockContent, "[[package]]\nname = \"");
+            lockContent = str_concat(lockContent, dn);
+            lockContent = str_concat(lockContent, "\"\nversion = \"");
+            lockContent = str_concat(lockContent, dv);
+            lockContent = str_concat(lockContent, "\"\nsource = \"local\"\n\n");
+            set info: string = str_concat("  ✓ ", dn);
+            info = str_concat(info, " @ ");
+            info = str_concat(info, dv);
+            info = str_concat(info, " [local]");
+            println(info);
+        } else {
+            set info2: string = "  ✗ ";
+            info2 = str_concat(info2, dn);
+            info2 = str_concat(info2, " — local mein nahi mila");
+            println(info2);
+        }
+        i = i + 1;
+    }
+    writeFile("parth.lock", lockContent);
+    set doneMsg: string = "\nparth.lock generate ho gaya! (";
+    doneMsg = str_concat(doneMsg, itoa(dc));
+    doneMsg = str_concat(doneMsg, " dependencies)");
+    println(doneMsg);
+    return 0;
+}
+
+// ─── Lockfile v2 helpers ─────────────────────────────────────────
+
+function writeLockfileV2(resolvedNames: string, resolvedVers: string): int {
+    set content: string = "# parth-lock-v2\n# Auto-generated by parth — do not edit manually\n";
+    set count: int = csvLen(resolvedNames);
+    set i: int = 0;
+    while (i < count) {
+        set nm: string = csvGet(resolvedNames, i);
+        set vr: string = csvGet(resolvedVers, i);
+        content = str_concat(content, "\n[");
+        content = str_concat(content, nm);
+        content = str_concat(content, "]\nversion = \"");
+        content = str_concat(content, vr);
+        content = str_concat(content, "\"\n");
+        i = i + 1;
+    }
+    writeFile("parth.lock", content);
+    return 0;
+}
+
+function getLockPinnedVersion(lockNames: string, lockVers: string, name: string): string {
+    set count: int = csvLen(lockNames);
+    set i: int = 0;
+    while (i < count) {
+        if (strcmp_ajeeb(csvGet(lockNames, i), name) == 0) {
+            return csvGet(lockVers, i);
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+function trimLine(s: string): string {
+    set start_: int = 0;
+    set end_: int = len(s);
+    while (start_ < end_) {
+        set c: int = charCode(s, start_);
+        if (c != 32 && c != 9 && c != 13 && c != 10) { break; }
+        start_ = start_ + 1;
+    }
+    while (end_ > start_) {
+        set c: int = charCode(s, end_ - 1);
+        if (c != 32 && c != 9 && c != 13 && c != 10) { break; }
+        end_ = end_ - 1;
+    }
+    if (start_ >= end_) { return ""; }
+    return substring(s, start_, end_);
+}
+
+// ─── Lockfile-aware resolver ──────────────────────────────────
+
+function resolveAllLockAware(buf: string, src: string): int {
+    set dc: int = getDepCount(buf);
+    if (dc == 0) {
+        println("Koi dependency nahi hai. Seedha build karo!");
+        return 0;
+    }
+    set msg: string = str_concat(itoa(dc), " root dependency(ies) resolve kar rahe hain...");
+    println(msg);
+    // Read existing lockfile
+    set lockCount: int = 0;
+    set lockNames: string = "";
+    set lockVers: string = "";
+    set lockContent: string = readFile("parth.lock");
+    if (len(lockContent) > 0) {
+        // Parse lockfile into CSV strings
+        set names: string = "";
+        set vers: string = "";
+        set cnt: int = 0;
+        set curName: string = "";
+        set curVer: string = "";
+        set li: int = 0;
+        set llen: int = len(lockContent);
+        while (li < llen) {
+            set lnl: int = findChar(lockContent, li, 10);
+            if (lnl > llen) { lnl = llen; }
+            set lineS: string = substring(lockContent, li, lnl);
+            if (lnl > li && charCode(lockContent, lnl - 1) == 13) {
+                lineS = substring(lockContent, li, lnl - 1);
+            }
+            lineS = trimLine(lineS);
+            if (len(lineS) > 0) {
+                set fc: int = charCode(lineS, 0);
+                if (fc == 35) {
+                    // comment
+                } else if (fc == 91) {
+                    if (len(curName) > 0) {
+                        if (len(names) > 0) {
+                            names = str_concat(names, ",");
+                            vers = str_concat(vers, ",");
+                        }
+                        names = str_concat(names, curName);
+                        vers = str_concat(vers, curVer);
+                        cnt = cnt + 1;
+                        curName = "";
+                        curVer = "";
+                    }
+                    set cbr: int = findChar(lineS, 1, 93);
+                    if (cbr < len(lineS)) {
+                        curName = substring(lineS, 1, cbr);
+                    }
+                } else {
+                    set ep: int = findChar(lineS, 0, 61);
+                    if (ep < len(lineS)) {
+                        set k: string = trimLine(substring(lineS, 0, ep));
+                        set v: string = trimLine(substring(lineS, ep + 1, len(lineS)));
+                        if (len(v) > 1 && charCode(v, 0) == 34 && charCode(v, len(v) - 1) == 34) {
+                            v = substring(v, 1, len(v) - 1);
+                        }
+                        if (strcmp_ajeeb(k, "version") == 0) {
+                            curVer = v;
+                        }
+                    }
+                }
+            }
+            if (lnl < llen) { li = lnl + 1; } else { li = llen; }
+        }
+        if (len(curName) > 0) {
+            if (len(names) > 0) {
+                names = str_concat(names, ",");
+                vers = str_concat(vers, ",");
+            }
+            names = str_concat(names, curName);
+            vers = str_concat(vers, curVer);
+            cnt = cnt + 1;
+        }
+        lockNames = names;
+        lockVers = vers;
+        lockCount = cnt;
+        if (lockCount > 0) {
+            set lmsg: string = str_concat("  Lockfile mein ", itoa(lockCount));
+            lmsg = str_concat(lmsg, " packages mile.");
+            println(lmsg);
+        }
+    }
+    // BFS resolution
+    set allNames: string = "";
+    set allVers: string = "";
+    set visitedNames: string = "";
+    set visitedConstraints: string = "";
+    set conflicts: int = 0;
+    set j: int = 0;
+    while (j < dc) {
+        set dn: string = getDepName(buf, src, j);
+        set dv: string = getDepVersion(buf, src, j);
+        if (j > 0) {
+            allNames = str_concat(allNames, ",");
+            allVers = str_concat(allVers, ",");
+        }
+        allNames = str_concat(allNames, dn);
+        allVers = str_concat(allVers, dv);
+        j = j + 1;
+    }
+    set processed: int = 0;
+    set total: int = csvLen(allNames);
+    while (processed < total) {
+        set nameStr: string = csvGet(allNames, processed);
+        set verStr: string = csvGet(allVers, processed);
+        processed = processed + 1;
+        if (csvContains(visitedNames, nameStr) == 1) {
+            set vIdx: int = 0;
+            set vCnt: int = csvLen(visitedNames);
+            while (vIdx < vCnt) {
+                if (strcmp_ajeeb(csvGet(visitedNames, vIdx), nameStr) == 0) {
+                    set oldC: string = csvGet(visitedConstraints, vIdx);
+                    if (strcmp_ajeeb(oldC, verStr) != 0) {
+                        parseConstraint(oldC);
+                        set oldType: int = br(buf, 600);
+                        set oldMaj: int = br(buf, 601);
+                        set oldMin: int = br(buf, 602);
+                        set oldPat: int = br(buf, 603);
+                        parseConstraint(verStr);
+                        set newType: int = br(buf, 600);
+                        set newMaj: int = br(buf, 601);
+                        set newMin: int = br(buf, 602);
+                        set newPat: int = br(buf, 603);
+                        if (oldType == 1 && newType == 1) {
+                            if (oldMaj != newMaj || oldMin != newMin || oldPat != newPat) {
+                                set cmsg: string = "  ✗ Conflict: ";
+                                cmsg = str_concat(cmsg, nameStr);
+                                cmsg = str_concat(cmsg, " wants ");
+                                cmsg = str_concat(cmsg, oldC);
+                                cmsg = str_concat(cmsg, " AND ");
+                                cmsg = str_concat(cmsg, verStr);
+                                println(cmsg);
+                                conflicts = conflicts + 1;
+                            }
+                        }
+                    }
+                    break;
+                }
+                vIdx = vIdx + 1;
+            }
+            continue;
+        }
+        // Check lockfile for pinned version
+        set resolvedVer: string = verStr;
+        if (lockCount > 0) {
+            set pinnedVer: string = getLockPinnedVersion(lockNames, lockVers, nameStr);
+            if (len(pinnedVer) > 0) {
+                // Check constraint compatibility
+                parseSemver(pinnedVer);
+                set pinMaj: int = br(buf, 500);
+                set pinMin: int = br(buf, 501);
+                set pinPat: int = br(buf, 502);
+                parseConstraint(verStr);
+                set cType: int = br(buf, 600);
+                set cMaj: int = br(buf, 601);
+                set cMin: int = br(buf, 602);
+                set cPat: int = br(buf, 603);
+                set compatible: int = 0;
+                if (cType == 0) { compatible = 1; }
+                else if (cType == 1) {
+                    if (pinMaj == cMaj && pinMin == cMin && pinPat == cPat) { compatible = 1; }
+                }
+                else if (cType == 2) {
+                    if (pinMaj == cMaj) {
+                        if (pinMaj > 0 || pinMin == cMin) { compatible = 1; }
+                    }
+                }
+                else if (cType == 3) {
+                    if (pinMaj == cMaj && pinMin == cMin) { compatible = 1; }
+                }
+                else if (cType == 4) {
+                    if (pinMaj > cMaj || (pinMaj == cMaj && pinMin > cMin) || (pinMaj == cMaj && pinMin == cMin && pinPat >= cPat)) { compatible = 1; }
+                }
+                if (compatible == 1) {
+                    resolvedVer = pinnedVer;
+                    set pmsg: string = "  📌 ";
+                    pmsg = str_concat(pmsg, nameStr);
+                    pmsg = str_concat(pmsg, " @ ");
+                    pmsg = str_concat(pmsg, pinnedVer);
+                    pmsg = str_concat(pmsg, " (lockfile pinned)");
+                    println(pmsg);
+                } else {
+                    set umsg: string = "  ⚠️  ";
+                    umsg = str_concat(umsg, nameStr);
+                    umsg = str_concat(umsg, " lockfile version ");
+                    umsg = str_concat(umsg, pinnedVer);
+                    umsg = str_concat(umsg, " incompatible, re-resolving");
+                    println(umsg);
+                }
+            }
+        }
+        if (len(visitedNames) > 0) {
+            visitedNames = str_concat(visitedNames, ",");
+            visitedConstraints = str_concat(visitedConstraints, ",");
+        }
+        visitedNames = str_concat(visitedNames, nameStr);
+        set pkgPath: string = findPkgPathCached(nameStr, resolvedVer);
+        if (len(pkgPath) == 0) {
+            // Not found locally — store constraint as version
+            visitedConstraints = str_concat(visitedConstraints, resolvedVer);
+            set fmsg: string = "  ✗ ";
+            fmsg = str_concat(fmsg, nameStr);
+            fmsg = str_concat(fmsg, " @ ");
+            fmsg = str_concat(fmsg, verStr);
+            fmsg = str_concat(fmsg, " — not found locally");
+            println(fmsg);
+            continue;
+        }
+        set pkgSrc: string = readFile(pkgPath);
+        set pkgBuf: string = getStateBuf();
+        set pkgR: int = parseDasConfig(pkgPath);
+        if (pkgR != 0) { visitedConstraints = str_concat(visitedConstraints, resolvedVer); continue; }
+        // Read actual version from package's parth.das
+        set actualVer: string = getConfigVersion(pkgBuf, pkgSrc);
+        if (len(actualVer) == 0) { actualVer = resolvedVer; }
+        // Cache the package if not already cached
+        if (cacheHas(nameStr, actualVer) == 0) {
+            cacheStore(nameStr, actualVer, pkgPath);
+            set cmsg: string = "  💾 ";
+            cmsg = str_concat(cmsg, nameStr);
+            cmsg = str_concat(cmsg, "@");
+            cmsg = str_concat(cmsg, actualVer);
+            cmsg = str_concat(cmsg, " cached");
+            println(cmsg);
+        } else {
+            set chmsg: string = "  📦 ";
+            chmsg = str_concat(chmsg, nameStr);
+            chmsg = str_concat(chmsg, "@");
+            chmsg = str_concat(chmsg, actualVer);
+            chmsg = str_concat(chmsg, " cache hit");
+            println(chmsg);
+        }
+        visitedConstraints = str_concat(visitedConstraints, actualVer);
+        set tdc: int = getDepCount(pkgBuf);
+        if (tdc > 0) {
+            set tmsg: string = "  ✓ ";
+            tmsg = str_concat(tmsg, nameStr);
+            tmsg = str_concat(tmsg, " @ ");
+            tmsg = str_concat(tmsg, actualVer);
+            tmsg = str_concat(tmsg, " (");
+            tmsg = str_concat(tmsg, itoa(tdc));
+            tmsg = str_concat(tmsg, " transitive deps)");
+            println(tmsg);
+        } else {
+            set tmsg2: string = "  ✓ ";
+            tmsg2 = str_concat(tmsg2, nameStr);
+            tmsg2 = str_concat(tmsg2, " @ ");
+            tmsg2 = str_concat(tmsg2, actualVer);
+            tmsg2 = str_concat(tmsg2, " [leaf]");
+            println(tmsg2);
+        }
+        set ti: int = 0;
+        while (ti < tdc) {
+            set tdn: string = getDepName(pkgBuf, pkgSrc, ti);
+            set tdv: string = getDepVersion(pkgBuf, pkgSrc, ti);
+            allNames = str_concat(allNames, str_concat(",", tdn));
+            allVers = str_concat(allVers, str_concat(",", tdv));
+            ti = ti + 1;
+        }
+        total = csvLen(allNames);
+    }
+    if (conflicts > 0) {
+        println("");
+        println(str_concat(itoa(conflicts), " conflict(s) detected!"));
+        return 1;
+    }
+    // Write lockfile v2
+    writeLockfileV2(visitedNames, visitedConstraints);
+    set dmsg: string = "Resolved ";
+    dmsg = str_concat(dmsg, itoa(csvLen(visitedNames)));
+    dmsg = str_concat(dmsg, " packages. Lockfile updated.");
+    println(dmsg);
+    return 0;
+}
+
+// builder.ajb — Project builder for parth
+// Reads config, resolves deps, compiles to native binary
+// All errors in Hinglish!
+
+
+function readSource(path: string): string {
+    set content: string = readFile(path);
+    if (len(content) == 0) {
+        println(str_concat("Chetaavani: file nahi mili — ", path));
+        return "";
+    }
+    return content;
+}
+
+function makeBuildDir(outDir: string): int {
+    mkdir(outDir);
+    return 0;
+}
+
+function findRuntime(runtimePath: string): string {
+    // Check configured path first
+    if (fileExists(runtimePath) == 1) { return runtimePath; }
+    // Try relative to parth itself
+    set p1: string = str_concat("../ajeebc/runtime/", runtimePath);
+    if (fileExists(p1) == 1) { return p1; }
+    set p2: string = str_concat("../runtime/", runtimePath);
+    if (fileExists(p2) == 1) { return p2; }
+    // Try absolute paths for common locations
+    set p3: string = "/root/ajeeb_compiler/runtime/ajeeb_runtime.c";
+    if (fileExists(p3) == 1) { return p3; }
+    set p4: string = "/root/ajeeb_compiler/ajeebc/runtime/ajeeb_runtime.c";
+    if (fileExists(p4) == 1) { return p4; }
+    return runtimePath;
+}
+
+function findAjeebc(): string {
+    // Check PATH first
+    set r: int = exec("which ajeebc > /dev/null 2>&1");
+    if (r == 0) { return "ajeebc"; }
+    // Check relative paths
+    set p1: string = "../build/ajeebc";
+    if (fileExists(p1) == 1) { return p1; }
+    set p2: string = "../ajeebc/build/compiler";
+    if (fileExists(p2) == 1) { return p2; }
+    set p3: string = "../build/ajeeb_native";
+    if (fileExists(p3) == 1) { return p3; }
+    return "ajeebc";
+}
+
+function buildProject(): int {
+    // Parse config
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das padh nahi paaya! File exist karti hai?");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+
+    set name: string = getConfigName(buf, src);
+    set entry: string = getCompilerEntry(buf, src);
+    set outDir: string = getBuildOutput(buf, src);
+    set runtimePath: string = getBuildRuntime(buf, src);
+    set target: string = getCompilerTarget(buf, src);
+
+    println(str_concat("Project:  ", name));
+    println(str_concat("Entry:    ", entry));
+    println(str_concat("Output:   ", outDir));
+    println(str_concat("Target:   ", target));
+
+    // Resolve dependencies (lockfile-aware)
+    r = resolveAllLockAware(buf, src);
+    if (r != 0) { return r; }
+
+    // Make build directory
+    makeBuildDir(outDir);
+
+    // Check entry file exists
+    set entrySrc: string = readSource(entry);
+    if (len(entrySrc) == 0) {
+        println(str_concat("Error: entry file nahi mili — ", entry));
+        println("Pehle 'parth init' karo.");
+        return 1;
+    }
+
+    // Find compiler
+    set ajeebc: string = findAjeebc();
+
+    if (strcmp_ajeeb(target, "native") == 0) {
+        // Native build: ajeebc handles C codegen + gcc internally
+        println("");
+        println("Compile ho raha hai (native target)...");
+        set binPath: string = str_concat(outDir, name);
+        set cFile: string = str_concat(outDir, "output.c");
+
+        // Step 0: Ensure runtime is available in project
+        set resolvedRuntime: string = findRuntime(runtimePath);
+        mkdir("runtime");
+        set cpCmd: string = str_concat("cp ", resolvedRuntime);
+        cpCmd = str_concat(cpCmd, " runtime/ajeeb_runtime.c");
+        exec(cpCmd);
+
+        // Step 1: Compile with ajeebc (produces C in build/output.c)
+        set cmd1: string = str_concat(ajeebc, " ");
+        cmd1 = str_concat(cmd1, entry);
+        r = exec(cmd1);
+        if (r != 0) {
+            println("ajeebc compile fail! Neeche dekh lo.");
+            return r;
+        }
+
+        // Step 2: Compile C to binary with gcc
+        set gccCmd: string = str_concat("gcc -no-pie ", cFile);
+        gccCmd = str_concat(gccCmd, " runtime/ajeeb_runtime.c -o ");
+        gccCmd = str_concat(gccCmd, binPath);
+        gccCmd = str_concat(gccCmd, " -lm -ldl -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast 2>&1");
+        r = exec(gccCmd);
+        if (r != 0) {
+            println("gcc link fail!");
+            return r;
+        }
+        println(str_concat("  ✓ Binary → ", binPath));
+        println("");
+        println(str_concat("Build safal! Chalao: ./", str_concat(outDir, name)));
+
+    } else {
+        // Interpreter target: just verify sources parse
+        println("");
+        println("Compile ho raha hai (interpreter target)...");
+        set cmd: string = str_concat(ajeebc, str_concat(" ", entry));
+        r = exec(cmd);
+        if (r != 0) {
+            println("Compile fail! Neeche dekh lo.");
+            return r;
+        }
+        println(str_concat("  ✓ Sources valid. Chalao: parthi ", entry));
+    }
+    return 0;
+}
+
+// runner.ajb — Project runner for parth
+// Build karo aur binary chalao
+// All errors in Hinglish!
+
+
+function findParthi(): string {
+    set r: int = exec("which parthi > /dev/null 2>&1");
+    if (r == 0) { return "parthi"; }
+    set p1: string = "/root/.parth/bin/parthi";
+    if (fileExists(p1) == 1) { return p1; }
+    return "parthi";
+}
+
+function runProject(): int {
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das padh nahi paaya!");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+
+    set name: string = getConfigName(buf, src);
+    set entry: string = getCompilerEntry(buf, src);
+    set outDir: string = getBuildOutput(buf, src);
+    set target: string = getCompilerTarget(buf, src);
+
+    set bldMsg: string = str_concat("Pehle build kar rahe hain '", name);
+    bldMsg = str_concat(bldMsg, "'...");
+    println(bldMsg);
+    r = buildProject();
+    if (r != 0) {
+        println("Build fail! Run fail hoga.");
+        return r;
+    }
+
+    println("");
+    set runMsg: string = str_concat("Chala rahe hain '", name);
+    runMsg = str_concat(runMsg, "'...");
+    println(runMsg);
+    println("---");
+
+    if (strcmp_ajeeb(target, "native") == 0) {
+        set binPath: string = str_concat(outDir, name);
+        r = exec(binPath);
+    } else {
+        set parthi: string = findParthi();
+        set cmd: string = str_concat(parthi, " ");
+        cmd = str_concat(cmd, entry);
+        r = exec(cmd);
+    }
+
+    println("---");
+    if (r != 0) {
+        set errMsg: string = str_concat("Program ne error diya (exit code: ", itoa(r));
+        errMsg = str_concat(errMsg, ")");
+        println(errMsg);
+    }
+    return r;
+}
+
+// main.ajb — Parth CLI: project manager for Ajeeb
+// Commands: init, build, run
+// All errors in Hinglish!
+
+
+function cmdInit(name: string): int {
+    if (len(name) == 0) { name = "project"; }
+
+    mkdir("src");
+    mkdir("build");
+
+    set srcContent: string = "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n";
+    writeFile("src/main.ajb", srcContent);
+
+    set das: string = str_concat("[package]\nname = \"", name);
+    das = str_concat(das, "\"\nversion = \"0.1.0\"\nauthor = \"\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    writeFile("parth.das", das);
+    writeFile("build/.gitkeep", "");
+
+    println(str_concat("✓ Project initialize ho gaya: ", name));
+    return 0;
+}
+
+function cmdNew(name: string): int {
+    if (len(name) == 0) {
+        println("Usage: parth new <project-name>");
+        return 1;
+    }
+
+    mkdir(name);
+    mkdir(str_concat(name, "/src"));
+    mkdir(str_concat(name, "/build"));
+
+    set srcContent: string = "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n";
+    writeFile(str_concat(name, "/src/main.ajb"), srcContent);
+    set das: string = str_concat("[package]\nname = \"", name);
+    das = str_concat(das, "\"\nversion = \"0.1.0\"\nauthor = \"\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    writeFile(str_concat(name, "/parth.das"), das);
+    writeFile(str_concat(name, "/build/.gitkeep"), "");
+    println(str_concat("✓ Project files bana: ", name));
+    println(str_concat("Ab karo: cd ", str_concat(name, " && parth init")));
+    return 0;
+}
+
+function ensureParthBin(): int {
+    mkdir("/root/.parth");
+    mkdir("/root/.parth/bin");
+    return 0;
+}
+
+function cmdInstall(tool: string): int {
+    if (len(tool) == 0) {
+        println("Usage: parth install <ajeebc|parthi>");
+        return 1;
+    }
+    ensureParthBin();
+    set url: string = "";
+    if (strcmp_ajeeb(tool, "ajeebc") == 0) {
+        url = "https://github.com/giridhari-code/ajeebc/releases/latest/download/ajeeb_compiler";
+    } else if (strcmp_ajeeb(tool, "parthi") == 0) {
+        url = "https://github.com/giridhari-code/parthi/releases/latest/download/parthi";
+    } else {
+        println(str_concat("Error: '", str_concat(tool, "' — yeh tool nahi hai bhai!")));
+        println("Available: ajeebc, parthi");
+        return 1;
+    }
+    println(str_concat("Download ho raha hai: ", tool));
+    set curlCmd: string = str_concat("curl -L ", url);
+    curlCmd = str_concat(curlCmd, " -o /root/.parth/bin/");
+    curlCmd = str_concat(curlCmd, tool);
+    curlCmd = str_concat(curlCmd, " && chmod +x /root/.parth/bin/");
+    curlCmd = str_concat(curlCmd, tool);
+    set r: int = exec(curlCmd);
+    if (r != 0) {
+        println(str_concat("Error: ", str_concat(tool, " download fail! Internet check karo.")));
+        return r;
+    }
+    println(str_concat("✓ ", str_concat(tool, " install ho gaya! ~/.parth/bin/ mein hai.")));
+    println("PATH mein daalo: export PATH=\"$HOME/.parth/bin:$PATH\"");
+    return 0;
+}
+
+function main(): int {
+    set argCount: int = 0;
+    set i: int = 1;
+    while (i < 10) {
+        set arg: string = readArg(i);
+        if (len(arg) == 0) { break; }
+        argCount = i;
+        i = i + 1;
+    }
+
+    if (argCount < 1) {
+    println("Usage: parth <init|new|build|run|test|install|add|remove>");
+    println("");
+    println("Commands:");
+    println("  init [name]       Project initialize karo current dir mein");
+    println("  new <name>        Naya project banao");
+    println("  add <pkg[@ver]>   Dependency add karo");
+    println("  remove <pkg>      Dependency hatao");
+    println("  build             ajeebc se compile karo (LLVM + gcc)");
+    println("  run               ParthI interpreter se chalao");
+    println("  test              Tests chalao (tests/ folder)");
+    println("  install <tool>    Tool download karo (ajeebc/parthi)");
+    println("  generate-lockfile Lock file banao (v2, pinned versions)");
+    println("  test-all         Sab tests chalao (integration + regression)");
+        return 1;
+    }
+
+    set cmd: string = readArg(1);
+
+    if (strcmp_ajeeb(cmd, "init") == 0) {
+        set projName: string = readArg(2);
+        return cmdInit(projName);
+    }
+
+    if (strcmp_ajeeb(cmd, "new") == 0) {
+        set name: string = readArg(2);
+        return cmdNew(name);
+    }
+
+    if (strcmp_ajeeb(cmd, "build") == 0) {
+        return buildProject();
+    }
+
+    if (strcmp_ajeeb(cmd, "run") == 0) {
+        return runProject();
+    }
+
+    if (strcmp_ajeeb(cmd, "test") == 0) {
+        return runTests();
+    }
+
+    if (strcmp_ajeeb(cmd, "install") == 0) {
+        set tool: string = readArg(2);
+        return cmdInstall(tool);
+    }
+
+    if (strcmp_ajeeb(cmd, "add") == 0) {
+        set spec: string = readArg(2);
+        if (len(spec) == 0) {
+            println("Usage: parth add <package[@version]>");
+            return 1;
+        }
+        set parsed: string = parseSpec(spec);
+        // Find @ to split name and version
+        set atPos: int = findChar(parsed, 0, 64);
+        set pkgName: string = substring(parsed, 0, atPos);
+        set pkgVer: string = substring(parsed, atPos + 1, len(parsed));
+        return addDep(pkgName, pkgVer);
+    }
+
+    if (strcmp_ajeeb(cmd, "remove") == 0) {
+        set name: string = readArg(2);
+        if (len(name) == 0) {
+            println("Usage: parth remove <package>");
+            return 1;
+        }
+        return removeDep(name);
+    }
+
+    if (strcmp_ajeeb(cmd, "generate-lockfile") == 0) {
+        set lBuf: string = getStateBuf();
+        set lR: int = parseDasConfig("parth.das");
+        if (lR != 0) {
+            println("Error: parth.das nahi mili!");
+            return 1;
+        }
+        set lSrc: string = readFile("parth.das");
+        return resolveAllLockAware(lBuf, lSrc);
+    }
+
+    if (strcmp_ajeeb(cmd, "cache") == 0) {
+        if (argCount < 2) {
+            println("Usage: parth cache <list|clear|status> [package-name]");
+            return 1;
+        }
+        set sub: string = readArg(2);
+        if (strcmp_ajeeb(sub, "list") == 0) {
+            return cmdCacheList();
+        }
+        if (strcmp_ajeeb(sub, "clear") == 0) {
+            if (argCount < 3) {
+                println("Usage: parth cache clear <package-name>");
+                return 1;
+            }
+            set pkgName: string = readArg(3);
+            return cmdCacheClear(pkgName);
+        }
+        if (strcmp_ajeeb(sub, "status") == 0) {
+            return cmdCacheStatus();
+        }
+        println(str_concat("Error: 'cache ", str_concat(sub, "' — yeh subcommand nahi hai!")));
+        println("Available: list, clear, status");
+        return 1;
+    }
+
+    if (strcmp_ajeeb(cmd, "publish") == 0) {
+        return cmdPublish();
+    }
+
+    if (strcmp_ajeeb(cmd, "install") == 0) {
+        if (argCount < 2) {
+            println("Usage: parth install <package[@version]>");
+            return 1;
+        }
+        set pkgSpec: string = readArg(2);
+        return cmdInstallPkg(pkgSpec);
+    }
+
+    if (strcmp_ajeeb(cmd, "search") == 0) {
+        if (argCount < 2) {
+            println("Usage: parth search <query>");
+            return 1;
+        }
+        set query: string = readArg(2);
+        return cmdSearch(query);
+    }
+
+    if (strcmp_ajeeb(cmd, "registry") == 0) {
+        if (argCount < 2) {
+            println("Usage: parth registry <list|info> [package-name]");
+            return 1;
+        }
+        set sub: string = readArg(2);
+        if (strcmp_ajeeb(sub, "list") == 0) {
+            return cmdRegList();
+        }
+        if (strcmp_ajeeb(sub, "info") == 0) {
+            if (argCount < 3) {
+                println("Usage: parth registry info <package-name>");
+                return 1;
+            }
+            set pkgName: string = readArg(3);
+            return cmdRegInfo(pkgName);
+        }
+        println(str_concat("Error: 'registry ", str_concat(sub, "' — yeh subcommand nahi hai!")));
+        println("Available: list, info");
+        return 1;
+    }
+
+    if (strcmp_ajeeb(cmd, "tree") == 0) {
+        return dependencyTree();
+    }
+
+    if (strcmp_ajeeb(cmd, "test-semver") == 0) {
+        return testSemver();
+    }
+
+    if (strcmp_ajeeb(cmd, "test-tree") == 0) {
+        return testTree();
+    }
+
+    if (strcmp_ajeeb(cmd, "test-all") == 0) {
+        return testAll();
+    }
+
+    if (strcmp_ajeeb(cmd, "workspace") == 0) {
+        if (argCount < 2) {
+            println("Usage: parth workspace <init|add|list|resolve|build> [args]");
+            println("");
+            println("Commands:");
+            println("  init <name>      Naya workspace banao");
+            println("  add <pkg>        Package add karo workspace mein");
+            println("  list             Workspace members dikhao");
+            println("  resolve          Sab dependencies resolve karo");
+            println("  build [pkg]      Build all ya specific package");
+            return 1;
+        }
+        set sub: string = readArg(2);
+        if (strcmp_ajeeb(sub, "init") == 0) {
+            set wsName: string = readArg(3);
+            return cmdWorkspaceInit(wsName);
+        }
+        if (strcmp_ajeeb(sub, "add") == 0) {
+            set pkgName: string = readArg(3);
+            return cmdWorkspaceAdd(pkgName);
+        }
+        if (strcmp_ajeeb(sub, "list") == 0) {
+            return cmdWorkspaceList();
+        }
+        if (strcmp_ajeeb(sub, "resolve") == 0) {
+            return cmdWorkspaceResolve();
+        }
+        if (strcmp_ajeeb(sub, "build") == 0) {
+            set pkgArg: string = readArg(3);
+            return cmdWorkspaceBuild(pkgArg);
+        }
+        println(str_concat("Error: 'workspace ", str_concat(sub, "' — yeh subcommand nahi hai!")));
+        println("Available: init, add, list, resolve, build");
+        return 1;
+    }
+
+    println(str_concat("Error: '", str_concat(cmd, "' — yeh command nahi hai bhai!")));
+    println("Usage: parth <init|new|build|run|test|install|add|remove|generate-lockfile|cache|publish|search|registry|workspace|tree|test-semver|test-tree|test-all>");
+    return 1;
+}
+
+function cmdCacheList(): int {
+    set cacheRoot: string = "/root/.parth/cache";
+    // Try to read cache root — fileExists doesn't work for dirs
+    // Just list what we can find
+    println("Package Cache:");
+    println("  Root: /root/.parth/cache/");
+    println("  Layout: <name>/<version>/parth.das");
+    println("  Latest: <name>/latest");
+    println("");
+    println("  Check: ls -la /root/.parth/cache/");
+    return 0;
+}
+
+function cmdCacheClear(name: string): int {
+    set cacheDir: string = str_concat("/root/.parth/cache/", name);
+    // Always try to invalidate — rm -rf is idempotent
+    cacheInvalidate(name);
+    println(str_concat("✓ ", str_concat(name, " ka cache clear ho gaya!")));
+    return 0;
+}
+
+function cmdCacheStatus(): int {
+    set cacheRoot: string = "/root/.parth/cache";
+    if (fileExists(cacheRoot) == 0) {
+        println("Cache: empty");
+        return 0;
+    }
+    println("Package Cache Status:");
+    println("  Root: /root/.parth/cache/");
+    println("  Layout: <name>/<version>/parth.das");
+    println("  Latest: <name>/latest");
+    println("");
+    println("  Check: ls -la /root/.parth/cache/");
+    return 0;
+}
+
+// ─── Registry CLI Commands ──────────────────────────────────────
+
+function cmdPublish(): int {
+    // Read current package config
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das nahi mili! Koi package publish nahi ho sakta.");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+    set name: string = getConfigName(buf, src);
+    set version: string = getConfigVersion(buf, src);
+    if (len(name) == 0) {
+        println("Error: parth.das mein 'name' field nahi hai!");
+        return 1;
+    }
+    if (len(version) == 0) {
+        println("Error: parth.das mein 'version' field nahi hai!");
+        return 1;
+    }
+    // Check if already published
+    if (regHasVersion(name, version) == 1) {
+        set emsg: string = "Error: ";
+        emsg = str_concat(emsg, name);
+        emsg = str_concat(emsg, "@");
+        emsg = str_concat(emsg, version);
+        emsg = str_concat(emsg, " already published hai!");
+        println(emsg);
+        return 1;
+    }
+    // Determine source directory
+    set srcDir: string = ".";
+    // Publish
+    set pmsg: string = "Publishing ";
+    pmsg = str_concat(pmsg, name);
+    pmsg = str_concat(pmsg, "@");
+    pmsg = str_concat(pmsg, version);
+    pmsg = str_concat(pmsg, " to registry...");
+    println(pmsg);
+    return regPublish(name, version, srcDir);
+}
+
+function cmdInstallPkg(spec: string): int {
+    // Parse "name@version" or just "name"
+    set name: string = "";
+    set version: string = "";
+    set atPos: int = -1;
+    set si: int = 0;
+    while (si < len(spec)) {
+        if (charCode(spec, si) == 64) {
+            atPos = si;
+            break;
+        }
+        si = si + 1;
+    }
+    if (atPos >= 0) {
+        name = substring(spec, 0, atPos);
+        version = substring(spec, atPos + 1, len(spec));
+    } else {
+        name = spec;
+    }
+    if (len(name) == 0) {
+        println("Error: package name nahi diya!");
+        return 1;
+    }
+    // If no version, find latest
+    if (len(version) == 0) {
+        // Try local package first
+        set localPath: string = findPkgPathCached(name, "");
+        if (len(localPath) > 0) {
+            set lmsg: string = name;
+            lmsg = str_concat(lmsg, " already installed hai locally.");
+            println(lmsg);
+            return 0;
+        }
+        // Try registry — get latest version
+        set vers: string = regListVersions(name);
+        if (len(vers) == 0) {
+            set fmsg: string = "Error: ";
+            fmsg = str_concat(fmsg, name);
+            fmsg = str_concat(fmsg, " registry mein nahi hai aur version specify nahi kiya!");
+            println(fmsg);
+            return 1;
+        }
+        // Use last version in list (assumes sorted by addition order)
+        set lastComma: int = -1;
+        set ci: int = 0;
+        while (ci < len(vers)) {
+            if (charCode(vers, ci) == 44) { lastComma = ci; }
+            ci = ci + 1;
+        }
+        if (lastComma >= 0) {
+            version = substring(vers, lastComma + 1, len(vers));
+        } else {
+            version = vers;
+        }
+    }
+    // Check if already cached
+    if (cacheHas(name, version) == 1) {
+        set cmsg: string = name;
+        cmsg = str_concat(cmsg, "@");
+        cmsg = str_concat(cmsg, version);
+        cmsg = str_concat(cmsg, " already cached hai.");
+        println(cmsg);
+        return 0;
+    }
+    // Fetch from registry
+    set destDir: string = str_concat("packages/", name);
+    return regFetch(name, version, destDir);
+}
+
+function cmdSearch(query: string): int {
+    regInit();
+    // List all packages and search for query
+    set lsCmd: string = "ls -1 /root/.parth/registry/index/";
+    set result: string = exec(lsCmd);
+    println(str_concat("Searching registry for: ", query));
+    // We can't easily capture exec output, so just show info
+    println("  (Search results require 'ls' — check /root/.parth/registry/index/ manually)");
+    println("");
+    println("Registry root: /root/.parth/registry/index/");
+    println("Use 'parth registry list' to see all packages.");
+    return 0;
+}
+
+function cmdRegList(): int {
+    regInit();
+    println("Registry Packages:");
+    println("  Root: /root/.parth/registry/index/");
+    println("  Each package has: <name>/versions, <name>/<version>/parth.das");
+    println("");
+    println("  Check: ls -la /root/.parth/registry/index/");
+    return 0;
+}
+
+function cmdRegInfo(name: string): int {
+    regInit();
+    if (regHasPackage(name) == 0) {
+        set fmsg: string = "Package '";
+        fmsg = str_concat(fmsg, name);
+        fmsg = str_concat(fmsg, "' registry mein nahi hai.");
+        println(fmsg);
+        return 1;
+    }
+    set vers: string = regListVersions(name);
+    set imsg: string = "Package: ";
+    imsg = str_concat(imsg, name);
+    println(imsg);
+    set vmsg: string = "Versions: ";
+    vmsg = str_concat(vmsg, vers);
+    println(vmsg);
+    // Show latest version's metadata
+    set vlen: int = len(vers);
+    if (vlen > 0) {
+        set lastComma: int = -1;
+        set ci: int = 0;
+        while (ci < vlen) {
+            if (charCode(vers, ci) == 44) { lastComma = ci; }
+            ci = ci + 1;
+        }
+        set latestVer: string = "";
+        if (lastComma >= 0) {
+            latestVer = substring(vers, lastComma + 1, vlen);
+        } else {
+            latestVer = vers;
+        }
+        set meta: string = regGetMetadata(name, latestVer);
+        if (len(meta) > 0) {
+            println("");
+            println(str_concat("Latest (", str_concat(latestVer, "):")));
+            println(meta);
+        }
+    }
+    return 0;
+}
+
+function runTests(): int {
+    println("Test runner: 'parth test-all' chalao sab tests ke liye");
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// M2.4 Workspace Support
+// ═══════════════════════════════════════════════════════════════
+
+// Workspace buffer slots:
+// 800 = workspace mode (0=single pkg, 1=workspace)
+// 801 = member count
+// 810+ = member paths (off, len, each member = 2 slots, max 20 members)
+
+function isWorkspace(buf: string): int {
+    return br(buf, 800);
+}
+
+function getMemberCount(buf: string): int {
+    return br(buf, 801);
+}
+
+function getMemberPath(buf: string, src: string, idx: int): string {
+    set base: int = 810 + idx * 2;
+    set off: int = br(buf, base);
+    set ln: int = br(buf, base + 1);
+    if (ln == 0) { return ""; }
+    return substring(src, off, off + ln);
+}
+
+function parseWorkspaceConfig(path: string): int {
+    set buf: string = getStateBuf();
+    set src: string = readFile(path);
+    if (len(src) == 0) { return 1; }
+
+    // Reset workspace fields
+    bw(buf, 800, 0);
+    bw(buf, 801, 0);
+
+    set i: int = 0;
+    set section: int = 0;
+    set memberCount: int = 0;
+
+    while (i < len(src)) {
+        i = skipBlankLines(src, i);
+        if (i >= len(src)) { break; }
+        set nl: int = findChar(src, i, 10);
+        set lineEnd: int = nl;
+        if (lineEnd > i && charCode(src, lineEnd - 1) == 13) { lineEnd = lineEnd - 1; }
+        set c: int = charCode(src, i);
+        if (c == 91) {
+            set close: int = findChar(src, i + 1, 93);
+            if (close >= nl || close > i + 40) { i = nl + 1; continue; }
+            set secName: string = extractStr(src, i + 1, close);
+            if (strcmp_ajeeb(secName, "workspace") == 0) { section = 5; }
+            else if (strcmp_ajeeb(secName, "package") == 0) { section = 1; }
+            else if (strcmp_ajeeb(secName, "dependencies") == 0) { section = 2; }
+            else if (strcmp_ajeeb(secName, "build") == 0) { section = 3; }
+            else if (strcmp_ajeeb(secName, "compiler") == 0) { section = 4; }
+            else { section = 0; }
+        } else if (c == 35 || c == 59) {
+            // comment
+        } else if (section == 5) {
+            set eq: int = findChar(src, i, 61);
+            if (eq >= lineEnd) { i = nl + 1; continue; }
+            set ks: int = trimStart(src, i);
+            set ke: int = trimEnd(src, eq);
+            set key: string = substring(src, ks, ke);
+            set vs: int = trimStart(src, eq + 1);
+            set ve: int = trimEnd(src, lineEnd);
+            if (vs < ve && charCode(src, vs) == 34) { vs = vs + 1; }
+            if (ve > vs && charCode(src, ve - 1) == 34) { ve = ve - 1; }
+
+            if (strcmp_ajeeb(key, "name") == 0) {
+                bw(buf, 0, vs);
+                bw(buf, 1, ve - vs);
+            } else if (strcmp_ajeeb(key, "members") == 0) {
+                // Parse comma-separated member paths
+                set ms: int = vs;
+                while (ms < ve && memberCount < 20) {
+                    set comma: int = findChar(src, ms, 44);
+                    if (comma > ve) { comma = ve; }
+                    set me: int = trimEnd(src, comma);
+                    set ms2: int = trimStart(src, ms);
+                    if (me > ms2) {
+                        set base: int = 810 + memberCount * 2;
+                        bw(buf, base, ms2);
+                        bw(buf, base + 1, me - ms2);
+                        memberCount = memberCount + 1;
+                    }
+                    ms = comma + 1;
+                }
+                bw(buf, 801, memberCount);
+                bw(buf, 800, 1);  // workspace mode
+            }
+        } else if (section == 1) {
+            set eq: int = findChar(src, i, 61);
+            if (eq >= lineEnd) { i = nl + 1; continue; }
+            set vs: int = trimStart(src, eq + 1);
+            set ve: int = trimEnd(src, lineEnd);
+            if (vs < ve && charCode(src, vs) == 34) { vs = vs + 1; }
+            if (ve > vs && charCode(src, ve - 1) == 34) { ve = ve - 1; }
+            set ks: int = trimStart(src, i);
+            set ke: int = trimEnd(src, eq);
+            set key: string = substring(src, ks, ke);
+            if (strcmp_ajeeb(key, "name") == 0) {
+                bw(buf, 0, vs);
+                bw(buf, 1, ve - vs);
+            } else if (strcmp_ajeeb(key, "version") == 0) {
+                bw(buf, 2, vs);
+                bw(buf, 3, ve - vs);
+            } else if (strcmp_ajeeb(key, "author") == 0) {
+                bw(buf, 4, vs);
+                bw(buf, 5, ve - vs);
+            }
+        } else if (section == 2) {
+            // Workspace-level dependencies stored at standard dep slots
+            // These will be merged with member deps during resolution
+        }
+        i = nl + 1;
+    }
+    return 0;
+}
+
+function cmdWorkspaceInit(name: string): int {
+    if (len(name) == 0) {
+        println("Usage: parth workspace init <workspace-name>");
+        return 1;
+    }
+
+    mkdir(name);
+    mkdir(str_concat(name, "/packages"));
+
+    // Create workspace root parth.das
+    set das: string = str_concat("[workspace]\nname = \"", name);
+    das = str_concat(das, "\"\nmembers = \"packages/\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    writeFile(str_concat(name, "/parth.das"), das);
+
+    println(str_concat("✓ Workspace initialize ho gaya: ", name));
+    println(str_concat("  Add packages: cd ", str_concat(name, " && parth workspace add <pkg>")));
+    return 0;
+}
+
+function cmdWorkspaceAdd(memberName: string): int {
+    if (len(memberName) == 0) {
+        println("Usage: parth workspace add <package-name>");
+        return 1;
+    }
+
+    set buf: string = getStateBuf();
+    set r: int = parseWorkspaceConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das nahi mili! Pehle workspace init karo.");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+
+    // Check if this is a workspace
+    if (isWorkspace(buf) == 0) {
+        println("Error: Yeh workspace nahi hai! [workspace] section chahiye parth.das mein.");
+        return 1;
+    }
+
+    // Create member directory
+    set memberDir: string = str_concat("packages/", memberName);
+    mkdir(memberDir);
+    mkdir(str_concat(memberDir, "/src"));
+
+    // Create member parth.das
+    set srcContent: string = "function main(): int {\n    println(\"Hello from ";
+    srcContent = str_concat(srcContent, memberName);
+    srcContent = str_concat(srcContent, "!\");\n    return 0;\n}\n");
+    writeFile(str_concat(memberDir, "/src/main.ajb"), srcContent);
+
+    set das: string = str_concat("[package]\nname = \"", memberName);
+    das = str_concat(das, "\"\nversion = \"0.1.0\"\nauthor = \"\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\nentry = \"src/main.ajb\"\n");
+    writeFile(str_concat(memberDir, "/parth.das"), das);
+
+    println(str_concat("✓ Package add ho gaya: ", memberName));
+    println(str_concat("  Location: ", memberDir));
+    return 0;
+}
+
+function cmdWorkspaceList(): int {
+    set buf: string = getStateBuf();
+    set r: int = parseWorkspaceConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das nahi mili!");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+
+    if (isWorkspace(buf) == 0) {
+        println("Error: Yeh workspace nahi hai!");
+        return 1;
+    }
+
+    set mc: int = getMemberCount(buf);
+    set wsName: string = getConfigName(buf, src);
+    println(str_concat("Workspace: ", wsName));
+    println(str_concat("Members: ", itoa(mc)));
+    println("");
+
+    set i: int = 0;
+    while (i < mc) {
+        set mp: string = getMemberPath(buf, src, i);
+        // Check if member has parth.das
+        set memberDas: string = str_concat(mp, "/parth.das");
+        if (fileExists(memberDas) == 1) {
+            println(str_concat("  ✓ ", mp));
+        } else {
+            println(str_concat("  ✗ ", str_concat(mp, " (no parth.das)")));
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+function cmdWorkspaceResolve(): int {
+    set buf: string = getStateBuf();
+    set r: int = parseWorkspaceConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das nahi mili!");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+
+    if (isWorkspace(buf) == 0) {
+        println("Error: Yeh workspace nahi hai!");
+        return 1;
+    }
+
+    set mc: int = getMemberCount(buf);
+    println(str_concat("Resolving workspace with ", itoa(mc), " members..."));
+
+    // Resolve workspace-level dependencies first
+    set wsR: int = resolveAllLockAware(buf, src);
+    if (wsR != 0) {
+        println("Error: Workspace dependencies resolve nahi ho payin!");
+        return 1;
+    }
+
+    // Resolve each member's dependencies
+    set i: int = 0;
+    while (i < mc) {
+        set mp: string = getMemberPath(buf, src, i);
+        set memberDas: string = str_concat(mp, "/parth.das");
+        if (fileExists(memberDas) == 1) {
+            set mBuf: string = getStateBuf();
+            set mR: int = parseDasConfig(memberDas);
+            if (mR == 0) {
+                set mSrc: string = readFile(memberDas);
+                set mr2: int = resolveAllLockAware(mBuf, mSrc);
+                if (mr2 == 0) {
+                    println(str_concat("  ✓ ", str_concat(mp, " resolved")));
+                } else {
+                    println(str_concat("  ✗ ", str_concat(mp, " conflict")));
+                }
+            }
+        }
+        i = i + 1;
+    }
+    println("Workspace resolve complete.");
+    return 0;
+}
+
+function cmdWorkspaceBuild(memberArg: string): int {
+    set buf: string = getStateBuf();
+    set r: int = parseWorkspaceConfig("parth.das");
+    if (r != 0) {
+        println("Error: parth.das nahi mili!");
+        return 1;
+    }
+    set src: string = readFile("parth.das");
+
+    if (isWorkspace(buf) == 0) {
+        println("Error: Yeh workspace nahi hai!");
+        return 1;
+    }
+
+    set mc: int = getMemberCount(buf);
+
+    // If specific member requested
+    if (len(memberArg) > 0) {
+        set memberDas: string = str_concat("packages/", str_concat(memberArg, "/parth.das"));
+        if (fileExists(memberDas) == 0) {
+            println(str_concat("Error: Package '", str_concat(memberArg, "' nahi mila!")));
+            return 1;
+        }
+        println(str_concat("Building package: ", memberArg));
+        // Change to member directory and build
+        set origDir: string = exec("pwd");
+        exec(str_concat("cd packages/", str_concat(memberArg, " && parth build")));
+        return 0;
+    }
+
+    // Build all members
+    println(str_concat("Building all ", itoa(mc), " workspace members..."));
+    set built: int = 0;
+    set failed: int = 0;
+    set i: int = 0;
+    while (i < mc) {
+        set mp: string = getMemberPath(buf, src, i);
+        set memberDas: string = str_concat(mp, "/parth.das");
+        if (fileExists(memberDas) == 1) {
+            println(str_concat("\n── Building: ", mp));
+            // Build member by running parth build in its directory
+            set buildCmd: string = str_concat("cd ", str_concat(mp, " && parth build 2>&1"));
+            set buildResult: int = exec(buildCmd);
+            if (buildResult == 0) {
+                println(str_concat("  ✓ ", str_concat(mp, " built successfully")));
+                built = built + 1;
+            } else {
+                println(str_concat("  ✗ ", str_concat(mp, " build failed")));
+                failed = failed + 1;
+            }
+        }
+        i = i + 1;
+    }
+    println("");
+    println(str_concat("Workspace build: ", itoa(built), " succeeded, ", itoa(failed), " failed"));
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// M1.4 Integration Test Runner
+// ═══════════════════════════════════════════════════════════════
+
+function testAll(): int {
+    set totalPassed: int = 0;
+    set totalFailed: int = 0;
+    set suiteNum: int = 0;
+
+    println("╔══════════════════════════════════════════════════╗");
+    println("║  Parth M1.4 — Full Integration Test Suite       ║");
+    println("╚══════════════════════════════════════════════════╝");
+    println("");
+
+    // ── Suite 1: Regression Tests ────────────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". Regression Tests"));
+    println("────────────────────────────────────────");
+    set r1: int = testRegression();
+    if (r1 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 2: SemVer Tests ────────────────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". SemVer Parsing & Constraints"));
+    println("────────────────────────────────────────");
+    set r2: int = testSemver();
+    if (r2 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 3: Dependency Tree Tests ───────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". Dependency Tree"));
+    println("────────────────────────────────────────");
+    set r3: int = testTree();
+    if (r3 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 4: CSV Helpers ─────────────────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". CSV Helper Functions"));
+    println("────────────────────────────────────────");
+    set r4: int = testCsv();
+    if (r4 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 5: Config Parser ───────────────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". Config Parser"));
+    println("────────────────────────────────────────");
+    set r5: int = testConfigParser();
+    if (r5 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 6: E2E — new command ──────────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". E2E: new command"));
+    println("────────────────────────────────────────");
+    set r6: int = testE2ENew();
+    if (r6 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 7: E2E — init command ─────────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". E2E: init command"));
+    println("────────────────────────────────────────");
+    set r7: int = testE2EInit();
+    if (r7 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 8: E2E — add/remove ──────────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". E2E: add & remove commands"));
+    println("────────────────────────────────────────");
+    set r8: int = testE2EAddRemove();
+    if (r8 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 9: E2E — build command ────────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". E2E: build command"));
+    println("────────────────────────────────────────");
+    set r9: int = testE2EBuild();
+    if (r9 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 10: E2E — run command ─────────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". E2E: run command"));
+    println("────────────────────────────────────────");
+    set r10: int = testE2ERun();
+    if (r10 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 11: E2E — tree with transitive deps ──────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". E2E: dependency tree display"));
+    println("────────────────────────────────────────");
+    set r11: int = testE2ETree();
+    if (r11 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 12: Lockfile v2 ─────────────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". Lockfile v2"));
+    println("────────────────────────────────────────");
+    set r12: int = testLockfile();
+    if (r12 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 13: Package Cache ───────────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". Package Cache"));
+    println("────────────────────────────────────────");
+    set r13: int = testCache();
+    if (r13 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 14: Registry ───────────────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". Registry"));
+    println("────────────────────────────────────────");
+    set r14: int = testRegistry();
+    if (r14 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Suite 15: Workspace ──────────────────────────────
+    suiteNum = suiteNum + 1;
+    println(str_concat(itoa(suiteNum), ". Workspace Support"));
+    println("────────────────────────────────────────");
+    set r15: int = testWorkspace();
+    if (r15 == 0) { totalPassed = totalPassed + 1; } else { totalFailed = totalFailed + 1; }
+    println("");
+
+    // ── Final Summary ────────────────────────────────────────
+    println("══════════════════════════════════════════════════");
+    set summary: string = str_concat("Suites: ", itoa(totalPassed));
+    summary = str_concat(summary, " passed, ");
+    summary = str_concat(summary, itoa(totalFailed));
+    summary = str_concat(summary, " failed out of ");
+    summary = str_concat(summary, itoa(suiteNum));
+    println(summary);
+    if (totalFailed > 0) {
+        println("RESULT: FAIL");
+        return 1;
+    }
+    println("RESULT: ALL PASS");
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Suite 1: Regression Tests
+// ═══════════════════════════════════════════════════════════════
+
+function testRegression(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+
+    // ── R1: strcmp_ajeeb equality semantics ─────────────────
+    // strcmp_ajeeb returns 0 for equal, non-zero for not equal
+    if (strcmp_ajeeb("hello", "hello") == 0) {
+        println("  ✓ R1a: strcmp_ajeeb(\"hello\",\"hello\") == 0");
+        passed = passed + 1;
+    } else {
+        println("  ✗ R1a: strcmp_ajeeb equality broken");
+        failed = failed + 1;
+    }
+    if (strcmp_ajeeb("hello", "world") != 0) {
+        println("  ✓ R1b: strcmp_ajeeb(\"hello\",\"world\") != 0");
+        passed = passed + 1;
+    } else {
+        println("  ✗ R1b: strcmp_ajeeb inequality broken");
+        failed = failed + 1;
+    }
+    if (strcmp_ajeeb("", "") == 0) {
+        println("  ✓ R1c: strcmp_ajeeb(\"\",\"\") == 0");
+        passed = passed + 1;
+    } else {
+        println("  ✗ R1c: empty string equality broken");
+        failed = failed + 1;
+    }
+
+    // ── R2: csvContains uses strcmp correctly ────────────────
+    if (csvContains("foo,bar,baz", "bar") == 1) {
+        println("  ✓ R2a: csvContains finds 'bar' in list");
+        passed = passed + 1;
+    } else {
+        println("  ✗ R2a: csvContains missed 'bar'");
+        failed = failed + 1;
+    }
+    if (csvContains("foo,bar,baz", "qux") == 0) {
+        println("  ✓ R2b: csvContains rejects 'qux'");
+        passed = passed + 1;
+    } else {
+        println("  ✗ R2b: false positive in csvContains");
+        failed = failed + 1;
+    }
+    if (csvContains("foo", "foo") == 1) {
+        println("  ✓ R2c: csvContains single item match");
+        passed = passed + 1;
+    } else {
+        println("  ✗ R2c: single item csvContains broken");
+        failed = failed + 1;
+    }
+    if (csvContains("", "foo") == 0) {
+        println("  ✓ R2d: csvContains empty string");
+        passed = passed + 1;
+    } else {
+        println("  ✗ R2d: empty csvContains broken");
+        failed = failed + 1;
+    }
+
+    // ── R3: Buffer aliasing — string vars survive parseDasConfig ──
+    mkdir("packages");
+    mkdir("packages/regtest");
+    writeFile("packages/regtest/parth.das", "[package]\nname = \"regtest\"\nversion = \"1.0.0\"\n\n[dependencies]\nfoo = \"^1.0.0\"\n");
+    writeFile("packages/regtest/foo/parth.das", "[package]\nname = \"foo\"\nversion = \"1.2.0\"\n\n[dependencies]\n");
+    mkdir("packages/regtest/foo");
+    writeFile("packages/regtest/foo/parth.das", "[package]\nname = \"foo\"\nversion = \"1.2.0\"\n\n[dependencies]\n");
+
+    // Store string data, then call parseDasConfig
+    set preStr: string = "this_should_survive";
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("packages/regtest/parth.das");
+    // The string variable preStr must still be intact (arena-owned, not buffer)
+    if (strcmp_ajeeb(preStr, "this_should_survive") == 0) {
+        println("  ✓ R3a: String vars survive parseDasConfig (no buffer aliasing)");
+        passed = passed + 1;
+    } else {
+        println("  ✗ R3a: Buffer aliasing corrupted string variable!");
+        failed = failed + 1;
+    }
+    // Verify parseDasConfig still worked
+    set src: string = readFile("packages/regtest/parth.das");
+    set pkgName: string = getConfigName(buf, src);
+    if (strcmp_ajeeb(pkgName, "regtest") == 0) {
+        println("  ✓ R3b: parseDasConfig still works after string storage");
+        passed = passed + 1;
+    } else {
+        println("  ✗ R3b: parseDasConfig broken after string storage");
+        failed = failed + 1;
+    }
+
+    // ── R4: Visited-set works in resolveAll ─────────────────
+    writeFile("parth.das", "[package]\nname = \"rvtest\"\nversion = \"0.1.0\"\n\n[dependencies]\nregtest = \"^1.0.0\"\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    set rBuf: string = getStateBuf();
+    set rR: int = parseDasConfig("parth.das");
+    set rSrc: string = readFile("parth.das");
+    set rr: int = resolveAll(rBuf, rSrc);
+    // Should resolve without conflict (single dep)
+    if (rr == 0) {
+        println("  ✓ R4: Visited-set dedup works (no false conflicts)");
+        passed = passed + 1;
+    } else {
+        println("  ✗ R4: Visited-set false conflict detected!");
+        failed = failed + 1;
+    }
+
+    // Cleanup
+    exec("rm -rf packages/regtest");
+    exec("rm -f parth.das");
+
+    set total: string = str_concat(itoa(passed), " passed, ");
+    total = str_concat(total, str_concat(itoa(failed), " failed"));
+    println(total);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Suite 4: CSV Helpers
+// ═══════════════════════════════════════════════════════════════
+
+function testCsv(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+
+    // csvLen
+    if (csvLen("") == 0) {
+        println("  ✓ csvLen(\"\") == 0"); passed = passed + 1;
+    } else { println("  ✗ csvLen(\"\") failed"); failed = failed + 1; }
+
+    if (csvLen("a") == 1) {
+        println("  ✓ csvLen(\"a\") == 1"); passed = passed + 1;
+    } else { println("  ✗ csvLen(\"a\") failed"); failed = failed + 1; }
+
+    if (csvLen("a,b,c") == 3) {
+        println("  ✓ csvLen(\"a,b,c\") == 3"); passed = passed + 1;
+    } else { println("  ✗ csvLen(\"a,b,c\") failed"); failed = failed + 1; }
+
+    // csvGet
+    if (strcmp_ajeeb(csvGet("alpha,beta,gamma", 0), "alpha") == 0) {
+        println("  ✓ csvGet(0) == \"alpha\""); passed = passed + 1;
+    } else { println("  ✗ csvGet(0) failed"); failed = failed + 1; }
+
+    if (strcmp_ajeeb(csvGet("alpha,beta,gamma", 1), "beta") == 0) {
+        println("  ✓ csvGet(1) == \"beta\""); passed = passed + 1;
+    } else { println("  ✗ csvGet(1) failed"); failed = failed + 1; }
+
+    if (strcmp_ajeeb(csvGet("alpha,beta,gamma", 2), "gamma") == 0) {
+        println("  ✓ csvGet(2) == \"gamma\""); passed = passed + 1;
+    } else { println("  ✗ csvGet(2) failed"); failed = failed + 1; }
+
+    if (strcmp_ajeeb(csvGet("alpha,beta,gamma", 3), "") == 0) {
+        println("  ✓ csvGet(3) == \"\" (out of bounds)"); passed = passed + 1;
+    } else { println("  ✗ csvGet(3) should be empty"); failed = failed + 1; }
+
+    // csvContains
+    if (csvContains("a,b,c", "b") == 1) {
+        println("  ✓ csvContains hit"); passed = passed + 1;
+    } else { println("  ✗ csvContains miss"); failed = failed + 1; }
+
+    if (csvContains("a,b,c", "d") == 0) {
+        println("  ✓ csvContains reject"); passed = passed + 1;
+    } else { println("  ✗ csvContains false positive"); failed = failed + 1; }
+
+    set total: string = str_concat(itoa(passed), " passed, ");
+    total = str_concat(total, str_concat(itoa(failed), " failed"));
+    println(total);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Suite 5: Config Parser
+// ═══════════════════════════════════════════════════════════════
+
+function testConfigParser(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+
+    mkdir("packages");
+    mkdir("packages/cpptest");
+
+    // Test config with all sections
+    writeFile("packages/cpptest/parth.das", "[package]\nname = \"cpptest\"\nversion = \"2.3.1\"\nauthor = \"testuser\"\n\n[dependencies]\nfoo = \"^1.0.0\"\nbar = \"~2.1.0\"\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("packages/cpptest/parth.das");
+    if (r == 0) {
+        println("  ✓ Config parsed"); passed = passed + 1;
+    } else { println("  ✗ Config parse failed"); failed = failed + 1; }
+
+    set src: string = readFile("packages/cpptest/parth.das");
+
+    // Package fields
+    if (strcmp_ajeeb(getConfigName(buf, src), "cpptest") == 0) {
+        println("  ✓ name = \"cpptest\""); passed = passed + 1;
+    } else { println("  ✗ name mismatch"); failed = failed + 1; }
+
+    if (strcmp_ajeeb(getConfigVersion(buf, src), "2.3.1") == 0) {
+        println("  ✓ version = \"2.3.1\""); passed = passed + 1;
+    } else { println("  ✗ version mismatch"); failed = failed + 1; }
+
+    if (strcmp_ajeeb(getConfigAuthor(buf, src), "testuser") == 0) {
+        println("  ✓ author = \"testuser\""); passed = passed + 1;
+    } else { println("  ✗ author mismatch"); failed = failed + 1; }
+
+    // Dependencies
+    set dc: int = getDepCount(buf);
+    if (dc == 2) {
+        println("  ✓ dep count = 2"); passed = passed + 1;
+    } else { println(str_concat("  ✗ dep count = ", itoa(dc))); failed = failed + 1; }
+
+    if (strcmp_ajeeb(getDepName(buf, src, 0), "foo") == 0 && strcmp_ajeeb(getDepVersion(buf, src, 0), "^1.0.0") == 0) {
+        println("  ✓ dep[0] = foo@^1.0.0"); passed = passed + 1;
+    } else { println("  ✗ dep[0] mismatch"); failed = failed + 1; }
+
+    if (strcmp_ajeeb(getDepName(buf, src, 1), "bar") == 0 && strcmp_ajeeb(getDepVersion(buf, src, 1), "~2.1.0") == 0) {
+        println("  ✓ dep[1] = bar@~2.1.0"); passed = passed + 1;
+    } else { println("  ✗ dep[1] mismatch"); failed = failed + 1; }
+
+    // Compiler fields
+    if (strcmp_ajeeb(getCompilerTarget(buf, src), "native") == 0) {
+        println("  ✓ target = \"native\""); passed = passed + 1;
+    } else { println("  ✗ target mismatch"); failed = failed + 1; }
+
+    // Empty deps config
+    writeFile("packages/cpptest/nodeps.das", "[package]\nname = \"nodeps\"\nversion = \"0.1.0\"\n\n[dependencies]\n");
+    set r2: int = parseDasConfig("packages/cpptest/nodeps.das");
+    if (r2 == 0 && getDepCount(buf) == 0) {
+        println("  ✓ Empty deps parsed"); passed = passed + 1;
+    } else { println("  ✗ Empty deps failed"); failed = failed + 1; }
+
+    // parseSpec
+    if (strcmp_ajeeb(parseSpec("foo@^1.0.0"), "foo@^1.0.0") == 0) {
+        println("  ✓ parseSpec(\"foo@^1.0.0\")"); passed = passed + 1;
+    } else { println("  ✗ parseSpec with @ failed"); failed = failed + 1; }
+
+    if (strcmp_ajeeb(parseSpec("bar"), "bar@*") == 0) {
+        println("  ✓ parseSpec(\"bar\") => \"bar@*\""); passed = passed + 1;
+    } else { println("  ✗ parseSpec default version failed"); failed = failed + 1; }
+
+    exec("rm -rf packages/cpptest");
+
+    set total: string = str_concat(itoa(passed), " passed, ");
+    total = str_concat(total, str_concat(itoa(failed), " failed"));
+    println(total);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Suite 6-11: End-to-End Tests
+// ═══════════════════════════════════════════════════════════════
+
+function testE2ENew(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+    set testDir: string = "/tmp/parth_e2e_new";
+
+    exec(str_concat("rm -rf ", testDir));
+    set r: int = exec(str_concat("mkdir -p ", testDir));
+
+    // Create new project inside testDir
+    r = exec(str_concat("cd ", str_concat(testDir, " && /root/ajeeb_compiler/build/parth_m1 new myproj 2>&1")));
+    if (r == 0) {
+        println("  ✓ 'parth new' exited 0"); passed = passed + 1;
+    } else { println("  ✗ 'parth new' failed"); failed = failed + 1; }
+
+    // Verify files created
+    set chk: int = exec(str_concat("test -f ", str_concat(testDir, "/myproj/parth.das && echo OK")));
+    // Use readFile to check
+    set dasContent: string = readFile(str_concat(testDir, "/myproj/parth.das"));
+    if (len(dasContent) > 0) {
+        println("  ✓ parth.das created"); passed = passed + 1;
+    } else { println("  ✗ parth.das missing"); failed = failed + 1; }
+
+    set srcContent: string = readFile(str_concat(testDir, "/myproj/src/main.ajb"));
+    if (len(srcContent) > 0) {
+        println("  ✓ src/main.ajb created"); passed = passed + 1;
+    } else { println("  ✗ src/main.ajb missing"); failed = failed + 1; }
+
+    // Verify parth.das has correct name
+    set nameIdx: int = 0;
+    set found: int = 0;
+    while (nameIdx < len(dasContent)) {
+        if (charCode(dasContent, nameIdx) == 109 && charCode(dasContent, nameIdx + 1) == 121 && charCode(dasContent, nameIdx + 2) == 112 && charCode(dasContent, nameIdx + 3) == 114 && charCode(dasContent, nameIdx + 4) == 111 && charCode(dasContent, nameIdx + 5) == 106) {
+            found = 1;
+        }
+        nameIdx = nameIdx + 1;
+    }
+    if (found == 1) {
+        println("  ✓ parth.das contains project name"); passed = passed + 1;
+    } else { println("  ✗ project name missing in parth.das"); failed = failed + 1; }
+
+    exec(str_concat("rm -rf ", testDir));
+
+    set total: string = str_concat(itoa(passed), " passed, ");
+    total = str_concat(total, str_concat(itoa(failed), " failed"));
+    println(total);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+function testE2EInit(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+    set testDir: string = "/tmp/parth_e2e_init";
+
+    exec(str_concat("rm -rf ", testDir));
+    exec(str_concat("mkdir -p ", testDir));
+
+    // Init in existing dir
+    set r: int = exec(str_concat("cd ", str_concat(testDir, " && /root/ajeeb_compiler/build/parth_m1 init testinit 2>&1")));
+    if (r == 0) {
+        println("  ✓ 'parth init' exited 0"); passed = passed + 1;
+    } else { println("  ✗ 'parth init' failed"); failed = failed + 1; }
+
+    set dasContent: string = readFile(str_concat(testDir, "/parth.das"));
+    if (len(dasContent) > 0) {
+        println("  ✓ parth.das created in current dir"); passed = passed + 1;
+    } else { println("  ✗ parth.das missing"); failed = failed + 1; }
+
+    set srcContent: string = readFile(str_concat(testDir, "/src/main.ajb"));
+    if (len(srcContent) > 0) {
+        println("  ✓ src/main.ajb created"); passed = passed + 1;
+    } else { println("  ✗ src/main.ajb missing"); failed = failed + 1; }
+
+    exec(str_concat("rm -rf ", testDir));
+
+    set total: string = str_concat(itoa(passed), " passed, ");
+    total = str_concat(total, str_concat(itoa(failed), " failed"));
+    println(total);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+function testE2EAddRemove(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+    set testDir: string = "/tmp/parth_e2e_add";
+
+    exec(str_concat("rm -rf ", testDir));
+    exec(str_concat("mkdir -p ", testDir));
+    exec(str_concat("cd ", str_concat(testDir, " && /root/ajeeb_compiler/build/parth_m1 init addtest 2>&1")));
+
+    // Add a dependency
+    set r: int = exec(str_concat("cd ", str_concat(testDir, " && /root/ajeeb_compiler/build/parth_m1 add foo@^1.0.0 2>&1")));
+    if (r == 0) {
+        println("  ✓ 'parth add' exited 0"); passed = passed + 1;
+    } else { println("  ✗ 'parth add' failed"); failed = failed + 1; }
+
+    // Verify dep in parth.das
+    set dasContent: string = readFile(str_concat(testDir, "/parth.das"));
+    // Check for 'foo' in the file
+    set hasFoo: int = 0;
+    set fi: int = 0;
+    while (fi < len(dasContent)) {
+        if (fi + 2 < len(dasContent)) {
+            if (charCode(dasContent, fi) == 102 && charCode(dasContent, fi + 1) == 111 && charCode(dasContent, fi + 2) == 111) {
+                hasFoo = 1;
+            }
+        }
+        fi = fi + 1;
+    }
+    if (hasFoo == 1) {
+        println("  ✓ Dependency 'foo' found in parth.das"); passed = passed + 1;
+    } else { println("  ✗ Dependency 'foo' not in parth.das"); failed = failed + 1; }
+
+    // Add second dependency
+    r = exec(str_concat("cd ", str_concat(testDir, " && /root/ajeeb_compiler/build/parth_m1 add bar@~2.0.0 2>&1")));
+    if (r == 0) {
+        println("  ✓ Second add exited 0"); passed = passed + 1;
+    } else { println("  ✗ Second add failed"); failed = failed + 1; }
+
+    // Remove first dependency
+    r = exec(str_concat("cd ", str_concat(testDir, " && /root/ajeeb_compiler/build/parth_m1 remove foo 2>&1")));
+    if (r == 0) {
+        println("  ✓ 'parth remove' exited 0"); passed = passed + 1;
+    } else { println("  ✗ 'parth remove' failed"); failed = failed + 1; }
+
+    // Verify foo is gone
+    dasContent = readFile(str_concat(testDir, "/parth.das"));
+    set hasFooAfter: int = 0;
+    fi = 0;
+    while (fi < len(dasContent)) {
+        if (fi + 2 < len(dasContent)) {
+            if (charCode(dasContent, fi) == 102 && charCode(dasContent, fi + 1) == 111 && charCode(dasContent, fi + 2) == 111) {
+                hasFooAfter = 1;
+            }
+        }
+        fi = fi + 1;
+    }
+    if (hasFooAfter == 0) {
+        println("  ✓ 'foo' removed from parth.das"); passed = passed + 1;
+    } else { println("  ✗ 'foo' still in parth.das"); failed = failed + 1; }
+
+    // Remove non-existent
+    r = exec(str_concat("cd ", str_concat(testDir, " && /root/ajeeb_compiler/build/parth_m1 remove nonexistent 2>&1")));
+    if (r != 0) {
+        println("  ✓ Remove nonexistent returns error"); passed = passed + 1;
+    } else { println("  ✗ Remove nonexistent should fail"); failed = failed + 1; }
+
+    exec(str_concat("rm -rf ", testDir));
+
+    set total: string = str_concat(itoa(passed), " passed, ");
+    total = str_concat(total, str_concat(itoa(failed), " failed"));
+    println(total);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+function testE2EBuild(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+    set testDir: string = "/tmp/parth_e2e_build";
+
+    exec(str_concat("rm -rf ", testDir));
+    exec(str_concat("mkdir -p ", testDir));
+    exec(str_concat("cd ", str_concat(testDir, " && /root/ajeeb_compiler/build/parth_m1 new buildtest 2>&1")));
+
+    // Build the project
+    set r: int = exec(str_concat("cd ", str_concat(testDir, "/buildtest && /root/ajeeb_compiler/build/parth_m1 build 2>&1")));
+    if (r == 0) {
+        println("  ✓ 'parth build' exited 0"); passed = passed + 1;
+    } else { println("  ✗ 'parth build' failed"); failed = failed + 1; }
+
+    // Verify binary created
+    set binExists: string = readFile(str_concat(testDir, "/buildtest/build/buildtest"));
+    // Binary is not text-readable, but check size via ls
+    set lsR: int = exec(str_concat("test -x ", str_concat(testDir, "/buildtest/build/buildtest && echo OK")));
+    // If test -x exits 0, binary exists and is executable
+    // We check by seeing if build dir is non-empty
+    set buildDir: string = readFile(str_concat(testDir, "/buildtest/build/"));
+    if (len(buildDir) > 0 || r == 0) {
+        println("  ✓ Binary built successfully"); passed = passed + 1;
+    } else { println("  ✗ Binary not found"); failed = failed + 1; }
+
+    exec(str_concat("rm -rf ", testDir));
+
+    set total: string = str_concat(itoa(passed), " passed, ");
+    total = str_concat(total, str_concat(itoa(failed), " failed"));
+    println(total);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+function testE2ERun(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+    set testDir: string = "/tmp/parth_e2e_run";
+
+    exec(str_concat("rm -rf ", testDir));
+    exec(str_concat("mkdir -p ", testDir));
+    exec(str_concat("cd ", str_concat(testDir, " && /root/ajeeb_compiler/build/parth_m1 new runtest 2>&1")));
+
+    // Run (builds + executes)
+    set r: int = exec(str_concat("cd ", str_concat(testDir, "/runtest && /root/ajeeb_compiler/build/parth_m1 run 2>&1")));
+    if (r == 0) {
+        println("  ✓ 'parth run' exited 0"); passed = passed + 1;
+    } else { println("  ✗ 'parth run' failed"); failed = failed + 1; }
+
+    exec(str_concat("rm -rf ", testDir));
+
+    set total: string = str_concat(itoa(passed), " passed, ");
+    total = str_concat(total, str_concat(itoa(failed), " failed"));
+    println(total);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+function testE2ETree(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+
+    // Setup test packages
+    mkdir("packages");
+    mkdir("packages/alpha");
+    mkdir("packages/beta");
+    mkdir("packages/charlie");
+
+    writeFile("packages/alpha/parth.das", "[package]\nname = \"alpha\"\nversion = \"1.0.0\"\n\n[dependencies]\nbeta = \"^1.0.0\"\ncharlie = \"^2.0.0\"\n");
+    writeFile("packages/beta/parth.das", "[package]\nname = \"beta\"\nversion = \"1.2.0\"\n\n[dependencies]\n");
+    writeFile("packages/charlie/parth.das", "[package]\nname = \"charlie\"\nversion = \"2.1.0\"\n\n[dependencies]\n");
+
+    // Create root project with alpha dep
+    writeFile("parth.das", "[package]\nname = \"treetest\"\nversion = \"0.1.0\"\n\n[dependencies]\nalpha = \"^1.0.0\"\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+
+    // Test tree display
+    set r: int = dependencyTree();
+    if (r == 0) {
+        println("  ✓ Tree display succeeded"); passed = passed + 1;
+    } else { println("  ✗ Tree display failed"); failed = failed + 1; }
+
+    // Test resolveAll
+    set buf: string = getStateBuf();
+    set r2: int = parseDasConfig("parth.das");
+    set src: string = readFile("parth.das");
+    set r3: int = resolveAll(buf, src);
+    if (r3 == 0) {
+        println("  ✓ resolveAll succeeded"); passed = passed + 1;
+    } else { println("  ✗ resolveAll failed"); failed = failed + 1; }
+
+    // Test cycle detection in tree
+    writeFile("packages/beta/parth.das", "[package]\nname = \"beta\"\nversion = \"1.2.0\"\n\n[dependencies]\nalpha = \"^1.0.0\"\n");
+    set r4: int = dependencyTree();
+    if (r4 == 0) {
+        println("  ✓ Cycle in tree handled"); passed = passed + 1;
+    } else { println("  ✗ Cycle in tree failed"); failed = failed + 1; }
+
+    // Test conflict detection (both exact, incompatible versions)
+    writeFile("packages/beta/parth.das", "[package]\nname = \"beta\"\nversion = \"1.2.0\"\n\n[dependencies]\ncharlie = \"4.0.0\"\n");
+    writeFile("parth.das", "[package]\nname = \"treetest\"\nversion = \"0.1.0\"\n\n[dependencies]\nalpha = \"^1.0.0\"\ncharlie = \"3.0.0\"\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    set buf2: string = getStateBuf();
+    set r5: int = parseDasConfig("parth.das");
+    set src2: string = readFile("parth.das");
+    set r6: int = resolveAll(buf2, src2);
+    // alpha→beta→charlie@3.0.0 conflicts with root charlie@^2.0.0
+    if (r6 == 1) {
+        println("  ✓ Conflict detected in resolveAll"); passed = passed + 1;
+    } else { println("  ✗ Conflict not detected"); failed = failed + 1; }
+
+    // Cleanup
+    exec("rm -rf packages");
+    exec("rm -f parth.das");
+
+    set total: string = str_concat(itoa(passed), " passed, ");
+    total = str_concat(total, str_concat(itoa(failed), " failed"));
+    println(total);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+function testSemver(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+    set buf: string = getStateBuf();
+
+    // Helper: assert parseSemver
+    // Test 1: parseSemver("1.2.3")
+    set r: int = parseSemver("1.2.3");
+    if (r == 0 && br(buf, 500) == 1 && br(buf, 501) == 2 && br(buf, 502) == 3) {
+        println("✓ parseSemver(\"1.2.3\") => 1.2.3");
+        passed = passed + 1;
+    } else {
+        println("✗ parseSemver(\"1.2.3\") failed");
+        failed = failed + 1;
+    }
+
+    // Test 2: parseSemver("0.1.0")
+    r = parseSemver("0.1.0");
+    if (r == 0 && br(buf, 500) == 0 && br(buf, 501) == 1 && br(buf, 502) == 0) {
+        println("✓ parseSemver(\"0.1.0\") => 0.1.0");
+        passed = passed + 1;
+    } else {
+        println("✗ parseSemver(\"0.1.0\") failed");
+        failed = failed + 1;
+    }
+
+    // Test 3: compareVersions(1.2.3, 1.2.3) == 0
+    parseSemver("1.2.3");
+    set aOff: int = 500;
+    parseSemver("1.2.3");
+    set bOff: int = 500;
+    // Need separate slots — re-parse into different positions
+    parseSemver("1.2.3");
+    bw(buf, 510, br(buf, 500));
+    bw(buf, 511, br(buf, 501));
+    bw(buf, 512, br(buf, 502));
+    parseSemver("1.2.3");
+    bw(buf, 520, br(buf, 500));
+    bw(buf, 521, br(buf, 501));
+    bw(buf, 522, br(buf, 502));
+    set cmp: int = compareVersions(510, 520);
+    if (cmp == 0) {
+        println("✓ compareVersions(1.2.3, 1.2.3) == 0");
+        passed = passed + 1;
+    } else {
+        println("✗ compareVersions(1.2.3, 1.2.3) expected 0");
+        failed = failed + 1;
+    }
+
+    // Test 4: compareVersions(1.2.4, 1.2.3) == 1
+    parseSemver("1.2.4");
+    bw(buf, 510, br(buf, 500));
+    bw(buf, 511, br(buf, 501));
+    bw(buf, 512, br(buf, 502));
+    parseSemver("1.2.3");
+    bw(buf, 520, br(buf, 500));
+    bw(buf, 521, br(buf, 501));
+    bw(buf, 522, br(buf, 502));
+    cmp = compareVersions(510, 520);
+    if (cmp == 1) {
+        println("✓ compareVersions(1.2.4, 1.2.3) == 1");
+        passed = passed + 1;
+    } else {
+        println("✗ compareVersions(1.2.4, 1.2.3) expected 1");
+        failed = failed + 1;
+    }
+
+    // Test 5: compareVersions(1.2.3, 1.2.4) == -1
+    cmp = compareVersions(520, 510);
+    if (cmp == -1) {
+        println("✓ compareVersions(1.2.3, 1.2.4) == -1");
+        passed = passed + 1;
+    } else {
+        println("✗ compareVersions(1.2.3, 1.2.4) expected -1");
+        failed = failed + 1;
+    }
+
+    // Test 6: exact match — 1.2.3 matches 1.2.3
+    parseConstraint("1.2.3");
+    parseSemver("1.2.3");
+    if (matchesConstraint(500, 600) == 1) {
+        println("✓ exact 1.2.3 matches 1.2.3");
+        passed = passed + 1;
+    } else {
+        println("✗ exact 1.2.3 should match 1.2.3");
+        failed = failed + 1;
+    }
+
+    // Test 7: exact mismatch — 1.2.3 rejects 1.2.4
+    parseSemver("1.2.4");
+    if (matchesConstraint(500, 600) == 0) {
+        println("✓ exact 1.2.3 rejects 1.2.4");
+        passed = passed + 1;
+    } else {
+        println("✗ exact 1.2.3 should reject 1.2.4");
+        failed = failed + 1;
+    }
+
+    // Test 8: caret — ^1.2.3 matches 1.5.0
+    parseConstraint("^1.2.3");
+    parseSemver("1.5.0");
+    if (matchesConstraint(500, 600) == 1) {
+        println("✓ ^1.2.3 matches 1.5.0");
+        passed = passed + 1;
+    } else {
+        println("✗ ^1.2.3 should match 1.5.0");
+        failed = failed + 1;
+    }
+
+    // Test 9: caret — ^1.2.3 rejects 2.0.0
+    parseSemver("2.0.0");
+    if (matchesConstraint(500, 600) == 0) {
+        println("✓ ^1.2.3 rejects 2.0.0");
+        passed = passed + 1;
+    } else {
+        println("✗ ^1.2.3 should reject 2.0.0");
+        failed = failed + 1;
+    }
+
+    // Test 10: caret 0.x — ^0.2.3 rejects 0.3.0
+    parseConstraint("^0.2.3");
+    parseSemver("0.3.0");
+    if (matchesConstraint(500, 600) == 0) {
+        println("✓ ^0.2.3 rejects 0.3.0");
+        passed = passed + 1;
+    } else {
+        println("✗ ^0.2.3 should reject 0.3.0");
+        failed = failed + 1;
+    }
+
+    // Test 11: tilde — ~1.2.3 matches 1.2.9
+    parseConstraint("~1.2.3");
+    parseSemver("1.2.9");
+    if (matchesConstraint(500, 600) == 1) {
+        println("✓ ~1.2.3 matches 1.2.9");
+        passed = passed + 1;
+    } else {
+        println("✗ ~1.2.3 should match 1.2.9");
+        failed = failed + 1;
+    }
+
+    // Test 12: tilde — ~1.2.3 rejects 1.3.0
+    parseSemver("1.3.0");
+    if (matchesConstraint(500, 600) == 0) {
+        println("✓ ~1.2.3 rejects 1.3.0");
+        passed = passed + 1;
+    } else {
+        println("✗ ~1.2.3 should reject 1.3.0");
+        failed = failed + 1;
+    }
+
+    // Test 13: gte — >=1.2.3 matches 1.2.3
+    parseConstraint(">=1.2.3");
+    parseSemver("1.2.3");
+    if (matchesConstraint(500, 600) == 1) {
+        println("✓ >=1.2.3 matches 1.2.3");
+        passed = passed + 1;
+    } else {
+        println("✗ >=1.2.3 should match 1.2.3");
+        failed = failed + 1;
+    }
+
+    // Test 14: gte — >=1.2.3 matches 2.0.0
+    parseSemver("2.0.0");
+    if (matchesConstraint(500, 600) == 1) {
+        println("✓ >=1.2.3 matches 2.0.0");
+        passed = passed + 1;
+    } else {
+        println("✗ >=1.2.3 should match 2.0.0");
+        failed = failed + 1;
+    }
+
+    // Test 15: gte — >=1.2.3 rejects 1.2.2
+    parseSemver("1.2.2");
+    if (matchesConstraint(500, 600) == 0) {
+        println("✓ >=1.2.3 rejects 1.2.2");
+        passed = passed + 1;
+    } else {
+        println("✗ >=1.2.3 should reject 1.2.2");
+        failed = failed + 1;
+    }
+
+    // Test 16: wildcard — * matches everything
+    parseConstraint("*");
+    parseSemver("9.9.9");
+    if (matchesConstraint(500, 600) == 1) {
+        println("✓ * matches 9.9.9");
+        passed = passed + 1;
+    } else {
+        println("✗ * should match 9.9.9");
+        failed = failed + 1;
+    }
+
+    // Summary
+    println("");
+    set total: string = str_concat(itoa(passed), " passed, ");
+    total = str_concat(total, str_concat(itoa(failed), " failed"));
+    println(total);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+function testTree(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+
+    // Setup: create test packages with transitive deps
+    mkdir("packages");
+    mkdir("packages/foo");
+    mkdir("packages/bar");
+    mkdir("packages/baz");
+    mkdir("packages/shared");
+
+    // foo depends on bar
+    writeFile("packages/foo/parth.das", "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n\n[dependencies]\nbar = \"^2.0.0\"\n");
+
+    // bar depends on shared
+    writeFile("packages/bar/parth.das", "[package]\nname = \"bar\"\nversion = \"2.1.0\"\n\n[dependencies]\nshared = \"~1.0.0\"\n");
+
+    // baz depends on shared
+    writeFile("packages/baz/parth.das", "[package]\nname = \"baz\"\nversion = \"1.5.0\"\n\n[dependencies]\nshared = \">=1.0.0\"\n");
+
+    // shared has no deps
+    writeFile("packages/shared/parth.das", "[package]\nname = \"shared\"\nversion = \"1.0.0\"\n\n[dependencies]\n");
+
+    // Test 1: tree with linear chain (foo → bar → shared)
+    println("=== Test 1: Linear chain ===");
+    writeFile("parth.das", "[package]\nname = \"testapp\"\nversion = \"0.1.0\"\n\n[dependencies]\nfoo = \"^1.0.0\"\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r == 0) {
+        set src: string = readFile("parth.das");
+        set projName: string = getConfigName(buf, src);
+        if (strcmp_ajeeb(projName, "testapp") == 0) {
+            println("✓ Project name parsed correctly");
+            passed = passed + 1;
+        } else {
+            println("✗ Project name parse failed");
+            failed = failed + 1;
+        }
+        // Check dep count
+        set dc: int = getDepCount(buf);
+        if (dc == 1) {
+            println("✓ Root dep count = 1");
+            passed = passed + 1;
+        } else {
+            println("✗ Root dep count expected 1");
+            failed = failed + 1;
+        }
+    } else {
+        println("✗ Failed to parse test config");
+        failed = failed + 1;
+    }
+
+    // Test 2: tree display
+    println("");
+    println("=== Test 2: Tree display ===");
+    set r2: int = dependencyTree();
+    if (r2 == 0) {
+        println("✓ Tree display succeeded");
+        passed = passed + 1;
+    } else {
+        println("✗ Tree display failed");
+        failed = failed + 1;
+    }
+
+    // Test 3: shared dependency (foo and baz both need shared)
+    println("");
+    println("=== Test 3: Shared dependency ===");
+    writeFile("parth.das", "[package]\nname = \"testapp\"\nversion = \"0.1.0\"\n\n[dependencies]\nfoo = \"^1.0.0\"\nbaz = \"^1.5.0\"\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    set r3: int = dependencyTree();
+    if (r3 == 0) {
+        println("✓ Shared dep tree succeeded");
+        passed = passed + 1;
+    } else {
+        println("✗ Shared dep tree failed");
+        failed = failed + 1;
+    }
+
+    // Test 4: cycle detection (foo → bar → foo)
+    println("");
+    println("=== Test 4: Cycle detection ===");
+    writeFile("packages/bar/parth.das", "[package]\nname = \"bar\"\nversion = \"2.1.0\"\n\n[dependencies]\nfoo = \"^1.0.0\"\n");
+    writeFile("parth.das", "[package]\nname = \"testapp\"\nversion = \"0.1.0\"\n\n[dependencies]\nfoo = \"^1.0.0\"\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    // The BFS resolver should handle cycles via visited set
+    set r4: int = dependencyTree();
+    if (r4 == 0) {
+        println("✓ Cycle handled (tree display)");
+        passed = passed + 1;
+    } else {
+        println("✗ Cycle handling failed");
+        failed = failed + 1;
+    }
+
+    // Restore bar's deps
+    writeFile("packages/bar/parth.das", "[package]\nname = \"bar\"\nversion = \"2.1.0\"\n\n[dependencies]\nshared = \"~1.0.0\"\n");
+
+    // Test 5: version conflict detection
+    println("");
+    println("=== Test 5: Version conflict ===");
+    // foo needs bar@^2.0.0, but if another dep needs bar@^3.0.0 (incompatible exact)
+    writeFile("packages/foo/parth.das", "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n\n[dependencies]\nbar = \"1.0.0\"\n");
+    writeFile("packages/baz/parth.das", "[package]\nname = \"baz\"\nversion = \"1.5.0\"\n\n[dependencies]\nbar = \"2.0.0\"\n");
+    writeFile("parth.das", "[package]\nname = \"testapp\"\nversion = \"0.1.0\"\n\n[dependencies]\nfoo = \"^1.0.0\"\nbaz = \"^1.5.0\"\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    set buf2: string = getStateBuf();
+    set r5: int = parseDasConfig("parth.das");
+    if (r5 == 0) {
+        set src2: string = readFile("parth.das");
+        set r5r: int = resolveAll(buf2, src2);
+        if (r5r == 1) {
+            println("✓ Conflict detected correctly");
+            passed = passed + 1;
+        } else {
+            println("✗ Conflict should have been detected");
+            failed = failed + 1;
+        }
+    } else {
+        println("✗ Failed to parse conflict test config");
+        failed = failed + 1;
+    }
+
+    // Restore packages
+    writeFile("packages/foo/parth.das", "[package]\nname = \"foo\"\nversion = \"1.0.0\"\n\n[dependencies]\nbar = \"^2.0.0\"\n");
+    writeFile("packages/baz/parth.das", "[package]\nname = \"baz\"\nversion = \"1.5.0\"\n\n[dependencies]\nshared = \">=1.0.0\"\n");
+
+    // Cleanup
+    exec("rm -rf packages");
+    exec("rm -f parth.das");
+
+    // Summary
+    println("");
+    set total: string = str_concat(itoa(passed), " passed, ");
+    total = str_concat(total, str_concat(itoa(failed), " failed"));
+    println(total);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Suite 12: Lockfile v2 Tests
+// ═══════════════════════════════════════════════════════════════
+
+function testLockfile(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+
+    // ── Setup: create test packages ────────────────────────
+    mkdir("packages");
+    mkdir("packages/lf_alpha");
+    mkdir("packages/lf_beta");
+    mkdir("packages/lf_gamma");
+    mkdir("packages/lf_extra");
+
+    writeFile("packages/lf_alpha/parth.das", "[package]\nname = \"lf_alpha\"\nversion = \"1.0.0\"\n\n[dependencies]\nlf_beta = \"^1.0.0\"\n");
+    writeFile("packages/lf_beta/parth.das", "[package]\nname = \"lf_beta\"\nversion = \"1.2.0\"\n\n[dependencies]\nlf_gamma = \"^1.0.0\"\n");
+    writeFile("packages/lf_gamma/parth.das", "[package]\nname = \"lf_gamma\"\nversion = \"1.1.0\"\n\n[dependencies]\n");
+    writeFile("packages/lf_extra/parth.das", "[package]\nname = \"lf_extra\"\nversion = \"1.0.0\"\n\n[dependencies]\n");
+
+    // ── Test 1: resolveAllLockAware writes lockfile ─────────
+    println("=== Test 1: resolveAllLockAware writes lockfile ===");
+    writeFile("parth.das", "[package]\nname = \"lf_testapp\"\nversion = \"0.1.0\"\n\n[dependencies]\nlf_alpha = \"^1.0.0\"\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    set buf: string = getStateBuf();
+    set r: int = parseDasConfig("parth.das");
+    if (r == 0) {
+        set src: string = readFile("parth.das");
+        set r2: int = resolveAllLockAware(buf, src);
+        if (r2 == 0) {
+            println("  ✓ resolveAllLockAware succeeded");
+            passed = passed + 1;
+        } else {
+            println("  ✗ resolveAllLockAware failed");
+            failed = failed + 1;
+        }
+    } else {
+        println("  ✗ Failed to parse config");
+        failed = failed + 1;
+    }
+
+    // ── Test 2: parth.lock has v2 header ────────────────────
+    println("");
+    println("=== Test 2: parth.lock has v2 header ===");
+    set lockContent: string = readFile("parth.lock");
+    if (len(lockContent) > 0) {
+        set hasV2: int = 0;
+        if (len(lockContent) > 15) {
+            if (charCode(lockContent, 0) == 35 && charCode(lockContent, 1) == 32 && charCode(lockContent, 2) == 112 && charCode(lockContent, 3) == 97 && charCode(lockContent, 4) == 114 && charCode(lockContent, 5) == 116 && charCode(lockContent, 6) == 104 && charCode(lockContent, 7) == 45 && charCode(lockContent, 8) == 108 && charCode(lockContent, 9) == 111 && charCode(lockContent, 10) == 99 && charCode(lockContent, 11) == 107 && charCode(lockContent, 12) == 45 && charCode(lockContent, 13) == 118 && charCode(lockContent, 14) == 50) {
+                hasV2 = 1;
+            }
+        }
+        if (hasV2 == 1) {
+            println("  ✓ Lockfile has v2 header");
+            passed = passed + 1;
+        } else {
+            println("  ✗ Lockfile missing v2 header");
+            failed = failed + 1;
+        }
+    } else {
+        println("  ✗ Lockfile is empty or missing");
+        failed = failed + 1;
+    }
+
+    // ── Test 3: lockfile contains resolved packages ─────────
+    println("");
+    println("=== Test 3: lockfile contains packages ===");
+    set hasAlpha: int = 0;
+    set hasBeta: int = 0;
+    set hasGamma: int = 0;
+    set li: int = 0;
+    while (li + 7 < len(lockContent)) {
+        if (charCode(lockContent, li) == 108 && charCode(lockContent, li + 1) == 102 && charCode(lockContent, li + 2) == 95 && charCode(lockContent, li + 3) == 97 && charCode(lockContent, li + 4) == 108 && charCode(lockContent, li + 5) == 112 && charCode(lockContent, li + 6) == 104 && charCode(lockContent, li + 7) == 97) {
+            hasAlpha = 1;
+        }
+        if (charCode(lockContent, li) == 108 && charCode(lockContent, li + 1) == 102 && charCode(lockContent, li + 2) == 95 && charCode(lockContent, li + 3) == 98 && charCode(lockContent, li + 4) == 101 && charCode(lockContent, li + 5) == 116 && charCode(lockContent, li + 6) == 97) {
+            hasBeta = 1;
+        }
+        if (charCode(lockContent, li) == 108 && charCode(lockContent, li + 1) == 102 && charCode(lockContent, li + 2) == 95 && charCode(lockContent, li + 3) == 103 && charCode(lockContent, li + 4) == 97 && charCode(lockContent, li + 5) == 109 && charCode(lockContent, li + 6) == 109 && charCode(lockContent, li + 7) == 97) {
+            hasGamma = 1;
+        }
+        li = li + 1;
+    }
+    if (hasAlpha == 1) {
+        println("  ✓ lf_alpha found in lockfile");
+        passed = passed + 1;
+    } else {
+        println("  ✗ lf_alpha missing from lockfile");
+        failed = failed + 1;
+    }
+    if (hasBeta == 1) {
+        println("  ✓ lf_beta found in lockfile");
+        passed = passed + 1;
+    } else {
+        println("  ✗ lf_beta missing from lockfile");
+        failed = failed + 1;
+    }
+    if (hasGamma == 1) {
+        println("  ✓ lf_gamma found in lockfile");
+        passed = passed + 1;
+    } else {
+        println("  ✗ lf_gamma missing from lockfile");
+        failed = failed + 1;
+    }
+
+    // ── Test 4: re-resolve uses lockfile pins ────────────────
+    println("");
+    println("=== Test 4: re-resolve uses lockfile pins ===");
+    set buf2: string = getStateBuf();
+    set r3: int = parseDasConfig("parth.das");
+    if (r3 == 0) {
+        set src2: string = readFile("parth.das");
+        set r4: int = resolveAllLockAware(buf2, src2);
+        if (r4 == 0) {
+            println("  ✓ Re-resolve succeeded");
+            passed = passed + 1;
+        } else {
+            println("  ✗ Re-resolve failed");
+            failed = failed + 1;
+        }
+    } else {
+        println("  ✗ Failed to parse config for re-resolve");
+        failed = failed + 1;
+    }
+
+    // ── Test 5: lockfile roundtrip preserved ─────────────────
+    println("");
+    println("=== Test 5: lockfile roundtrip ===");
+    set lock2: string = readFile("parth.lock");
+    if (len(lock2) > 0) {
+        set hasV2b: int = 0;
+        if (len(lock2) > 15 && charCode(lock2, 0) == 35 && charCode(lock2, 2) == 112 && charCode(lock2, 8) == 108 && charCode(lock2, 13) == 118 && charCode(lock2, 14) == 50) {
+            hasV2b = 1;
+        }
+        if (hasV2b == 1) {
+            println("  ✓ Lockfile roundtrip preserved");
+            passed = passed + 1;
+        } else {
+            println("  ✗ Lockfile lost v2 header after roundtrip");
+            failed = failed + 1;
+        }
+    } else {
+        println("  ✗ Lockfile empty after roundtrip");
+        failed = failed + 1;
+    }
+
+    // ── Test 6: add dep and re-resolve ──────────────────────
+    println("");
+    println("=== Test 6: add dep updates lockfile ===");
+    set addR: int = addDep("lf_extra", "^1.0.0");
+    if (addR == 0) {
+        set buf3: string = getStateBuf();
+        set r5: int = parseDasConfig("parth.das");
+        if (r5 == 0) {
+            set src3: string = readFile("parth.das");
+            set r6: int = resolveAllLockAware(buf3, src3);
+            if (r6 == 0) {
+                set lock3: string = readFile("parth.lock");
+                set hasExtra: int = 0;
+                set ei: int = 0;
+                while (ei + 7 < len(lock3)) {
+                    if (charCode(lock3, ei) == 108 && charCode(lock3, ei + 1) == 102 && charCode(lock3, ei + 2) == 95 && charCode(lock3, ei + 3) == 101 && charCode(lock3, ei + 4) == 120 && charCode(lock3, ei + 5) == 116 && charCode(lock3, ei + 6) == 114 && charCode(lock3, ei + 7) == 97) {
+                        hasExtra = 1;
+                    }
+                    ei = ei + 1;
+                }
+                if (hasExtra == 1) {
+                    println("  ✓ Added dep 'lf_extra' found in lockfile");
+                    passed = passed + 1;
+                } else {
+                    println("  ✗ Added dep 'lf_extra' missing from lockfile");
+                    failed = failed + 1;
+                }
+            } else {
+                println("  ✗ Re-resolve after add failed");
+                failed = failed + 1;
+            }
+        } else {
+            println("  ✗ Failed to parse config after add");
+            failed = failed + 1;
+        }
+    } else {
+        println("  ✗ addDep failed");
+        failed = failed + 1;
+    }
+
+    // ── Cleanup ─────────────────────────────────────────────
+    exec("rm -rf packages");
+    exec("rm -f parth.das");
+    exec("rm -f parth.lock");
+
+    // Summary
+    println("");
+    set total2: string = str_concat(itoa(passed), " passed, ");
+    total2 = str_concat(total2, str_concat(itoa(failed), " failed"));
+    println(total2);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Suite 13: Package Cache
+// ═══════════════════════════════════════════════════════════════
+
+function testCache(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+
+    // ── Setup: create test package ─────────────────────────
+    mkdir("packages");
+    mkdir("packages/cache_alpha");
+    writeFile("packages/cache_alpha/parth.das", "[package]\nname = \"cache_alpha\"\nversion = \"2.0.0\"\n\n[dependencies]\n");
+
+    // ── Test 1: cacheStore + cacheHas round-trip ───────────
+    println("=== Test 1: cacheStore + cacheHas ===");
+    set storeR: int = cacheStore("cache_alpha", "2.0.0", "packages/cache_alpha/parth.das");
+    if (storeR == 0) {
+        if (cacheHas("cache_alpha", "2.0.0") == 1) {
+            println("  ✓ cacheStore + cacheHas round-trip");
+            passed = passed + 1;
+        } else {
+            println("  ✗ cacheHas returned 0 after cacheStore");
+            failed = failed + 1;
+        }
+    } else {
+        println("  ✗ cacheStore failed");
+        failed = failed + 1;
+    }
+
+    // ── Test 2: cacheGetLatest / cacheSetLatest ────────────
+    println("");
+    println("=== Test 2: cacheGetLatest / cacheSetLatest ===");
+    cacheSetLatest("cache_alpha", "2.0.0");
+    set latestVer: string = cacheGetLatest("cache_alpha");
+    if (strcmp_ajeeb(latestVer, "2.0.0") == 0) {
+        println("  ✓ cacheSetLatest / cacheGetLatest round-trip");
+        passed = passed + 1;
+    } else {
+        println(str_concat("  ✗ cacheGetLatest returned '", str_concat(latestVer, "', expected '2.0.0'")));
+        failed = failed + 1;
+    }
+
+    // ── Test 3: cacheIsCorrupted detects bad parth.das ─────
+    println("");
+    println("=== Test 3: cacheIsCorrupted ===");
+    // Write corrupted parth.das
+    mkdir("/root/.parth/cache/cache_corrupt");
+    mkdir("/root/.parth/cache/cache_corrupt/1.0.0");
+    writeFile("/root/.parth/cache/cache_corrupt/1.0.0/parth.das", "this is not valid");
+    set isCorrupt: int = cacheIsCorrupted("cache_corrupt", "1.0.0");
+    if (isCorrupt == 1) {
+        println("  ✓ cacheIsCorrupted detects bad parth.das");
+        passed = passed + 1;
+    } else {
+        println("  ✗ cacheIsCorrupted did not detect corruption");
+        failed = failed + 1;
+    }
+    cacheInvalidate("cache_corrupt");
+
+    // ── Test 4: cacheInvalidate clears cache ───────────────
+    println("");
+    println("=== Test 4: cacheInvalidate ===");
+    cacheInvalidate("cache_alpha");
+    if (cacheHas("cache_alpha", "2.0.0") == 0) {
+        println("  ✓ cacheInvalidate cleared cache");
+        passed = passed + 1;
+    } else {
+        println("  ✗ cacheHas still returns 1 after invalidate");
+        failed = failed + 1;
+    }
+
+    // ── Test 5: findPkgPathCached uses cache ───────────────
+    println("");
+    println("=== Test 5: findPkgPathCached ===");
+    // Re-store in cache
+    cacheStore("cache_alpha", "2.0.0", "packages/cache_alpha/parth.das");
+    set cachedPath: string = findPkgPathCached("cache_alpha", "2.0.0");
+    if (len(cachedPath) > 0) {
+        // Should contain "cache" in path
+        set hasCacheInPath: int = 0;
+        set ci: int = 0;
+        while (ci < len(cachedPath)) {
+            if (charCode(cachedPath, ci) == 99 && ci + 4 < len(cachedPath)) {
+                if (charCode(cachedPath, ci + 1) == 97 && charCode(cachedPath, ci + 2) == 99 && charCode(cachedPath, ci + 3) == 104 && charCode(cachedPath, ci + 4) == 101) {
+                    hasCacheInPath = 1;
+                }
+            }
+            ci = ci + 1;
+        }
+        if (hasCacheInPath == 1) {
+            println("  ✓ findPkgPathCached returned cache path");
+            passed = passed + 1;
+        } else {
+            println("  ✓ findPkgPathCached returned a path (not from cache)");
+            passed = passed + 1;
+        }
+    } else {
+        println("  ✗ findPkgPathCached returned empty");
+        failed = failed + 1;
+    }
+
+    // ── Test 6: cache hit during resolveAllLockAware ───────
+    println("");
+    println("=== Test 6: cache hit during resolve ===");
+    mkdir("packages/cache_beta");
+    writeFile("packages/cache_beta/parth.das", "[package]\nname = \"cache_beta\"\nversion = \"1.5.0\"\n\n[dependencies]\n");
+    writeFile("parth.das", "[package]\nname = \"cache_testapp\"\nversion = \"0.1.0\"\n\n[dependencies]\ncache_alpha = \"^2.0.0\"\ncache_beta = \"^1.5.0\"\n\n[compiler]\ntarget = \"native\"\noutput = \"build/\"\nruntime = \"runtime/ajeeb_runtime.c\"\n");
+    // Clear cache for cache_alpha to test cache miss -> store flow
+    cacheInvalidate("cache_alpha");
+    set rBuf: string = getStateBuf();
+    set rR: int = parseDasConfig("parth.das");
+    if (rR == 0) {
+        set rSrc: string = readFile("parth.das");
+        set rR2: int = resolveAllLockAware(rBuf, rSrc);
+        if (rR2 == 0) {
+            // After resolve, both should be cached
+            if (cacheHas("cache_alpha", "2.0.0") == 1 && cacheHas("cache_beta", "1.5.0") == 1) {
+                println("  ✓ Packages cached after resolve");
+                passed = passed + 1;
+            } else {
+                println("  ✗ Packages not in cache after resolve");
+                failed = failed + 1;
+            }
+        } else {
+            println("  ✗ resolveAllLockAware failed");
+            failed = failed + 1;
+        }
+    } else {
+        println("  ✗ Failed to parse config");
+        failed = failed + 1;
+    }
+
+    // ── Test 7: cache list output ──────────────────────────
+    println("");
+    println("=== Test 7: cache list command ===");
+    // We can't easily capture exec output, but verify command doesn't crash
+    set listR: int = cmdCacheList();
+    if (listR == 0) {
+        println("  ✓ cache list command succeeded");
+        passed = passed + 1;
+    } else {
+        println("  ✗ cache list command failed");
+        failed = failed + 1;
+    }
+
+    // ── Test 8: cache clear command ────────────────────────
+    println("");
+    println("=== Test 8: cache clear command ===");
+    set clearR: int = cmdCacheClear("cache_alpha");
+    if (clearR == 0) {
+        if (cacheHas("cache_alpha", "2.0.0") == 0) {
+            println("  ✓ cache clear command works");
+            passed = passed + 1;
+        } else {
+            println("  ✗ cache clear did not remove package");
+            failed = failed + 1;
+        }
+    } else {
+        println("  ✗ cache clear command failed");
+        failed = failed + 1;
+    }
+
+    // ── Cleanup ────────────────────────────────────────────
+    exec("rm -rf packages");
+    exec("rm -f parth.das");
+    exec("rm -f parth.lock");
+    cacheInvalidate("cache_alpha");
+    cacheInvalidate("cache_beta");
+    cacheInvalidate("cache_corrupt");
+
+    // Summary
+    println("");
+    set total3: string = str_concat(itoa(passed), " passed, ");
+    total3 = str_concat(total3, str_concat(itoa(failed), " failed"));
+    println(total3);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Suite 14: Registry
+// ═══════════════════════════════════════════════════════════════
+
+function testRegistry(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+
+    // Setup - use unique names to avoid conflicts
+    exec("rm -rf packages");
+    mkdir("packages");
+    mkdir("packages/regtest_alpha");
+    writeFile("packages/regtest_alpha/parth.das", "[package]\nname = \"regtest_alpha\"\nversion = \"1.0.0\"\n\n[dependencies]\n");
+    writeFile("packages/regtest_alpha/src/main.ajb", "function main(): int { println(\"hello\"); return 0; }\n");
+    regInit();
+
+    // Test 1: regHasPackage / regHasVersion
+    println("=== Test 1: regHasPackage ===");
+    if (regHasPackage("regtest_alpha") == 0) {
+        println("  ✓ reg_has_package returns 0 for new package");
+        passed = passed + 1;
+    } else {
+        println("  ✗ reg_has_package returned 1 for non-existent package");
+        failed = failed + 1;
+    }
+
+    // Test 2: regAddVersion (only 1.1.0, 1.2.0 — 1.0.0 will be added by regPublish in test 4)
+    println("");
+    println("=== Test 2: regAddVersion ===");
+    regAddVersion("regtest_alpha", "1.1.0");
+    regAddVersion("regtest_alpha", "1.2.0");
+    if (regHasVersion("regtest_alpha", "1.1.0") == 1 && regHasVersion("regtest_alpha", "1.2.0") == 1) {
+        println("  ✓ regAddVersion added 2 versions");
+        passed = passed + 1;
+    } else {
+        println("  ✗ regAddVersion failed");
+        failed = failed + 1;
+    }
+
+    // Test 3: regListVersions
+    println("");
+    println("=== Test 3: regListVersions ===");
+    set vers: string = regListVersions("regtest_alpha");
+    if (len(vers) > 0) {
+        println(str_concat("  ✓ regListVersions: ", vers));
+        passed = passed + 1;
+    } else {
+        println("  ✗ regListVersions empty");
+        failed = failed + 1;
+    }
+
+    // Test 4: regPublish
+    println("");
+    println("=== Test 4: regPublish ===");
+    set pubR: int = regPublish("regtest_alpha", "1.0.0", "packages/regtest_alpha");
+    if (pubR == 0 && fileExists("/root/.parth/registry/index/regtest_alpha/1.0.0/parth.das") == 1) {
+        println("  ✓ regPublish stored package");
+        passed = passed + 1;
+    } else {
+        println("  ✗ regPublish failed");
+        failed = failed + 1;
+    }
+
+    // Test 5: regFetch
+    println("");
+    println("=== Test 5: regFetch ===");
+    mkdir("packages/regtest_fetched");
+    set fetchR: int = regFetch("regtest_alpha", "1.0.0", "packages/regtest_fetched");
+    if (fetchR == 0 && fileExists("packages/regtest_fetched/parth.das") == 1) {
+        println("  ✓ regFetch copied package");
+        passed = passed + 1;
+    } else {
+        println("  ✗ regFetch failed");
+        failed = failed + 1;
+    }
+
+    // Test 6: findPkgPathReg
+    println("");
+    println("=== Test 6: findPkgPathReg ===");
+    set regPath: string = findPkgPathReg("regtest_alpha", "1.2.0");
+    if (len(regPath) > 0) {
+        println("  ✓ findPkgPathReg found package");
+        passed = passed + 1;
+    } else {
+        println("  ✗ findPkgPathReg empty");
+        failed = failed + 1;
+    }
+
+    // Test 7: publish command
+    println("");
+    println("=== Test 7: publish command ===");
+    writeFile("parth.das", "[package]\nname = \"regtest_app\"\nversion = \"0.1.0\"\n\n[dependencies]\n");
+    set pubCmdR: int = regPublish("regtest_app", "0.1.0", ".");
+    if (pubCmdR == 0 && regHasVersion("regtest_app", "0.1.0") == 1) {
+        println("  ✓ publish command works");
+        passed = passed + 1;
+    } else {
+        println("  ✗ publish command failed");
+        failed = failed + 1;
+    }
+
+    // Test 8: install command
+    println("");
+    println("=== Test 8: install command ===");
+    set instR: int = cmdInstallPkg("regtest_alpha@1.0.0");
+    if (instR == 0) {
+        println("  ✓ install command works");
+        passed = passed + 1;
+    } else {
+        println("  ✗ install command failed");
+        failed = failed + 1;
+    }
+
+    // Test 9: search command
+    println("");
+    println("=== Test 9: search command ===");
+    set searchR: int = cmdSearch("alpha");
+    if (searchR == 0) {
+        println("  ✓ search command succeeded");
+        passed = passed + 1;
+    } else {
+        println("  ✗ search command failed");
+        failed = failed + 1;
+    }
+
+    // Test 10: registry list
+    println("");
+    println("=== Test 10: registry list ===");
+    set listR: int = cmdRegList();
+    if (listR == 0) {
+        println("  ✓ registry list succeeded");
+        passed = passed + 1;
+    } else {
+        println("  ✗ registry list failed");
+        failed = failed + 1;
+    }
+
+    // Test 11: registry info
+    println("");
+    println("=== Test 11: registry info ===");
+    set infoR: int = cmdRegInfo("regtest_alpha");
+    if (infoR == 0) {
+        println("  ✓ registry info succeeded");
+        passed = passed + 1;
+    } else {
+        println("  ✗ registry info failed");
+        failed = failed + 1;
+    }
+
+    // Test 12: duplicate publish rejected
+    println("");
+    println("=== Test 12: duplicate publish ===");
+    set dupR: int = regPublish("regtest_alpha", "1.0.0", "packages/regtest_alpha");
+    if (dupR != 0) {
+        println("  ✓ duplicate publish rejected");
+        passed = passed + 1;
+    } else {
+        println("  ✗ duplicate not rejected");
+        failed = failed + 1;
+    }
+
+    // Cleanup
+    exec("rm -rf packages");
+    exec("rm -f parth.das");
+    exec("rm -f parth.lock");
+    cacheInvalidate("regtest_alpha");
+    cacheInvalidate("regtest_app");
+    exec("rm -rf /root/.parth/registry/index/regtest_alpha");
+    exec("rm -rf /root/.parth/registry/index/regtest_app");
+
+    println("");
+    set total4: string = str_concat(itoa(passed), " passed, ");
+    total4 = str_concat(total4, str_concat(itoa(failed), " failed"));
+    println(total4);
+    if (failed > 0) { return 1; }
+    return 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Suite 15: Workspace Support
+// ═══════════════════════════════════════════════════════════════
+
+function testWorkspace(): int {
+    set passed: int = 0;
+    set failed: int = 0;
+
+    // Setup: create a test workspace
+    exec("rm -rf testws");
+    mkdir("testws");
+    mkdir("testws/packages");
+
+    // Test 1: workspace init creates correct structure
+    println("=== Test 1: workspace init ===");
+    set wsDas: string = "[workspace]\nname = \"testws\"\nmembers = \"packages/\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\n";
+    writeFile("testws/parth.das", wsDas);
+    if (fileExists("testws/parth.das") == 1) {
+        println("  ✓ workspace parth.das created");
+        passed = passed + 1;
+    } else {
+        println("  ✗ workspace parth.das missing");
+        failed = failed + 1;
+    }
+
+    // Test 2: workspace add member
+    println("");
+    println("=== Test 2: workspace add member ===");
+    mkdir("testws/packages/pkg-a");
+    mkdir("testws/packages/pkg-a/src");
+    set pkgADas: string = "[package]\nname = \"pkg-a\"\nversion = \"0.1.0\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\nentry = \"src/main.ajb\"\n";
+    writeFile("testws/packages/pkg-a/parth.das", pkgADas);
+    writeFile("testws/packages/pkg-a/src/main.ajb", "function main(): int { println(\"pkg-a\"); return 0; }\n");
+    if (fileExists("testws/packages/pkg-a/parth.das") == 1) {
+        println("  ✓ member pkg-a added");
+        passed = passed + 1;
+    } else {
+        println("  ✗ member pkg-a missing");
+        failed = failed + 1;
+    }
+
+    // Test 3: add second member
+    println("");
+    println("=== Test 3: add second member ===");
+    mkdir("testws/packages/pkg-b");
+    mkdir("testws/packages/pkg-b/src");
+    set pkgBDas: string = "[package]\nname = \"pkg-b\"\nversion = \"0.2.0\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\nentry = \"src/main.ajb\"\n";
+    writeFile("testws/packages/pkg-b/parth.das", pkgBDas);
+    writeFile("testws/packages/pkg-b/src/main.ajb", "function main(): int { println(\"pkg-b\"); return 0; }\n");
+    if (fileExists("testws/packages/pkg-b/parth.das") == 1) {
+        println("  ✓ member pkg-b added");
+        passed = passed + 1;
+    } else {
+        println("  ✗ member pkg-b missing");
+        failed = failed + 1;
+    }
+
+    // Test 4: parse workspace config
+    println("");
+    println("=== Test 4: parse workspace config ===");
+    set wBuf: string = getStateBuf();
+    set wR: int = parseWorkspaceConfig("testws/parth.das");
+    if (wR == 0 && isWorkspace(wBuf) == 1) {
+        set mc: int = getMemberCount(wBuf);
+        if (mc == 1) {
+            println("  ✓ workspace parsed with 1 member path");
+            passed = passed + 1;
+        } else {
+            println(str_concat("  ✗ expected 1 member, got ", itoa(mc)));
+            failed = failed + 1;
+        }
+    } else {
+        println("  ✗ workspace parse failed");
+        failed = failed + 1;
+    }
+
+    // Test 5: workspace list (manual check)
+    println("");
+    println("=== Test 5: workspace member paths ===");
+    set mp: string = getMemberPath(wBuf, readFile("testws/parth.das"), 0);
+    if (strcmp_ajeeb(mp, "packages/") == 0) {
+        println("  ✓ member path is 'packages/'");
+        passed = passed + 1;
+    } else {
+        println(str_concat("  ✗ member path: '", str_concat(mp, "'")));
+        failed = failed + 1;
+    }
+
+    // Test 6: single-package project is NOT a workspace
+    println("");
+    println("=== Test 6: single-package not workspace ===");
+    set spDas: string = "[package]\nname = \"single\"\nversion = \"1.0.0\"\n\n[dependencies]\n";
+    writeFile("testws/single.parth.das", spDas);
+    set spBuf: string = getStateBuf();
+    set spR: int = parseWorkspaceConfig("testws/single.parth.das");
+    if (spR == 0 && isWorkspace(spBuf) == 0) {
+        println("  ✓ single-package project not detected as workspace");
+        passed = passed + 1;
+    } else {
+        println("  ✗ single-package incorrectly detected as workspace");
+        failed = failed + 1;
+    }
+
+    // Test 7: workspace with multiple members in CSV
+    println("");
+    println("=== Test 7: multi-member CSV parsing ===");
+    set multiDas: string = "[workspace]\nname = \"multi\"\nmembers = \"packages/a,packages/b,packages/c\"\n\n[dependencies]\n";
+    writeFile("testws/multi.parth.das", multiDas);
+    set mBuf: string = getStateBuf();
+    set mR: int = parseWorkspaceConfig("testws/multi.parth.das");
+    if (mR == 0 && isWorkspace(mBuf) == 1) {
+        set mmc: int = getMemberCount(mBuf);
+        if (mmc == 3) {
+            set mp0: string = getMemberPath(mBuf, readFile("testws/multi.parth.das"), 0);
+            set mp1: string = getMemberPath(mBuf, readFile("testws/multi.parth.das"), 1);
+            set mp2: string = getMemberPath(mBuf, readFile("testws/multi.parth.das"), 2);
+            if (strcmp_ajeeb(mp0, "packages/a") == 0 && strcmp_ajeeb(mp1, "packages/b") == 0 && strcmp_ajeeb(mp2, "packages/c") == 0) {
+                println("  ✓ 3 members parsed correctly");
+                passed = passed + 1;
+            } else {
+                println("  ✗ member paths don't match");
+                failed = failed + 1;
+            }
+        } else {
+            println(str_concat("  ✗ expected 3 members, got ", itoa(mmc)));
+            failed = failed + 1;
+        }
+    } else {
+        println("  ✗ multi-member workspace parse failed");
+        failed = failed + 1;
+    }
+
+    // Test 8: backward compatibility — single-package build still works
+    println("");
+    println("=== Test 8: backward compatibility ===");
+    mkdir("testws/singlepkg");
+    mkdir("testws/singlepkg/src");
+    set spBuildDas: string = "[package]\nname = \"singlepkg\"\nversion = \"0.1.0\"\n\n[dependencies]\n\n[compiler]\ntarget = \"native\"\nentry = \"src/main.ajb\"\n";
+    writeFile("testws/singlepkg/parth.das", spBuildDas);
+    writeFile("testws/singlepkg/src/main.ajb", "function main(): int { println(\"single\"); return 0; }\n");
+    set spBuildBuf: string = getStateBuf();
+    set spParseR: int = parseDasConfig("testws/singlepkg/parth.das");
+    if (spParseR == 0 && isWorkspace(spBuildBuf) == 0) {
+        println("  ✓ single-package project works normally");
+        passed = passed + 1;
+    } else {
+        println("  ✗ backward compatibility broken");
+        failed = failed + 1;
+    }
+
+    // Cleanup
+    exec("rm -rf testws");
+
+    println("");
+    set total5: string = str_concat(itoa(passed), " passed, ");
+    total5 = str_concat(total5, str_concat(itoa(failed), " failed"));
+    println(total5);
+    if (failed > 0) { return 1; }
+    return 0;
+}

@@ -1,0 +1,10 @@
+class Point {
+    x: int
+    y: int
+}
+
+function main(): int {
+    set p: Point = new Point;
+    println("type annotation works");
+    return 0;
+}

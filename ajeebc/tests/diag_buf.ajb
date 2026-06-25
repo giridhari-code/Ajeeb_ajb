@@ -1,0 +1,27 @@
+// Diagnostic: measure buffer slot usage
+function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
+function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
+
+function main(): int {
+    set state: string = getStateBuf();
+    println("=== Buffer Diagnostic ===");
+    println("Slot 510 (MIR head): " + itoa(br(state, 510)));
+    println("Slot 511 (HIR head): " + itoa(br(state, 511)));
+
+    // Simulate hinit
+    bw(state, 511, 512);
+    println("After hinit: HIR head = " + itoa(br(state, 511)));
+
+    // Simulate minit
+    bw(state, 510, 1024);
+    println("After minit: MIR head = " + itoa(br(state, 510)));
+
+    println("Buffer bytes: 16384");
+    println("Buffer slots: " + itoa(16384 / 8));
+    println("HIR start: 512");
+    println("MIR start: 1024");
+    println("HIR budget (before MIR): " + itoa(1024 - 512) + " slots");
+    println("MIR budget (before end): " + itoa(2048 - 1024) + " slots");
+
+    return 0;
+}

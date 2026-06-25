@@ -56,7 +56,7 @@ impl CCodegen {
         writeln!(self.output, "long long charCode(long long s, long long i);").unwrap();
         writeln!(self.output, "long long chr(long long c);").unwrap();
         writeln!(self.output, "long long substring(long long s, long long start, long long end);").unwrap();
-        writeln!(self.output, "long long indexOf(long long s, long long sub, long long start);").unwrap();
+        writeln!(self.output, "long long indexOf(long long s, long long sub);").unwrap();
         writeln!(self.output, "long long contains(long long s, long long sub);").unwrap();
         writeln!(self.output, "long long toUpperCase(long long s);").unwrap();
         writeln!(self.output, "long long toLowerCase(long long s);").unwrap();
@@ -71,6 +71,9 @@ impl CCodegen {
         writeln!(self.output, "void writeByte(long long path, long long b);").unwrap();
         writeln!(self.output, "long long array_to_string(long long data, long long len);").unwrap();
         writeln!(self.output, "long long allocBuf(long long size);").unwrap();
+        writeln!(self.output, "long long __array_lit(long long count, ...);").unwrap();
+        writeln!(self.output, "long long __index(long long arr, long long idx);").unwrap();
+        writeln!(self.output, "long long __index_assign(long long arr, long long idx, long long val);").unwrap();
         writeln!(self.output, "long long exec(long long cmd);").unwrap();
         writeln!(self.output, "long long mkdir(long long path);").unwrap();
         writeln!(self.output, "long long lib_open(long long path);").unwrap();
@@ -89,7 +92,7 @@ impl CCodegen {
         writeln!(self.output, "").unwrap();
 
         // Global buffers expected by C runtime
-        writeln!(self.output, "char __ajeeb_buf[16384];").unwrap();
+        writeln!(self.output, "char __ajeeb_buf[262144];").unwrap();
         writeln!(self.output, "char __ajeeb_outbuf[65536];").unwrap();
         writeln!(self.output, "").unwrap();
 

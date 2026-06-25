@@ -46,7 +46,7 @@ fn get_registry_url(cfg: &ProjectConfig) -> String {
 }
 
 fn cmd_help() {
-    println!("Ajeeb Package Manager — parth v0.1.0");
+    println!("Ajeeb Package Manager — parth v1.0.0");
     println!();
     println!("USAGE:");
     println!("  parth <command> [arguments]");
@@ -77,6 +77,7 @@ fn cmd_help() {
     println!("  vendor           Vendor dependencies into vendor/ directory");
     println!("  ls               List workspace packages");
     println!("  clean            Remove build artifacts");
+    println!("  bootstrap        Verify self-hosting (Gen0→Gen1→Gen2)");
     println!("  info             Show project info from parth.das");
     println!("  version          Show parth and project version");
     println!("  help             Show this help message");
@@ -164,6 +165,7 @@ fn main() {
         "list" => cmd_list(),
         "version" => cmd_version(),
         "clean" => cmd_clean(),
+        "bootstrap" => cmd_bootstrap(),
         "help" | "-h" | "--help" => cmd_help(),
         _ => {
             eprintln!("Unknown command: {}", args[1]);

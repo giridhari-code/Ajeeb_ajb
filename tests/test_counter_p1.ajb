@@ -1,0 +1,8 @@
+class Foo {
+    set value: int;
+}
+
+function main(): int {
+    println("hello");
+    return 0;
+}

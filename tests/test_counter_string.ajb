@@ -1,0 +1,9 @@
+class Foo {
+    set value: int;
+}
+
+function main(): int {
+    set x: int = 10;
+    set y: string = "hello";
+    return 0;
+}

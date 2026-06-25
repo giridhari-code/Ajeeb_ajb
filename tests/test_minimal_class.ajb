@@ -1,0 +1,4 @@
+class Counter {
+    value: int;
+}
+println("class test");

@@ -44,9 +44,9 @@ function parsePrimary(src: int, buf: string, out: string): void {
         set go: int = 1;
         while (go == 1) {
             t = tokType(buf);
-            if (t == 34) {
+            if (t == 34 || t == 33) {
                 nextTok(src, buf);
-                set fd: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                set fd: string = str_concat(identStr(src, tokStrOff(buf), tokStrLen(buf)), "");
                 nextTok(src, buf);
                 if (tokType(buf) == 35) {
                     nextTok(src, buf);
@@ -115,7 +115,7 @@ function parsePrimary(src: int, buf: string, out: string): void {
         if (tokType(buf) == 40) { nextTok(src, buf); }
     }
     else if (t == 1) {
-        set id: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+        set id: string = str_concat(identStr(src, tokStrOff(buf), tokStrLen(buf)), "");
         nextTok(src, buf);
 
         set emitted: int = 0;
@@ -123,49 +123,80 @@ function parsePrimary(src: int, buf: string, out: string): void {
         while (go == 1) {
             t = tokType(buf);
             if (t == 35) {
-                if (emitted == 0) { emitStr(out, id); emitted = 1; }
-                nextTok(src, buf);
-                set isPrint: int = 0;
-                if (strcmp_ajeeb(id, "println") == 0 || strcmp_ajeeb(id, "print") == 0) { isPrint = 1; }
-                if (isPrint == 1) {
-                    set ctr: int = rdB(buf, 88);
-                    wrB(buf, 88, ctr + 1);
-                    set ptmp: string = "build/_pp" + itoa(ctr) + ".txt";
-                    writeFile(ptmp, "");
-                    parseExpr(src, buf, ptmp);
-                    while (tokType(buf) == 32) {
-                        nextTok(src, buf);
-                        set left: string = readFile(ptmp);
+                // Constructor detection: ClassName() → (ClassName){0}
+                if (isClassName(id, buf) == 1) {
+                    emitStr(out, "("); emitStr(out, id); emitStr(out, "){0}");
+                    nextTok(src, buf);
+                    if (tokType(buf) == 36) { nextTok(src, buf); }
+                    emitted = 1;
+                } else {
+                    if (emitted == 0) { emitStr(out, id); emitted = 1; }
+                    nextTok(src, buf);
+                    set isPrint: int = 0;
+                    if (strcmp_ajeeb(id, "println") == 0 || strcmp_ajeeb(id, "print") == 0) { isPrint = 1; }
+                    if (isPrint == 1) {
+                        set ctr: int = rdB(buf, 88);
+                        wrB(buf, 88, ctr + 1);
+                        set ptmp: string = "build/_pp" + itoa(ctr) + ".txt";
                         writeFile(ptmp, "");
                         parseExpr(src, buf, ptmp);
-                        set right: string = readFile(ptmp);
-                        writeFile(ptmp, "");
-                        set cres: string = "str_concat(" + left + ", " + right + ")";
-                        writeAppend(ptmp, cres);
+                        while (tokType(buf) == 32) {
+                            nextTok(src, buf);
+                            set left: string = readFile(ptmp);
+                            writeFile(ptmp, "");
+                            parseExpr(src, buf, ptmp);
+                            set right: string = readFile(ptmp);
+                            writeFile(ptmp, "");
+                            set cres: string = "str_concat(" + left + ", " + right + ")";
+                            writeAppend(ptmp, cres);
+                        }
+                        emitStr(out, "(");
+                        writeAppend(out, readFile(ptmp));
+                        emitStr(out, ")");
+                    } else {
+                        emitStr(out, "(");
+                        set first: int = 1;
+                        while (tokType(buf) != 36 && tokType(buf) != 0) {
+                            if (first == 0) { emitStr(out, ", "); }
+                            first = 0;
+                            parseExpr(src, buf, out);
+                            if (tokType(buf) == 32) { nextTok(src, buf); }
+                        }
+                        emitStr(out, ")");
                     }
-                    emitStr(out, "(");
-                    writeAppend(out, readFile(ptmp));
-                    emitStr(out, ")");
-                } else {
-                    emitStr(out, "(");
-                    set first: int = 1;
-                    while (tokType(buf) != 36 && tokType(buf) != 0) {
-                        if (first == 0) { emitStr(out, ", "); }
-                        first = 0;
-                        parseExpr(src, buf, out);
-                        if (tokType(buf) == 32) { nextTok(src, buf); }
-                    }
-                    emitStr(out, ")");
+                    if (tokType(buf) == 36) { nextTok(src, buf); }
                 }
-                if (tokType(buf) == 36) { nextTok(src, buf); }
             }
-            else if (t == 34) {
+            else if (t == 37 && isClassName(id, buf) == 1) {
+                if (emitted == 0) { emitStr(out, "("); emitStr(out, id); emitStr(out, ")"); emitted = 1; }
+                emitStr(out, "{");
                 nextTok(src, buf);
-                set fd: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                set first: int = 1;
+                while (tokType(buf) != 38 && tokType(buf) != 0) {
+                    if (first == 0) { emitStr(out, ", "); }
+                    first = 0;
+                    set ffn: string = str_concat(identStr(src, tokStrOff(buf), tokStrLen(buf)), "");
+                    nextTok(src, buf);
+                    if (tokType(buf) == 31) { nextTok(src, buf); }
+                    emitStr(out, "."); emitStr(out, ffn); emitStr(out, " = ");
+                    parseExpr(src, buf, out);
+                    if (tokType(buf) == 32) { nextTok(src, buf); }
+                }
+                emitStr(out, "}");
+                if (tokType(buf) == 38) { nextTok(src, buf); }
+            }
+            else if (t == 34 || t == 33) {
+                nextTok(src, buf);
+                set fd: string = str_concat(identStr(src, tokStrOff(buf), tokStrLen(buf)), "");
                 nextTok(src, buf);
                 if (tokType(buf) == 35) {
-                    if (emitted == 0) { emitStr(out, fd); emitted = 1; }
-                    else { emitStr(out, fd); }
+                    set rcvType: string = getVarType(id, buf);
+                    if (len(rcvType) > 0) {
+                        emitStr(out, rcvType); emitStr(out, "_"); emitStr(out, fd);
+                    } else {
+                        emitStr(out, fd);
+                    }
+                    emitted = 1;
                     nextTok(src, buf);
                     emitStr(out, "(&"); emitStr(out, id);
                     while (tokType(buf) != 36 && tokType(buf) != 0) {
@@ -177,7 +208,9 @@ function parsePrimary(src: int, buf: string, out: string): void {
                     if (tokType(buf) == 36) { nextTok(src, buf); }
                 } else {
                     if (emitted == 0) { emitStr(out, id); emitted = 1; }
-                    emitStr(out, "."); emitStr(out, fd);
+                    if (t == 33) { emitStr(out, "->"); }
+                    else { emitStr(out, "."); }
+                    emitStr(out, fd);
                 }
             }
             else if (t == 39) {

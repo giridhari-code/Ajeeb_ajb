@@ -351,11 +351,11 @@ jobs:
             ### Install karo:
             **Linux / macOS:**
             ```bash
-            curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/install.sh | bash
+            curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/scripts/install.sh | bash
             ```
             **Windows (PowerShell):**
             ```powershell
-            irm https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/install.ps1 | iex
+            irm https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/scripts/install.ps1 | iex
             ```
 
             ### Zaroorat hai:

@@ -509,7 +509,9 @@ impl MirBuilder {
                 MirOperand::Var(temp)
             }
             HirExpr::ArrayLit { elems, .. } => {
+                let count = elems.len() as i64;
                 let mut mir_args = Vec::new();
+                mir_args.push(MirOperand::Constant(MirConst::Int(count)));
                 for elem in elems {
                     mir_args.push(self.lower_expr(elem));
                 }

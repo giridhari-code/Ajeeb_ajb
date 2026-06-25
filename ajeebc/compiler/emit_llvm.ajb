@@ -1,0 +1,990 @@
+// ============================================================
+//  LLVM IR Codegen — walks MIR, emits .ll text
+//  C1-C5: Core, Expressions, Control Flow, Functions, Memory
+// ============================================================
+
+// Uses MIR accessors from main.ajb:
+//   mFn*, mBlock*, mInstr* helpers
+//   isStrTemp, scanFnStrings for string tracking
+//   br/bw for buffer read/write
+
+// ============================================================
+// LLVM output helpers
+// ============================================================
+function llvmOut(out: string, s: string): void { writeAppend(out, s); }
+function llvmNl(out: string): void { writeAppend(out, "\n"); }
+function llvmInt(out: string, val: int): void { writeAppend(out, itoa(val)); }
+
+// Emit a raw integer as an LLVM literal (no prefix)
+function emitLLVMIntLit(out: string, val: int): void {
+    if (val < 0) { llvmOut(out, "-"); llvmInt(out, 0 - val); }
+    else { llvmInt(out, val); }
+}
+
+// ============================================================
+// C1: LLVM IR Preamble — target triple, runtime decls, globals
+// ============================================================
+function emitLLVMPreamble(out: string): void {
+    llvmOut(out, "target datalayout = \"e-m:e-i64:64-f80:128-n8:16:32:64-S128\""); llvmNl(out);
+    llvmOut(out, "target triple = \"x86_64-unknown-linux-gnu\""); llvmNl(out);
+    llvmNl(out);
+
+    // C standard library
+    llvmOut(out, "declare i32 @puts(ptr)"); llvmNl(out);
+    llvmOut(out, "declare i32 @printf(ptr, ...)"); llvmNl(out);
+    llvmOut(out, "declare i32 @snprintf(ptr, i64, ptr, ...)"); llvmNl(out);
+    llvmNl(out);
+
+    // Ajeeb runtime — 0-arg
+    llvmOut(out, "declare i64 @getStateBuf()"); llvmNl(out);
+    llvmOut(out, "declare i64 @getOutbuf()"); llvmNl(out);
+    llvmNl(out);
+
+    // 1-arg runtime
+    llvmOut(out, "declare i64 @len(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @arr_len(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @itoa(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @readArg(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @readFile(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @toUpperCase(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @toLowerCase(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @trim(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @exec(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @mkdir(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @allocBuf(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @println(i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @print(i64)"); llvmNl(out);
+    llvmNl(out);
+
+    // 2-arg runtime
+    llvmOut(out, "declare i64 @str_concat(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @contains(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @getInt(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @startsWith(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @endsWith(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @charCode(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @strcmp_ajeeb(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @chr(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @__index(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare void @setInt(i64, i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare void @strSet(i64, i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare void @writeFile(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare void @writeAppend(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare void @writeByte(i64, i64)"); llvmNl(out);
+    llvmNl(out);
+
+    // 3-arg runtime
+    llvmOut(out, "declare i64 @indexOf(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @substring(i64, i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @replace(i64, i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i64 @__index_assign(i64, i64, i64)"); llvmNl(out);
+    llvmNl(out);
+
+    // variadic runtime
+    llvmOut(out, "declare i64 @__array_lit(i64, ...)"); llvmNl(out);
+    llvmNl(out);
+
+    // exit, malloc, free
+    llvmOut(out, "declare void @exit(i32)"); llvmNl(out);
+    llvmOut(out, "declare ptr @malloc(i64)"); llvmNl(out);
+    llvmOut(out, "declare void @free(ptr)"); llvmNl(out);
+    llvmOut(out, "declare i64 @array_to_string(i64, i64)"); llvmNl(out);
+    llvmOut(out, "declare i32 @fprintf(ptr, ptr, ...)"); llvmNl(out);
+    llvmNl(out);
+
+    // Global buffers
+    llvmOut(out, "@__ajeeb_buf = global [262144 x i8] zeroinitializer"); llvmNl(out);
+    llvmOut(out, "@__ajeeb_outbuf = global [65536 x i8] zeroinitializer"); llvmNl(out);
+    llvmOut(out, "@stderr = external global ptr"); llvmNl(out);
+    llvmNl(out);
+}
+
+// ============================================================
+// C5: String constant globals — @.str.N = private constant [N x i8] c"...\00"
+// Returns the global name as a string (caller must consume before next call)
+// ============================================================
+function emitLLVMStringGlobal(out: string, strCount: int, content: string): string {
+    set name: string = str_concat("@.str.", itoa(strCount));
+    set sl: int = len(content);
+    llvmOut(out, name);
+    llvmOut(out, " = private constant [");
+    llvmInt(out, sl + 1);
+    llvmOut(out, " x i8] c\"");
+    set k: int = 0;
+    while (k < sl) {
+        set ch: int = charCode(content, k);
+        if (ch == 92) { llvmOut(out, "\\5C"); }
+        else if (ch == 34) { llvmOut(out, "\\22"); }
+        else if (ch == 10) { llvmOut(out, "\\0A"); }
+        else if (ch == 13) { llvmOut(out, "\\0D"); }
+        else if (ch == 9) { llvmOut(out, "\\09"); }
+        else if (ch >= 32 && ch < 127) { writeByte(out, ch); }
+        else { llvmOut(out, "\\"); llvmOut(out, itoa(ch)); }
+        k = k + 1;
+    }
+    llvmOut(out, "\\00\"");
+    llvmNl(out);
+    return name;
+}
+
+// ============================================================
+// C4: Function emission — define i64 @name(i64 %p0, i64 %p1, ...) {
+// ============================================================
+function emitLLVMFn(buf: string, foff: int, out: string, src: string, isEntryMain: int): void {
+    set no: int = mFnNameOff(buf, foff);
+    set nl: int = mFnNameLen(buf, foff);
+    set fnName: string = substring(src, no, no + nl);
+    set bc: int = mFnBlockCount(buf, foff);
+    set lc: int = mFnLocalCount(buf, foff);
+    set pc: int = mFnParamCount(buf, foff);
+
+    // Scan for string temps
+    set scBuf: string = getStateBuf();
+    scanFnStrings(scBuf, buf, foff, src);
+
+    // Find max temp across all blocks
+    set bi2: int = 0; set maxTemp: int = pc - 1;
+    while (bi2 < bc) {
+        set blkOff: int = mFnBlock(buf, foff, bi2);
+        set ic: int = mBlockInstrCount(buf, blkOff);
+        set ii: int = 0;
+        while (ii < ic) {
+            set ioff: int = mBlockInstr(buf, blkOff, ii);
+            set dd: int = mInstrDst(buf, ioff);
+            set ss1: int = mInstrS1(buf, ioff);
+            set ss2: int = mInstrS2(buf, ioff);
+            if (dd > maxTemp) { maxTemp = dd; }
+            if (ss1 > maxTemp) { maxTemp = ss1; }
+            if (ss2 > maxTemp) { maxTemp = ss2; }
+            ii = ii + 1;
+        }
+        bi2 = bi2 + 1;
+    }
+
+    // Function signature
+    if (isEntryMain == 1) {
+        llvmOut(out, "define i32 @main() {");
+    } else {
+        llvmOut(out, "define i64 @");
+        llvmOut(out, fnName);
+        llvmOut(out, "(");
+        set j: int = 0;
+        while (j < pc) {
+            if (j > 0) { llvmOut(out, ", "); }
+            llvmOut(out, "i64 %p");
+            llvmInt(out, j);
+            j = j + 1;
+        }
+        llvmOut(out, ") {");
+    }
+    llvmNl(out);
+
+    // Entry block — allocas for params and temps
+    llvmOut(out, "entry:");
+    llvmNl(out);
+
+    // Alloca for each parameter
+    set j: int = 0;
+    while (j < pc) {
+        llvmOut(out, "  %p");
+        llvmInt(out, j);
+        llvmOut(out, " = alloca i64");
+        llvmNl(out);
+        llvmOut(out, "  store i64 %p");
+        llvmInt(out, j);
+        llvmOut(out, ", ptr %p");
+        llvmInt(out, j);
+        llvmOut(out, "");
+        llvmNl(out);
+        j = j + 1;
+    }
+
+    // Alloca for each temp
+    if (maxTemp >= pc) {
+        set j2: int = pc;
+        while (j2 <= maxTemp) {
+            llvmOut(out, "  %t");
+            llvmInt(out, j2);
+            llvmOut(out, " = alloca i64");
+            llvmNl(out);
+            j2 = j2 + 1;
+        }
+    }
+
+    // Jump to first block
+    llvmOut(out, "  br label %block_0");
+    llvmNl(out);
+    llvmNl(out);
+
+    // Emit each block
+    set bj: int = 0;
+    while (bj < bc) {
+        set blkOff: int = mFnBlock(buf, foff, bj);
+        llvmOut(out, "block_");
+        llvmInt(out, bj);
+        llvmOut(out, ":");
+        llvmNl(out);
+        emitLLVMBlockCode(buf, blkOff, out, src, scBuf);
+        llvmNl(out);
+        bj = bj + 1;
+    }
+
+    llvmOut(out, "}");
+    llvmNl(out);
+    llvmNl(out);
+}
+
+// ============================================================
+// C2+C3+C5: Block code emission — walks instructions + terminator
+// ============================================================
+function emitLLVMBlockCode(buf: string, boff: int, out: string, src: string, scBuf: string): void {
+    set ic: int = mBlockInstrCount(buf, boff);
+    set tt: int = mBlockTermTy(buf, boff);
+    set j: int = 0;
+    while (j < ic) {
+        set ioff: int = mBlockInstr(buf, boff, j);
+        set op: int = mInstrOp(buf, ioff);
+        set dst: int = mInstrDst(buf, ioff);
+        set s1: int = mInstrS1(buf, ioff);
+        set s2: int = mInstrS2(buf, ioff);
+        set ext: int = mInstrExt(buf, ioff);
+
+        if (op == 2 && ext == 13) {
+            // BINOP ext=13: string literal (s1=offset, s2=length)
+            // Look up the pre-emitted @.str.N global via sequential counter
+            set strIdx: int = br(scBuf, 400);
+            llvmOut(out, "  %tmp_str_");
+            llvmInt(out, j);
+            llvmOut(out, " = ptrtoint ptr @.str.");
+            llvmInt(out, strIdx);
+            llvmOut(out, " to i64");
+            llvmNl(out);
+            llvmOut(out, "  store i64 %tmp_str_");
+            llvmInt(out, j);
+            llvmOut(out, ", ptr %t");
+            llvmInt(out, dst);
+            llvmNl(out);
+            bw(scBuf, 400, strIdx + 1);
+
+        } else if (op == 2 && s2 == 0 && ext == 101) {
+            // BINOP ext=101: assign (copy temp to variable)
+            // dst = s1
+            llvmOut(out, "  %tmp_s1_");
+            llvmInt(out, j);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, s1);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  store i64 %tmp_s1_");
+            llvmInt(out, j);
+            llvmOut(out, ", ptr %t");
+            llvmInt(out, dst);
+            llvmNl(out);
+
+        } else if (op == 2 && s2 == 0 && (ext == 1 || ext == 3)) {
+            // BINOP ext=1 or ext=3 with s2=0: constant load (int literal or bool)
+            llvmOut(out, "  store i64 ");
+            emitLLVMIntLit(out, s1);
+            llvmOut(out, ", ptr %t");
+            llvmInt(out, dst);
+            llvmNl(out);
+
+        } else if (op == 2 && s2 != 0) {
+            // BINOP with two operands — arithmetic or comparison
+            emitLLVMBinop(out, ext, dst, s1, s2, scBuf, j);
+
+        } else if (op == 11) {
+            // PARAM: dst = p_s1 (read parameter s1 into temp dst)
+            llvmOut(out, "  %tmp_p_");
+            llvmInt(out, j);
+            llvmOut(out, " = load i64, ptr %p");
+            llvmInt(out, s1);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  store i64 %tmp_p_");
+            llvmInt(out, j);
+            llvmOut(out, ", ptr %t");
+            llvmInt(out, dst);
+            llvmNl(out);
+
+        } else if (op == 4) {
+            // CALL: dst = call(name, args)
+            emitLLVMCall(buf, out, src, dst, s1, s2, ext);
+
+        } else if (op == 5) {
+            // RETURN
+            llvmOut(out, "  %tmp_ret_");
+            llvmInt(out, j);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, s1);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  ret i64 %tmp_ret_");
+            llvmInt(out, j);
+            llvmNl(out);
+
+        } else if (op == 6) {
+            // JUMP: goto block s1
+            llvmOut(out, "  br label %block_");
+            llvmInt(out, s1);
+            llvmNl(out);
+
+        } else if (op == 7) {
+            // BRANCH: if dst then goto s1 else goto s2
+            llvmOut(out, "  %tmp_br_");
+            llvmInt(out, j);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, dst);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_brcond_");
+            llvmInt(out, j);
+            llvmOut(out, " = icmp ne i64 %tmp_br_");
+            llvmInt(out, j);
+            llvmOut(out, ", 0");
+            llvmNl(out);
+            llvmOut(out, "  br i1 %tmp_brcond_");
+            llvmInt(out, j);
+            llvmOut(out, ", label %block_");
+            llvmInt(out, s1);
+            llvmOut(out, ", label %block_");
+            llvmInt(out, s2);
+            llvmNl(out);
+
+        } else if (op == 9) {
+            // LOAD: dst = *(base + offset) — array index load
+            llvmOut(out, "  %tmp_ld_");
+            llvmInt(out, j);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, s1);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  store i64 %tmp_ld_");
+            llvmInt(out, j);
+            llvmOut(out, ", ptr %t");
+            llvmInt(out, dst);
+            llvmNl(out);
+
+        } else if (op == 12) {
+            // PHI/STR_CONCAT: dst = str_concat(s1, s2)
+            llvmOut(out, "  %tmp_lsc_");
+            llvmInt(out, j);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, s1);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_rsc_");
+            llvmInt(out, j);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, s2);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_sc_");
+            llvmInt(out, j);
+            llvmOut(out, " = call i64 @str_concat(i64 %tmp_lsc_");
+            llvmInt(out, j);
+            llvmOut(out, ", i64 %tmp_rsc_");
+            llvmInt(out, j);
+            llvmOut(out, ")");
+            llvmNl(out);
+            llvmOut(out, "  store i64 %tmp_sc_");
+            llvmInt(out, j);
+            llvmOut(out, ", ptr %t");
+            llvmInt(out, dst);
+            llvmNl(out);
+
+        } else if (op == 13) {
+            // DOTACCESS: dst = s1 (simple copy, field access lowered differently)
+            llvmOut(out, "  %tmp_dot_");
+            llvmInt(out, j);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, s1);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  store i64 %tmp_dot_");
+            llvmInt(out, j);
+            llvmOut(out, ", ptr %t");
+            llvmInt(out, dst);
+            llvmNl(out);
+
+        } else if (op == 14) {
+            // NEW: dst = allocBuf(sizeof(ClassName))
+            llvmOut(out, "  %tmp_new_");
+            llvmInt(out, j);
+            llvmOut(out, " = call i64 @allocBuf(i64 64)");
+            llvmNl(out);
+            llvmOut(out, "  store i64 %tmp_new_");
+            llvmInt(out, j);
+            llvmOut(out, ", ptr %t");
+            llvmInt(out, dst);
+            llvmNl(out);
+        }
+
+        j = j + 1;
+    }
+
+    // Terminator — if block has no explicit terminator, add unreachable
+    if (tt == 0 && ic > 0) {
+        // Check if last instruction was a terminator
+        set lastIoff: int = mBlockInstr(buf, boff, ic - 1);
+        set lastOp: int = mInstrOp(buf, lastIoff);
+        if (lastOp != 5 && lastOp != 6 && lastOp != 7) {
+            llvmOut(out, "  unreachable");
+            llvmNl(out);
+        }
+    } else if (tt == 0 && ic == 0) {
+        llvmOut(out, "  unreachable");
+        llvmNl(out);
+    }
+}
+
+// ============================================================
+// C2: Binary operations — emit arithmetic and comparison LLVM IR
+// ============================================================
+function emitLLVMBinop(out: string, ext: int, dst: int, s1: int, s2: int, scBuf: string, instrIdx: int): void {
+    // Load both operands
+    llvmOut(out, "  %tmp_ls_");
+    llvmInt(out, instrIdx);
+    llvmOut(out, " = load i64, ptr %t");
+    llvmInt(out, s1);
+    llvmOut(out, "");
+    llvmNl(out);
+    llvmOut(out, "  %tmp_rs_");
+    llvmInt(out, instrIdx);
+    llvmOut(out, " = load i64, ptr %t");
+    llvmInt(out, s2);
+    llvmOut(out, "");
+    llvmNl(out);
+
+    if (ext == 1) {
+        // Addition
+        if (scBuf != "" && (isStrTemp(scBuf, s1) == 1 || isStrTemp(scBuf, s2) == 1)) {
+            // String concatenation
+            llvmOut(out, "  %tmp_bin_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, " = call i64 @str_concat(i64 %tmp_ls_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, ", i64 %tmp_rs_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, ")");
+            llvmNl(out);
+        } else {
+            llvmOut(out, "  %tmp_bin_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, " = add i64 %tmp_ls_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, ", %tmp_rs_");
+            llvmInt(out, instrIdx);
+            llvmNl(out);
+        }
+    } else if (ext == 2) {
+        // Subtraction
+        llvmOut(out, "  %tmp_bin_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = sub i64 %tmp_ls_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", %tmp_rs_");
+        llvmInt(out, instrIdx);
+        llvmNl(out);
+    } else if (ext == 3) {
+        // Multiplication
+        llvmOut(out, "  %tmp_bin_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = mul i64 %tmp_ls_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", %tmp_rs_");
+        llvmInt(out, instrIdx);
+        llvmNl(out);
+    } else if (ext == 4) {
+        // Division with zero check
+        llvmOut(out, "  %tmp_divzero_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = icmp eq i64 %tmp_rs_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", 0");
+        llvmNl(out);
+        llvmOut(out, "  %tmp_divsafe_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = select i1 %tmp_divzero_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", i64 0, i64 sdiv i64 %tmp_ls_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", %tmp_rs_");
+        llvmInt(out, instrIdx);
+        llvmNl(out);
+        llvmOut(out, "  store i64 %tmp_divsafe_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", ptr %t");
+        llvmInt(out, dst);
+        llvmNl(out);
+        return;
+    } else if (ext == 5) {
+        // Equality
+        if (scBuf != "" && (isStrTemp(scBuf, s1) == 1 || isStrTemp(scBuf, s2) == 1)) {
+            // String equality: strcmp_ajeeb(a, b) == 0
+            llvmOut(out, "  %tmp_cmp_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, " = call i64 @strcmp_ajeeb(i64 %tmp_ls_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, ", i64 %tmp_rs_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, ")");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_eq_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, " = icmp eq i64 %tmp_cmp_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, ", 0");
+            llvmNl(out);
+        } else {
+            llvmOut(out, "  %tmp_eq_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, " = icmp eq i64 %tmp_ls_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, ", %tmp_rs_");
+            llvmInt(out, instrIdx);
+            llvmNl(out);
+        }
+        // zext i1 to i64
+        llvmOut(out, "  %tmp_bin_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = zext i1 %tmp_eq_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " to i64");
+        llvmNl(out);
+    } else if (ext == 6) {
+        // Not equal
+        if (scBuf != "" && (isStrTemp(scBuf, s1) == 1 || isStrTemp(scBuf, s2) == 1)) {
+            llvmOut(out, "  %tmp_cmp_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, " = call i64 @strcmp_ajeeb(i64 %tmp_ls_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, ", i64 %tmp_rs_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, ")");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_neq_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, " = icmp ne i64 %tmp_cmp_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, ", 0");
+            llvmNl(out);
+        } else {
+            llvmOut(out, "  %tmp_neq_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, " = icmp ne i64 %tmp_ls_");
+            llvmInt(out, instrIdx);
+            llvmOut(out, ", %tmp_rs_");
+            llvmInt(out, instrIdx);
+            llvmNl(out);
+        }
+        llvmOut(out, "  %tmp_bin_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = zext i1 %tmp_neq_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " to i64");
+        llvmNl(out);
+    } else if (ext == 7) {
+        // Less than
+        llvmOut(out, "  %tmp_lt_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = icmp slt i64 %tmp_ls_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", %tmp_rs_");
+        llvmInt(out, instrIdx);
+        llvmNl(out);
+        llvmOut(out, "  %tmp_bin_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = zext i1 %tmp_lt_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " to i64");
+        llvmNl(out);
+    } else if (ext == 8) {
+        // Greater than
+        llvmOut(out, "  %tmp_sgt_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = icmp sgt i64 %tmp_ls_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", %tmp_rs_");
+        llvmInt(out, instrIdx);
+        llvmNl(out);
+        llvmOut(out, "  %tmp_bin_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = zext i1 %tmp_sgt_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " to i64");
+        llvmNl(out);
+    } else if (ext == 9) {
+        // Less or equal
+        llvmOut(out, "  %tmp_sle_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = icmp sle i64 %tmp_ls_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", %tmp_rs_");
+        llvmInt(out, instrIdx);
+        llvmNl(out);
+        llvmOut(out, "  %tmp_bin_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = zext i1 %tmp_sle_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " to i64");
+        llvmNl(out);
+    } else if (ext == 10) {
+        // Greater or equal
+        llvmOut(out, "  %tmp_sge_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = icmp sge i64 %tmp_ls_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", %tmp_rs_");
+        llvmInt(out, instrIdx);
+        llvmNl(out);
+        llvmOut(out, "  %tmp_bin_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = zext i1 %tmp_sge_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " to i64");
+        llvmNl(out);
+    } else if (ext == 11) {
+        // Logical AND
+        llvmOut(out, "  %tmp_ls_nonzero_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = icmp ne i64 %tmp_ls_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", 0");
+        llvmNl(out);
+        llvmOut(out, "  %tmp_rs_nonzero_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = icmp ne i64 %tmp_rs_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", 0");
+        llvmNl(out);
+        llvmOut(out, "  %tmp_and_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = and i1 %tmp_ls_nonzero_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", %tmp_rs_nonzero_");
+        llvmInt(out, instrIdx);
+        llvmNl(out);
+        llvmOut(out, "  %tmp_bin_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = zext i1 %tmp_and_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " to i64");
+        llvmNl(out);
+    } else if (ext == 12) {
+        // Logical OR
+        llvmOut(out, "  %tmp_ls_nonzero_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = icmp ne i64 %tmp_ls_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", 0");
+        llvmNl(out);
+        llvmOut(out, "  %tmp_rs_nonzero_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = icmp ne i64 %tmp_rs_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", 0");
+        llvmNl(out);
+        llvmOut(out, "  %tmp_or_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = or i1 %tmp_ls_nonzero_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", %tmp_rs_nonzero_");
+        llvmInt(out, instrIdx);
+        llvmNl(out);
+        llvmOut(out, "  %tmp_bin_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = zext i1 %tmp_or_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " to i64");
+        llvmNl(out);
+    } else if (ext == 15) {
+        // Modulo
+        llvmOut(out, "  %tmp_modzero_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = icmp eq i64 %tmp_rs_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", 0");
+        llvmNl(out);
+        llvmOut(out, "  %tmp_modsafe_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = select i1 %tmp_modzero_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", i64 0, i64 srem i64 %tmp_ls_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", %tmp_rs_");
+        llvmInt(out, instrIdx);
+        llvmNl(out);
+        llvmOut(out, "  store i64 %tmp_modsafe_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", ptr %t");
+        llvmInt(out, dst);
+        llvmNl(out);
+        return;
+    } else if (ext == 16) {
+        // Power — call __ipow helper
+        llvmOut(out, "  %tmp_bin_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, " = call i64 @__ipow(i64 %tmp_ls_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ", i64 %tmp_rs_");
+        llvmInt(out, instrIdx);
+        llvmOut(out, ")");
+        llvmNl(out);
+    }
+
+    // Store result (except div/mod which already stored)
+    llvmOut(out, "  store i64 %tmp_bin_");
+    llvmInt(out, instrIdx);
+    llvmOut(out, ", ptr %t");
+    llvmInt(out, dst);
+    llvmNl(out);
+}
+
+// ============================================================
+// C4: Function calls — emit call instructions
+// ============================================================
+function emitLLVMCall(buf: string, out: string, src: string, dst: int, s1: int, s2: int, ext: int): void {
+    set callee: string = substring(src, s1, s1 + s2);
+
+    // Decode argument count from ext field
+    set tmpA: int = ext; set ac2: int = 0;
+    set tmpC: int = ext; while (tmpC > 0) { ac2 = ac2 + 1; tmpC = tmpC / 1000; }
+
+    // Special case: println with multi-arg → str_concat chain + println
+    if (ac2 > 1 && s2 == 7 && charCode(src, s1) == 112 && charCode(src, s1 + 1) == 114) {
+        // println with multiple args: concat all, then println
+        set argTemps: string = getOutbuf();
+        set aTT: int = tmpA; set ai: int = 0;
+        while (ai < ac2) {
+            set rr: int = aTT; while (rr >= 1000) { rr = rr - 1000; }
+            setInt(argTemps, ai * 8, rr - 1); aTT = aTT / 1000;
+            ai = ai + 1;
+        }
+        set lastTmp: int = getInt(argTemps, (ac2 - 1) * 8);
+        set ci: int = ac2 - 2;
+        set curTmp: int = lastTmp;
+        while (ci >= 0) {
+            set prevTmp: int = getInt(argTemps, ci * 8);
+            // Load prev and cur, str_concat, store result in dst
+            llvmOut(out, "  %tmp_cat_l_");
+            llvmInt(out, ci);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, prevTmp);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_cat_r_");
+            llvmInt(out, ci);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, curTmp);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_cat_");
+            llvmInt(out, ci);
+            llvmOut(out, " = call i64 @str_concat(i64 %tmp_cat_l_");
+            llvmInt(out, ci);
+            llvmOut(out, ", i64 %tmp_cat_r_");
+            llvmInt(out, ci);
+            llvmOut(out, ")");
+            llvmNl(out);
+            curTmp = dst;
+            ci = ci - 1;
+        }
+        // Final println call
+        llvmOut(out, "  %tmp_println_");
+        llvmInt(out, dst);
+        llvmOut(out, " = load i64, ptr %t");
+        llvmInt(out, dst);
+        llvmOut(out, "");
+        llvmNl(out);
+        llvmOut(out, "  %tmp_println_r_");
+        llvmInt(out, dst);
+        llvmOut(out, " = call i64 @println(i64 %tmp_println_");
+        llvmInt(out, dst);
+        llvmOut(out, ")");
+        llvmNl(out);
+        llvmOut(out, "  store i64 %tmp_println_r_");
+        llvmInt(out, dst);
+        llvmOut(out, ", ptr %t");
+        llvmInt(out, dst);
+        llvmNl(out);
+    } else {
+        // Generic function call
+        llvmOut(out, "  %tmp_call_");
+        llvmInt(out, dst);
+        llvmOut(out, " = call i64 @");
+        llvmOut(out, callee);
+        llvmOut(out, "(");
+        set ak: int = 0; set aT: int = tmpA;
+        while (ak < ac2) {
+            if (ak > 0) { llvmOut(out, ", "); }
+            set r: int = aT; while (r >= 1000) { r = r - 1000; }
+            set argTmp: int = r - 1;
+            // Load the temp
+            llvmOut(out, "i64 %tmp_arg_");
+            llvmInt(out, dst);
+            llvmOut(out, "_");
+            llvmInt(out, ak);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_arg_");
+            llvmInt(out, dst);
+            llvmOut(out, "_");
+            llvmInt(out, ak);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, argTmp);
+            llvmOut(out, "");
+            llvmNl(out);
+            aT = aT / 1000;
+            ak = ak + 1;
+        }
+        llvmOut(out, ")");
+        llvmNl(out);
+        llvmOut(out, "  store i64 %tmp_call_");
+        llvmInt(out, dst);
+        llvmOut(out, ", ptr %t");
+        llvmInt(out, dst);
+        llvmNl(out);
+    }
+}
+
+// ============================================================
+// C1+C4: Top-level program emission — header + forward decls + functions
+// ============================================================
+function emitLLVMProg(buf: string, progOff: int, outPath: string, src: string): void {
+    set out: string = outPath;
+    writeFile(out, "");
+
+    // Preamble
+    emitLLVMPreamble(out);
+
+    // Helper function: __ipow (integer power)
+    llvmOut(out, "define i64 @__ipow(i64 %base, i64 %exp) {");
+    llvmNl(out);
+    llvmOut(out, "entry:");
+    llvmNl(out);
+    llvmOut(out, "  %base_ptr = alloca i64");
+    llvmNl(out);
+    llvmOut(out, "  %exp_ptr = alloca i64");
+    llvmNl(out);
+    llvmOut(out, "  %r_ptr = alloca i64");
+    llvmNl(out);
+    llvmOut(out, "  store i64 %base, ptr %base_ptr");
+    llvmNl(out);
+    llvmOut(out, "  store i64 %exp, ptr %exp_ptr");
+    llvmNl(out);
+    llvmOut(out, "  store i64 1, ptr %r_ptr");
+    llvmNl(out);
+    llvmOut(out, "  br label %loop");
+    llvmNl(out);
+    llvmNl(out);
+    llvmOut(out, "loop:");
+    llvmNl(out);
+    llvmOut(out, "  %exp_val = load i64, ptr %exp_ptr");
+    llvmNl(out);
+    llvmOut(out, "  %exp_pos = icmp sgt i64 %exp_val, 0");
+    llvmNl(out);
+    llvmOut(out, "  br i1 %exp_pos, label %body, label %done");
+    llvmNl(out);
+    llvmNl(out);
+    llvmOut(out, "body:");
+    llvmNl(out);
+    llvmOut(out, "  %r_val = load i64, ptr %r_ptr");
+    llvmNl(out);
+    llvmOut(out, "  %b_val = load i64, ptr %base_ptr");
+    llvmNl(out);
+    llvmOut(out, "  %r_new = mul i64 %r_val, %b_val");
+    llvmNl(out);
+    llvmOut(out, "  store i64 %r_new, ptr %r_ptr");
+    llvmNl(out);
+    llvmOut(out, "  %exp_new = sub i64 %exp_val, 1");
+    llvmNl(out);
+    llvmOut(out, "  store i64 %exp_new, ptr %exp_ptr");
+    llvmNl(out);
+    llvmOut(out, "  br label %loop");
+    llvmNl(out);
+    llvmNl(out);
+    llvmOut(out, "done:");
+    llvmNl(out);
+    llvmOut(out, "  %result = load i64, ptr %r_ptr");
+    llvmNl(out);
+    llvmOut(out, "  ret i64 %result");
+    llvmNl(out);
+    llvmOut(out, "}");
+    llvmNl(out);
+    llvmNl(out);
+
+    // String constant collector — scan all functions for string literals
+    // and emit global string constants before function definitions.
+    // Uses state buffer slot 400 as sequential string index counter,
+    // shared with emitLLVMBlockCode for ext=13 lookups.
+    bw(buf, 400, 0);
+    set cnt: int = br(buf, progOff + 1);
+    set j: int = 0;
+    while (j < cnt) {
+        set fnOff: int = br(buf, progOff + 2 + j);
+        set fnSrc: int = srcMapLookup(buf, fnOff);
+        if (fnSrc == 0) { fnSrc = src; }
+        set bc: int = mFnBlockCount(buf, fnOff);
+        set bi: int = 0;
+        while (bi < bc) {
+            set blkOff: int = mFnBlock(buf, fnOff, bi);
+            set ic: int = mBlockInstrCount(buf, blkOff);
+            set ii: int = 0;
+            while (ii < ic) {
+                set ioff: int = mBlockInstr(buf, blkOff, ii);
+                set op: int = mInstrOp(buf, ioff);
+                set ext: int = mInstrExt(buf, ioff);
+                set s1v: int = mInstrS1(buf, ioff);
+                set s2v: int = mInstrS2(buf, ioff);
+                if (op == 2 && ext == 13) {
+                    // String literal — extract content and emit global
+                    set strContent: string = substring(fnSrc, s1v, s1v + s2v);
+                    set strIdx: int = br(buf, 400);
+                    set gname: string = emitLLVMStringGlobal(out, strIdx, strContent);
+                    bw(buf, 400, strIdx + 1);
+                }
+                ii = ii + 1;
+            }
+            bi = bi + 1;
+        }
+        j = j + 1;
+    }
+    set strCount: int = br(buf, 400);
+    if (strCount > 0) { llvmNl(out); }
+
+    // Forward declarations (non-main functions first)
+    set entryFnOff: int = 0; set entryNo: int = 0; set entryNl: int = 0;
+    set entryIsMain: int = 0;
+    j = 0;
+    while (j < cnt) {
+        set fnOff: int = br(buf, progOff + 2 + j);
+        set fnSrc2: int = srcMapLookup(buf, fnOff);
+        if (fnSrc2 == 0) { fnSrc2 = src; }
+        set no: int = mFnNameOff(buf, fnOff);
+        set nl: int = mFnNameLen(buf, fnOff);
+        if (nl == 4) {
+            set c0: int = charCode(fnSrc2, no);
+            set c1: int = charCode(fnSrc2, no + 1);
+            set c2: int = charCode(fnSrc2, no + 2);
+            set c3: int = charCode(fnSrc2, no + 3);
+            if (c0 == 109 && c1 == 97 && c2 == 105 && c3 == 110) {
+                entryFnOff = fnOff; entryNo = no; entryNl = nl; entryIsMain = 1;
+            }
+        }
+        j = j + 1;
+    }
+
+    // Emit function definitions — reset string counter for emission pass
+    bw(buf, 400, 0);
+    j = 0;
+    while (j < cnt) {
+        set fnOff: int = br(buf, progOff + 2 + j);
+        set isEntry: int = 0;
+        if (entryIsMain == 1 && fnOff == entryFnOff) { isEntry = 1; }
+        set fnSrc3: int = srcMapLookup(buf, fnOff);
+        if (fnSrc3 == 0) { fnSrc3 = src; }
+        emitLLVMFn(buf, fnOff, out, fnSrc3, isEntry);
+        j = j + 1;
+    }
+}

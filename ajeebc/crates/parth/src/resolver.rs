@@ -37,6 +37,8 @@ pub fn read_lock(path: &Path) -> LockFile {
                 checksum: String::new(),
                 dependencies: Vec::new(),
                 registry: String::new(),
+                signature: String::new(),
+                signer: String::new(),
             });
             continue;
         }
@@ -48,6 +50,8 @@ pub fn read_lock(path: &Path) -> LockFile {
                     "version" => entry.version = val.to_string(),
                     "checksum" => entry.checksum = val.to_string(),
                     "registry" => entry.registry = val.to_string(),
+                    "signature" => entry.signature = val.to_string(),
+                    "signer" => entry.signer = val.to_string(),
                     "dependencies" => {
                         if !val.is_empty() {
                             for part in val.split(',') {
@@ -89,6 +93,12 @@ pub fn write_lock(lock: &LockFile, path: &Path) -> Result<(), String> {
             content.push_str(&format!("checksum = \"{}\"\n", entry.checksum));
             if !entry.registry.is_empty() {
                 content.push_str(&format!("registry = \"{}\"\n", entry.registry));
+            }
+            if !entry.signature.is_empty() {
+                content.push_str(&format!("signature = \"{}\"\n", entry.signature));
+            }
+            if !entry.signer.is_empty() {
+                content.push_str(&format!("signer = \"{}\"\n", entry.signer));
             }
             if !entry.dependencies.is_empty() {
                 let deps_str: Vec<String> = entry.dependencies.iter()
@@ -416,11 +426,20 @@ fn make_lock_entry_with_registry(name: &str, version: &str, registry: &str) -> R
     }
     let checksum = super::registry::compute_dir_checksum(&cached)?;
     let deps = read_package_deps(name, version);
+
+    // Try to read existing signature for this package
+    let (signature, signer) = match super::registry::read_signature(name, version) {
+        Some(sig) => (sig.signature_hex, sig.public_key_hex),
+        None => (String::new(), String::new()),
+    };
+
     Ok(LockEntry {
         version: version.to_string(),
         checksum,
         dependencies: deps,
         registry: registry.to_string(),
+        signature,
+        signer,
     })
 }
 
@@ -565,6 +584,7 @@ mod tests {
             lock.insert(name.to_string(), LockEntry {
                 version: version.to_string(), checksum: "".to_string(),
                 dependencies: deps_vec, registry: String::new(),
+                signature: String::new(), signer: String::new(),
             });
         }
         lock
@@ -613,6 +633,7 @@ mod tests {
             version: "1.0.0".to_string(), checksum: "abc".to_string(),
             dependencies: vec![PkgDep { name: "bar".into(), version_req: "^1.0.0".into() }],
             registry: "https://registry.example.com".into(),
+            signature: String::new(), signer: String::new(),
         });
         write_lock(&lock, &dir).unwrap();
         let read = read_lock(&dir);
