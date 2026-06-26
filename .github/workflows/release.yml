@@ -14,11 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install LLVM
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq llvm-dev
-
       - name: Generate LLVM IR (Gen0 aarch64 → platform-independent IR)
         run: |
           GEN0="ajeebc/bootstrap/ajeebc-linux-aarch64"
@@ -42,7 +37,13 @@ jobs:
           echo "=== Compile test_simple → LLVM IR ==="
           "$GEN0" ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll --emit-llvm-only
 
-          echo "✓ All LLVM IR generated"
+          # Strip target triple from .ll files so llc uses local target
+          for f in ajeebc/build/compiler.ll ajeebc/build/test_simple.ll parthi/build/parthi.ll parth/build/output.ll; do
+            sed -i 's/^target triple =.*//' "$f"
+            sed -i 's/^target datalayout =.*//' "$f"
+          done
+
+          echo "✓ All LLVM IR generated (target-independent)"
           ls -lh ajeebc/build/*.ll parthi/build/*.ll parth/build/*.ll
 
       - name: Upload LLVM IR artifacts
@@ -79,7 +80,7 @@ jobs:
       - name: Compile ajeebc (llc + gcc)
         run: |
           mkdir -p release
-          llc -O2 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          llc -O2 --march=aarch64 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
           gcc -no-pie ajeebc/build/compiler.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/ajeebc-linux-aarch64 -lm -ldl -Wno-int-to-pointer-cast
           chmod +x release/ajeebc-linux-aarch64
@@ -87,7 +88,7 @@ jobs:
 
       - name: Compile parthi (llc + gcc)
         run: |
-          llc -O2 parthi/build/parthi.ll -o parthi/build/parthi.s
+          llc -O2 --march=aarch64 parthi/build/parthi.ll -o parthi/build/parthi.s
           gcc -no-pie parthi/build/parthi.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/parthi-linux-aarch64 -lm -ldl -Wno-int-to-pointer-cast
           chmod +x release/parthi-linux-aarch64
@@ -95,7 +96,7 @@ jobs:
 
       - name: Compile parth (llc + gcc)
         run: |
-          llc -O2 parth/build/output.ll -o parth/build/output.s
+          llc -O2 --march=aarch64 parth/build/output.ll -o parth/build/output.s
           gcc -no-pie parth/build/output.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/parth-linux-aarch64 -lm -ldl -Wno-int-to-pointer-cast
           chmod +x release/parth-linux-aarch64
@@ -110,7 +111,7 @@ jobs:
       - name: Bootstrap check
         run: |
           release/ajeebc-linux-aarch64 ajeebc/tests/test_simple.ajb ajeebc/build/test_simple_check.ll --emit-llvm-only
-          llc -O2 ajeebc/build/test_simple_check.ll -o ajeebc/build/test_simple_check.s
+          llc -O2 --march=aarch64 ajeebc/build/test_simple_check.ll -o ajeebc/build/test_simple_check.s
           gcc -no-pie ajeebc/build/test_simple_check.s ajeebc/runtime/ajeeb_runtime.c \
             -o ajeebc/build/test_simple_check -lm -ldl -Wno-int-to-pointer-cast
           OUTPUT=$(./ajeebc/build/test_simple_check 2>/dev/null)
@@ -147,7 +148,7 @@ jobs:
       - name: Compile ajeebc (llc + gcc)
         run: |
           mkdir -p release
-          llc -O2 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          llc -O2 --march=x86-64 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
           gcc -no-pie ajeebc/build/compiler.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/ajeebc-linux-x86_64 -lm -ldl -Wno-int-to-pointer-cast
           chmod +x release/ajeebc-linux-x86_64
@@ -155,7 +156,7 @@ jobs:
 
       - name: Compile parthi (llc + gcc)
         run: |
-          llc -O2 parthi/build/parthi.ll -o parthi/build/parthi.s
+          llc -O2 --march=x86-64 parthi/build/parthi.ll -o parthi/build/parthi.s
           gcc -no-pie parthi/build/parthi.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/parthi-linux-x86_64 -lm -ldl -Wno-int-to-pointer-cast
           chmod +x release/parthi-linux-x86_64
@@ -163,7 +164,7 @@ jobs:
 
       - name: Compile parth (llc + gcc)
         run: |
-          llc -O2 parth/build/output.ll -o parth/build/output.s
+          llc -O2 --march=x86-64 parth/build/output.ll -o parth/build/output.s
           gcc -no-pie parth/build/output.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/parth-linux-x86_64 -lm -ldl -Wno-int-to-pointer-cast
           chmod +x release/parth-linux-x86_64
@@ -178,7 +179,7 @@ jobs:
       - name: Bootstrap check
         run: |
           release/ajeebc-linux-x86_64 ajeebc/tests/test_simple.ajb ajeebc/build/test_simple_check.ll --emit-llvm-only
-          llc -O2 ajeebc/build/test_simple_check.ll -o ajeebc/build/test_simple_check.s
+          llc -O2 --march=x86-64 ajeebc/build/test_simple_check.ll -o ajeebc/build/test_simple_check.s
           gcc -no-pie ajeebc/build/test_simple_check.s ajeebc/runtime/ajeeb_runtime.c \
             -o ajeebc/build/test_simple_check -lm -ldl -Wno-int-to-pointer-cast
           OUTPUT=$(./ajeebc/build/test_simple_check 2>/dev/null)
@@ -214,7 +215,7 @@ jobs:
         run: |
           export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
           mkdir -p release
-          llc -O2 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          llc -O2 --march=aarch64 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
           cc ajeebc/build/compiler.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/ajeebc-macos-arm64 -lm -Wno-int-to-pointer-cast
           chmod +x release/ajeebc-macos-arm64
@@ -223,7 +224,7 @@ jobs:
       - name: Compile parthi (llc + cc)
         run: |
           export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
-          llc -O2 parthi/build/parthi.ll -o parthi/build/parthi.s
+          llc -O2 --march=aarch64 parthi/build/parthi.ll -o parthi/build/parthi.s
           cc parthi/build/parthi.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/parthi-macos-arm64 -lm -Wno-int-to-pointer-cast
           chmod +x release/parthi-macos-arm64
@@ -232,7 +233,7 @@ jobs:
       - name: Compile parth (llc + cc)
         run: |
           export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
-          llc -O2 parth/build/output.ll -o parth/build/output.s
+          llc -O2 --march=aarch64 parth/build/output.ll -o parth/build/output.s
           cc parth/build/output.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/parth-macos-arm64 -lm -Wno-int-to-pointer-cast
           chmod +x release/parth-macos-arm64
@@ -248,7 +249,7 @@ jobs:
         run: |
           export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
           release/ajeebc-macos-arm64 ajeebc/tests/test_simple.ajb ajeebc/build/test_simple_check.ll --emit-llvm-only
-          llc -O2 ajeebc/build/test_simple_check.ll -o ajeebc/build/test_simple_check.s
+          llc -O2 --march=aarch64 ajeebc/build/test_simple_check.ll -o ajeebc/build/test_simple_check.s
           cc ajeebc/build/test_simple_check.s ajeebc/runtime/ajeeb_runtime.c \
             -o ajeebc/build/test_simple_check -lm -Wno-int-to-pointer-cast
           OUTPUT=$(./ajeebc/build/test_simple_check 2>/dev/null)
@@ -284,7 +285,7 @@ jobs:
         run: |
           export PATH="/usr/local/opt/llvm/bin:$PATH"
           mkdir -p release
-          llc -O2 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          llc -O2 --march=x86-64 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
           cc ajeebc/build/compiler.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/ajeebc-macos-x86_64 -lm -Wno-int-to-pointer-cast
           chmod +x release/ajeebc-macos-x86_64
@@ -293,7 +294,7 @@ jobs:
       - name: Compile parthi (llc + cc)
         run: |
           export PATH="/usr/local/opt/llvm/bin:$PATH"
-          llc -O2 parthi/build/parthi.ll -o parthi/build/parthi.s
+          llc -O2 --march=x86-64 parthi/build/parthi.ll -o parthi/build/parthi.s
           cc parthi/build/parthi.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/parthi-macos-x86_64 -lm -Wno-int-to-pointer-cast
           chmod +x release/parthi-macos-x86_64
@@ -302,7 +303,7 @@ jobs:
       - name: Compile parth (llc + cc)
         run: |
           export PATH="/usr/local/opt/llvm/bin:$PATH"
-          llc -O2 parth/build/output.ll -o parth/build/output.s
+          llc -O2 --march=x86-64 parth/build/output.ll -o parth/build/output.s
           cc parth/build/output.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/parth-macos-x86_64 -lm -Wno-int-to-pointer-cast
           chmod +x release/parth-macos-x86_64
@@ -318,7 +319,7 @@ jobs:
         run: |
           export PATH="/usr/local/opt/llvm/bin:$PATH"
           release/ajeebc-macos-x86_64 ajeebc/tests/test_simple.ajb ajeebc/build/test_simple_check.ll --emit-llvm-only
-          llc -O2 ajeebc/build/test_simple_check.ll -o ajeebc/build/test_simple_check.s
+          llc -O2 --march=x86-64 ajeebc/build/test_simple_check.ll -o ajeebc/build/test_simple_check.s
           cc ajeebc/build/test_simple_check.s ajeebc/runtime/ajeeb_runtime.c \
             -o ajeebc/build/test_simple_check -lm -Wno-int-to-pointer-cast
           OUTPUT=$(./ajeebc/build/test_simple_check 2>/dev/null)
@@ -359,14 +360,14 @@ jobs:
       - name: Compile ajeebc (llc + gcc)
         run: |
           mkdir -p release
-          llc -O2 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          llc -O2 --march=x86-64 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
           gcc ajeebc/build/compiler.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/ajeebc-windows-x86_64.exe -lm -Wno-int-to-pointer-cast
           echo "✓ ajeebc-windows-x86_64.exe built"
 
       - name: Compile parth (llc + gcc)
         run: |
-          llc -O2 parth/build/output.ll -o parth/build/output.s
+          llc -O2 --march=x86-64 parth/build/output.ll -o parth/build/output.s
           gcc parth/build/output.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/parth-windows-x86_64.exe -lm -Wno-int-to-pointer-cast
           echo "✓ parth-windows-x86_64.exe built"
