@@ -40,7 +40,7 @@ if [ ! -x "$AJEEBC" ]; then
     (cd "${ROOT}/../ajeebc" && make rust 2>/dev/null)
 fi
 
-"$AJEEBC" "$COMBINED" "build/parthi.ll" 2>/dev/null
+"$AJEEBC" "$COMBINED" "build/parthi.ll" --emit-llvm-only 2>/dev/null
 echo "  ✓ LLVM IR generated"
 
 # Step 3: Assemble + link

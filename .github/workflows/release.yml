@@ -32,8 +32,6 @@ jobs:
           cp target/release/ajeeb_compiler ../../build/ajeebc
 
       - name: Build parthi
-        env:
-          AJEEBC_PATH: ${{ github.workspace }}/build/ajeebc
         run: bash parthi/build.sh
 
       - name: Build parth
@@ -46,13 +44,13 @@ jobs:
       - name: Bootstrap check
         run: |
           mkdir -p ajeebc/build
-          build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
+          ajeebc/build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
           llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
           gcc -no-pie ajeebc/build/compiler.s \
             ajeebc/runtime/ajeeb_runtime.c \
             -o ajeebc/build/compiler -lm -ldl -Wno-int-to-pointer-cast
           echo "✓ Self-hosted compiler built"
-          build/ajeebc --emit-llvm-only ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll
+          ajeebc/build/ajeebc --emit-llvm-only ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll
           llc ajeebc/build/test_simple.ll -o ajeebc/build/test_simple.s
           gcc -no-pie ajeebc/build/test_simple.s \
             ajeebc/runtime/ajeeb_runtime.c \
@@ -67,11 +65,11 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p release/packages/ajeeb-std
-          cp build/ajeebc release/ajeebc-linux-x86_64
+          cp ajeebc/build/ajeebc release/ajeebc-linux-x86_64
           cp parthi/build/parthi release/parthi-linux-x86_64
           cp parth/build/parth release/parth-linux-x86_64
           cp ajeebc/runtime/ajeeb_runtime.c release/
-          cp packages/ajeeb-std/*.ajb release/packages/ajeeb-std/
+          cp ajeeb-lang/std/*.ajb release/packages/ajeeb-std/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -102,8 +100,6 @@ jobs:
           cp target/release/ajeeb_compiler ../../build/ajeebc
 
       - name: Build parthi
-        env:
-          AJEEBC_PATH: ${{ github.workspace }}/build/ajeebc
         run: bash parthi/build.sh
 
       - name: Build parth
@@ -116,7 +112,7 @@ jobs:
       - name: Bootstrap check
         run: |
           mkdir -p ajeebc/build
-          build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
+          ajeebc/build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
           llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
           gcc -no-pie ajeebc/build/compiler.s \
             ajeebc/runtime/ajeeb_runtime.c \
@@ -126,11 +122,11 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p release/packages/ajeeb-std
-          cp build/ajeebc release/ajeebc-linux-aarch64
+          cp ajeebc/build/ajeebc release/ajeebc-linux-aarch64
           cp parthi/build/parthi release/parthi-linux-aarch64
           cp parth/build/parth release/parth-linux-aarch64
           cp ajeebc/runtime/ajeeb_runtime.c release/
-          cp packages/ajeeb-std/*.ajb release/packages/ajeeb-std/
+          cp ajeeb-lang/std/*.ajb release/packages/ajeeb-std/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -159,8 +155,6 @@ jobs:
           cp target/release/ajeeb_compiler ../../build/ajeebc
 
       - name: Build parthi
-        env:
-          AJEEBC_PATH: ${{ github.workspace }}/build/ajeebc
         run: bash parthi/build.sh
 
       - name: Build parth
@@ -174,13 +168,13 @@ jobs:
         run: |
           export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
           mkdir -p ajeebc/build
-          build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
+          ajeebc/build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
           llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
           cc ajeebc/build/compiler.s \
             ajeebc/runtime/ajeeb_runtime.c \
             -o ajeebc/build/compiler -lm -Wno-int-to-pointer-cast
           echo "✓ Self-hosted compiler built"
-          build/ajeebc --emit-llvm-only ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll
+          ajeebc/build/ajeebc --emit-llvm-only ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll
           llc ajeebc/build/test_simple.ll -o ajeebc/build/test_simple.s
           cc ajeebc/build/test_simple.s \
             ajeebc/runtime/ajeeb_runtime.c \
@@ -195,11 +189,11 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p release/packages/ajeeb-std
-          cp build/ajeebc release/ajeebc-macos-arm64
+          cp ajeebc/build/ajeebc release/ajeebc-macos-arm64
           cp parthi/build/parthi release/parthi-macos-arm64
           cp parth/build/parth release/parth-macos-arm64
           cp ajeebc/runtime/ajeeb_runtime.c release/
-          cp packages/ajeeb-std/*.ajb release/packages/ajeeb-std/
+          cp ajeeb-lang/std/*.ajb release/packages/ajeeb-std/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -228,8 +222,6 @@ jobs:
           cp target/release/ajeeb_compiler ../../build/ajeebc
 
       - name: Build parthi
-        env:
-          AJEEBC_PATH: ${{ github.workspace }}/build/ajeebc
         run: bash parthi/build.sh
 
       - name: Build parth
@@ -243,7 +235,7 @@ jobs:
         run: |
           export PATH="/usr/local/opt/llvm/bin:$PATH"
           mkdir -p ajeebc/build
-          build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
+          ajeebc/build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
           llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
           cc ajeebc/build/compiler.s \
             ajeebc/runtime/ajeeb_runtime.c \
@@ -253,11 +245,11 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p release/packages/ajeeb-std
-          cp build/ajeebc release/ajeebc-macos-x86_64
+          cp ajeebc/build/ajeebc release/ajeebc-macos-x86_64
           cp parthi/build/parthi release/parthi-macos-x86_64
           cp parth/build/parth release/parth-macos-x86_64
           cp ajeebc/runtime/ajeeb_runtime.c release/
-          cp packages/ajeeb-std/*.ajb release/packages/ajeeb-std/
+          cp ajeeb-lang/std/*.ajb release/packages/ajeeb-std/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -301,10 +293,10 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p release/packages/ajeeb-std
-          cp build/ajeebc.exe release/ajeebc-windows-x86_64.exe
+          cp ajeebc/build/ajeebc.exe release/ajeebc-windows-x86_64.exe
           cp parth/build/parth.exe release/parth-windows-x86_64.exe
           cp ajeebc/runtime/ajeeb_runtime.c release/
-          cp packages/ajeeb-std/*.ajb release/packages/ajeeb-std/
+          cp ajeeb-lang/std/*.ajb release/packages/ajeeb-std/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -337,7 +329,10 @@ jobs:
           # Generate SHA256SUMS.txt
           cd release && sha256sum ajeebc-* parthi-* parth-* 2>/dev/null > SHA256SUMS.txt || true
           echo "v${GITHUB_REF#refs/tags/}" > version.txt
+          echo "=== SHA256SUMS.txt ==="
           cat SHA256SUMS.txt
+          echo ""
+          echo "=== Release contents ==="
           ls -lh release/
 
       - name: Get tag name
@@ -356,10 +351,6 @@ jobs:
             **Linux / macOS:**
             ```bash
             curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/scripts/install.sh | bash
-            ```
-            **Build from source (requires Rust):**
-            ```bash
-            curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/scripts/install.sh | bash -s -- --build-from-source
             ```
             **Windows (PowerShell):**
             ```powershell
@@ -398,7 +389,6 @@ jobs:
             release/parthi-linux-aarch64
             release/parthi-macos-arm64
             release/parthi-macos-x86_64
-            release/parthi-windows-x86_64.exe
             release/parth-linux-x86_64
             release/parth-linux-aarch64
             release/parth-macos-arm64
