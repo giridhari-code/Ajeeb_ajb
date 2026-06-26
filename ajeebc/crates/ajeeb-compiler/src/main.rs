@@ -91,6 +91,7 @@ fn main() -> io::Result<()> {
     let force_gcc = args.iter().any(|a| a == "--gcc") || args.iter().any(|a| a == "--backend=c");
     let skip_run = args.iter().any(|a| a == "--skip-run");
     let skip_compile = args.iter().any(|a| a == "--skip-compile") || args.iter().any(|a| a == "--interpret");
+    let emit_llvm_only = args.iter().any(|a| a == "--emit-llvm-only");
     let force_run = args.iter().any(|a| a == "--run") || args.iter().any(|a| a == "--interpret");
 
     // --- Detect backend ---
@@ -354,7 +355,11 @@ fn main() -> io::Result<()> {
 
                 println!("\n🔨 Codegen: {} → {}", file_path, bin_path);
 
-                // Step 1: llc — LLVM IR → Assembly
+                // If --emit-llvm-only, stop after writing .ll file
+                if emit_llvm_only {
+                    println!("✅ LLVM IR written to {}", ll_path);
+                    compiled_ok = true;
+                } else {
                 let llc_ok = Command::new("llc")
                     .args(["-O2", &ll_path, "-o", "build/output.s"])
                     .status()
@@ -419,6 +424,7 @@ fn main() -> io::Result<()> {
                     Ok(s) => println!("❌ ld failed (exit: {})", s),
                     Err(e) => println!("❌ ld error: {}", e),
                 }
+                } // end else (not emit_llvm_only)
             }
             Err(e) => {
                 println!("⚠️  LLVM codegen failed: {}", e);

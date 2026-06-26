@@ -20,19 +20,9 @@ function makeBuildDir(outDir: string): int {
 }
 
 function findRuntime(runtimePath: string): string {
-    // Check configured path first
-    if (fileExists(runtimePath) == 1) { return runtimePath; }
-    // Try relative to parth itself
-    set p1: string = str_concat("../ajeebc/runtime/", runtimePath);
-    if (fileExists(p1) == 1) { return p1; }
-    set p2: string = str_concat("../runtime/", runtimePath);
-    if (fileExists(p2) == 1) { return p2; }
-    // Try absolute paths for common locations
-    set p3: string = "/root/ajeeb_compiler/runtime/ajeeb_runtime.c";
-    if (fileExists(p3) == 1) { return p3; }
-    set p4: string = "/root/ajeeb_compiler/ajeebc/runtime/ajeeb_runtime.c";
-    if (fileExists(p4) == 1) { return p4; }
-    return runtimePath;
+    // Always use installed runtime - never use project-relative paths
+    set installed: string = "/root/.ajeeb/bin/ajeeb_runtime.c";
+    return installed;
 }
 
 function findAjeebc(): string {
@@ -102,18 +92,31 @@ function buildProject(): int {
         cpCmd = str_concat(cpCmd, " runtime/ajeeb_runtime.c");
         exec(cpCmd);
 
-        // Step 1: Compile with ajeebc (produces C in build/output.c)
+        // Step 1: Compile with ajeebc (produces LLVM IR + C in build/)
         set cmd1: string = str_concat(ajeebc, " ");
         cmd1 = str_concat(cmd1, entry);
+        cmd1 = str_concat(cmd1, " --skip-run");
         r = exec(cmd1);
         if (r != 0) {
             println("ajeebc compile fail! Neeche dekh lo.");
             return r;
         }
 
-        // Step 2: Compile C to binary with gcc
-        set gccCmd: string = str_concat("gcc -no-pie ", cFile);
-        gccCmd = str_concat(gccCmd, " runtime/ajeeb_runtime.c -o ");
+        // Step 2: llc → assembly → gcc → binary
+        set llFile: string = str_concat(outDir, "output.ll");
+        set asmFile: string = str_concat(outDir, "output.s");
+        set llcCmd: string = str_concat("llc -O2 ", llFile);
+        llcCmd = str_concat(llcCmd, " -o ");
+        llcCmd = str_concat(llcCmd, asmFile);
+        r = exec(llcCmd);
+        if (r != 0) {
+            println("llc compile fail!");
+            return r;
+        }
+        set gccCmd: string = str_concat("gcc -no-pie ", asmFile);
+        gccCmd = str_concat(gccCmd, " ");
+        gccCmd = str_concat(gccCmd, resolvedRuntime);
+        gccCmd = str_concat(gccCmd, " -o ");
         gccCmd = str_concat(gccCmd, binPath);
         gccCmd = str_concat(gccCmd, " -lm -ldl -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast 2>&1");
         r = exec(gccCmd);

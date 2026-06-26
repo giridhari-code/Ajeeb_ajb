@@ -1728,19 +1728,8 @@ function makeBuildDir(outDir: string): int {
 }
 
 function findRuntime(runtimePath: string): string {
-    // Check configured path first
-    if (fileExists(runtimePath) == 1) { return runtimePath; }
-    // Try relative to parth itself
-    set p1: string = str_concat("../ajeebc/runtime/", runtimePath);
-    if (fileExists(p1) == 1) { return p1; }
-    set p2: string = str_concat("../runtime/", runtimePath);
-    if (fileExists(p2) == 1) { return p2; }
-    // Try absolute paths for common locations
-    set p3: string = "/root/ajeeb_compiler/runtime/ajeeb_runtime.c";
-    if (fileExists(p3) == 1) { return p3; }
-    set p4: string = "/root/ajeeb_compiler/ajeebc/runtime/ajeeb_runtime.c";
-    if (fileExists(p4) == 1) { return p4; }
-    return runtimePath;
+    // Always use installed runtime
+    return "/root/.ajeeb/bin/ajeeb_runtime.c";
 }
 
 function findAjeebc(): string {
@@ -1805,23 +1794,36 @@ function buildProject(): int {
 
         // Step 0: Ensure runtime is available in project
         set resolvedRuntime: string = findRuntime(runtimePath);
-        mkdir("runtime");
-        set cpCmd: string = str_concat("cp ", resolvedRuntime);
-        cpCmd = str_concat(cpCmd, " runtime/ajeeb_runtime.c");
-        exec(cpCmd);
 
-        // Step 1: Compile with ajeebc (produces C in build/output.c)
+        // Step 1: Compile with ajeebc (emit LLVM IR only)
+        set llFile: string = str_concat(outDir, "output.ll");
         set cmd1: string = str_concat(ajeebc, " ");
         cmd1 = str_concat(cmd1, entry);
+        cmd1 = str_concat(cmd1, " ");
+        cmd1 = str_concat(cmd1, llFile);
+        cmd1 = str_concat(cmd1, " --emit-llvm-only");
         r = exec(cmd1);
         if (r != 0) {
             println("ajeebc compile fail! Neeche dekh lo.");
             return r;
         }
 
-        // Step 2: Compile C to binary with gcc
-        set gccCmd: string = str_concat("gcc -no-pie ", cFile);
-        gccCmd = str_concat(gccCmd, " runtime/ajeeb_runtime.c -o ");
+        // Step 2: llc → assembly
+        set asmFile: string = str_concat(outDir, "output.s");
+        set llcCmd: string = str_concat("llc -O2 ", llFile);
+        llcCmd = str_concat(llcCmd, " -o ");
+        llcCmd = str_concat(llcCmd, asmFile);
+        r = exec(llcCmd);
+        if (r != 0) {
+            println("llc compile fail!");
+            return r;
+        }
+
+        // Step 3: gcc → binary
+        set gccCmd: string = str_concat("gcc -no-pie ", asmFile);
+        gccCmd = str_concat(gccCmd, " ");
+        gccCmd = str_concat(gccCmd, resolvedRuntime);
+        gccCmd = str_concat(gccCmd, " -o ");
         gccCmd = str_concat(gccCmd, binPath);
         gccCmd = str_concat(gccCmd, " -lm -ldl -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast 2>&1");
         r = exec(gccCmd);
@@ -1914,6 +1916,33 @@ function runProject(): int {
 // All errors in Hinglish!
 
 
+function cmdHelp(): void {
+    println("Ajeeb Package Manager — parth v1.0.1 (ajeeb-native)");
+    println("");
+    println("USAGE:");
+    println("  parth <command> [arguments]");
+    println("");
+    println("COMMANDS:");
+    println("  init [name]       Project initialize karo current dir mein");
+    println("  new <name>        Naya project banao");
+    println("  add <pkg[@ver]>   Dependency add karo");
+    println("  remove <pkg>      Dependency hatao");
+    println("  build             ajeebc se compile karo (LLVM + gcc)");
+    println("  run               ParthI interpreter se chalao");
+    println("  test              Tests chalao (tests/ folder)");
+    println("  install <tool>    Tool download karo (ajeebc/parthi)");
+    println("  generate-lockfile Lock file banao (v2, pinned versions)");
+    println("  cache <cmd>       Cache management (list/clear/status)");
+    println("  publish           Package publish karo");
+    println("  search <query>    Packages search karo");
+    println("  registry <cmd>    Registry operations (list/info)");
+    println("  tree              Dependency tree dikhao");
+    println("  workspace <cmd>   Workspace management");
+    println("  test-all          Sab tests chalao (integration + regression)");
+    println("  help              Yeh help message");
+    println("  --version         Version dikhao");
+}
+
 function cmdInit(name: string): int {
     if (len(name) == 0) { name = "project"; }
 
@@ -2002,23 +2031,21 @@ function main(): int {
     }
 
     if (argCount < 1) {
-    println("Usage: parth <init|new|build|run|test|install|add|remove>");
-    println("");
-    println("Commands:");
-    println("  init [name]       Project initialize karo current dir mein");
-    println("  new <name>        Naya project banao");
-    println("  add <pkg[@ver]>   Dependency add karo");
-    println("  remove <pkg>      Dependency hatao");
-    println("  build             ajeebc se compile karo (LLVM + gcc)");
-    println("  run               ParthI interpreter se chalao");
-    println("  test              Tests chalao (tests/ folder)");
-    println("  install <tool>    Tool download karo (ajeebc/parthi)");
-    println("  generate-lockfile Lock file banao (v2, pinned versions)");
-    println("  test-all         Sab tests chalao (integration + regression)");
+        cmdHelp();
         return 1;
     }
 
     set cmd: string = readArg(1);
+
+    if (strcmp_ajeeb(cmd, "--version") == 0 || strcmp_ajeeb(cmd, "-V") == 0) {
+        println("parth 1.0.1 (ajeeb-native)");
+        return 0;
+    }
+
+    if (strcmp_ajeeb(cmd, "help") == 0 || strcmp_ajeeb(cmd, "--help") == 0 || strcmp_ajeeb(cmd, "-h") == 0) {
+        cmdHelp();
+        return 0;
+    }
 
     if (strcmp_ajeeb(cmd, "init") == 0) {
         set projName: string = readArg(2);
