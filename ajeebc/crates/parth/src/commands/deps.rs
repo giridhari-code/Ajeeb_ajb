@@ -30,27 +30,65 @@ pub fn cmd_add(args: &[String]) {
 
     let mut deps = cfg.deps.clone();
     if deps.iter().any(|d| d.name == pkg_name) {
-        println!("ℹ️  '{}' is already a dependency", pkg_name);
+        println!("'{}' is already a dependency", pkg_name);
         return;
     }
 
     // Try to find package locally first
     match registry::find_local_package(&pkg_name) {
         Some(local_path) => {
-            println!("📦 Found '{}' locally at {}", pkg_name, local_path.display());
-            // Copy to cache
-            match registry::link_local_package(&local_path, &pkg_name) {
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("❌ Could not link '{}': {}", pkg_name, e);
+            // Check if this is a standard library single .ajb file
+            let ajb_file = local_path.join(format!("{}.ajb", registry::sanitize_pkg_segment(&pkg_name)));
+            if ajb_file.exists() && !local_path.join("parth.das").exists() {
+                // Standard library package - create minimal package structure in cache
+                let version = "1.0.0";
+                let cache_dir = registry::package_cache_dir(&pkg_name, version);
+                std::fs::create_dir_all(&cache_dir).unwrap_or_else(|e| {
+                    eprintln!("Error creating cache: {}", e);
                     std::process::exit(1);
+                });
+                // Copy the .ajb file
+                std::fs::copy(&ajb_file, cache_dir.join(format!("{}.ajb", pkg_name))).unwrap_or_else(|e| {
+                    eprintln!("Error copying {}: {}", ajb_file.display(), e);
+                    std::process::exit(1);
+                });
+                println!("Found '{}' (standard library) at {}", pkg_name, ajb_file.display());
+            } else {
+                println!("Found '{}' locally at {}", pkg_name, local_path.display());
+                match registry::link_local_package(&local_path, &pkg_name) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("Could not link '{}': {}", pkg_name, e);
+                        std::process::exit(1);
+                    }
                 }
             }
         }
         None => {
-            // Try to download (will also search local paths)
-            let _ = registry::download_package(&pkg_name, &"latest".to_string(), "");
+            eprintln!("Package '{}' not found locally.", pkg_name);
+            eprintln!("  Search paths:");
+            eprintln!("    - ./packages/");
+            eprintln!("    - ~/.parth/packages/");
+            eprintln!("    - ~/.ajeeb/packages/ajeeb-std/");
+            eprintln!();
+            eprintln!("  To add a local package: parth link <path>");
+            std::process::exit(1);
         }
+    }
+
+    // For standard library packages, just add to deps without resolver
+    let ajb_file = registry::find_local_package(&pkg_name)
+        .and_then(|p| {
+            let f = p.join(format!("{}.ajb", registry::sanitize_pkg_segment(&pkg_name)));
+            if f.exists() && !p.join("parth.das").exists() { Some(f) } else { None }
+        });
+    if ajb_file.is_some() {
+        deps.push(types::PkgDep { name: pkg_name.clone(), version_req: original_req });
+        config::update_deps(Path::new("parth.das"), &deps).unwrap_or_else(|e| {
+            eprintln!("Error: {}", e); std::process::exit(1);
+        });
+        println!("Added '{}'", pkg_name);
+        return;
     }
 
     let new_dep = types::PkgDep { name: pkg_name.clone(), version_req };
@@ -63,10 +101,10 @@ pub fn cmd_add(args: &[String]) {
             config::update_deps(Path::new("parth.das"), &deps).unwrap_or_else(|e| {
                 eprintln!("Error: {}", e); std::process::exit(1);
             });
-            println!("✓ Added '{}'", pkg_name);
+            println!("Added '{}'", pkg_name);
         }
         Err(e) => {
-            eprintln!("❌ Could not add '{}': {}", pkg_name, e);
+            eprintln!("Could not add '{}': {}", pkg_name, e);
             std::process::exit(1);
         }
     }

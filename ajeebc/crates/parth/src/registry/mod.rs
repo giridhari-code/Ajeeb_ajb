@@ -51,12 +51,21 @@ pub fn package_cache_dir(name: &str, version: &str) -> PathBuf {
 /// 2) ~/.parth/packages/<name>/
 /// 3) ../packages/<name>/
 /// 4) <ajeeb_root>/packages/<name>/
+/// 5) ~/.ajeeb/packages/ajeeb-std/<name>/
+/// Also checks for single .ajb files (standard library pattern)
 pub fn find_local_package(name: &str) -> Option<PathBuf> {
     let search_roots = local_package_search_paths();
+    let sanitized = sanitize_pkg_segment(name);
     for root in &search_roots {
-        let pkg_dir = root.join(sanitize_pkg_segment(name));
+        // Check directory with parth.das
+        let pkg_dir = root.join(&sanitized);
         if pkg_dir.exists() && pkg_dir.join("parth.das").exists() {
             return Some(pkg_dir);
+        }
+        // Check single .ajb file (standard library pattern)
+        let ajb_file = root.join(format!("{}.ajb", sanitized));
+        if ajb_file.exists() {
+            return Some(root.clone());
         }
     }
     None
@@ -84,6 +93,11 @@ pub fn local_package_search_paths() -> Vec<PathBuf> {
     // 4) <ajeeb_root>/packages/<name>/
     let root = find_ajeeb_root();
     paths.push(root.join("packages"));
+    
+    // 5) ~/.ajeeb/packages/ajeeb-std/ (standard library)
+    if let Ok(home) = std::env::var("HOME") {
+        paths.push(PathBuf::from(home).join(".ajeeb/packages/ajeeb-std"));
+    }
     
     paths
 }
