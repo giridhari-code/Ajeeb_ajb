@@ -107,6 +107,7 @@ fn main() {
     }
 
     match args[1].as_str() {
+        "--version" | "-V" => println!("parth 1.0.1"),
         "new" => cmd_new(&args[2..]),
         "init" => cmd_init(),
         "add" => cmd_add(&args[2..]),

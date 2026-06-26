@@ -58,8 +58,15 @@ fn detect_backend() -> &'static str {
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
+
+    // Handle --version / -V
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("ajeebc 1.0.1");
+        return Ok(());
+    }
+
     if args.len() < 2 {
-        println!("Arre Bhai! File ka naam toh do. Example: cargo run test.ajb");
+        println!("Arre Bhai! File ka naam toh do. Example: ajeebc test.ajb");
         return Ok(());
     }
 
@@ -71,7 +78,7 @@ fn main() -> io::Result<()> {
     let file_path = if !positional.is_empty() {
         positional[0].as_str()
     } else {
-        println!("Arre Bhai! File ka naam toh do. Example: cargo run test.ajb");
+        println!("Arre Bhai! File ka naam toh do. Example: ajeebc test.ajb");
         return Ok(());
     };
     let output_path = if positional.len() >= 2 {
