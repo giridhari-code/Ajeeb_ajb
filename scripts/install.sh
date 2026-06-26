@@ -183,7 +183,7 @@ echo "  Downloading ajeeb-std packages..."
 STD_DIR="${BIN_DIR}/../packages/ajeeb-std"
 mkdir -p "$STD_DIR"
 for f in io.ajb math.ajb string.ajb array.ajb fs.ajb result.ajb collections.ajb; do
-    URL="https://raw.githubusercontent.com/${REPO}/${VERSION}/packages/ajeeb-std/${f}"
+    URL="https://raw.githubusercontent.com/${REPO}/${VERSION}/ajeeb-lang/std/${f}"
     curl -sSfL "$URL" -o "${STD_DIR}/${f}" 2>/dev/null && echo "  ✓ ajeeb-std/${f}" || true
 done
 
