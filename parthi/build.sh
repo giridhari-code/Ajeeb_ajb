@@ -1,11 +1,26 @@
 #!/usr/bin/env bash
 # parthi build script — Miri-inspired modular architecture
 # Concatenates module files in order, then compiles via ajeebc
+# Usage:
+#   bash build.sh                 — full build (LLIR → native binary)
+#   bash build.sh --emit-llvm-only — generate LLVM IR only
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
+
+EMIT_IR_ONLY=false
+for arg in "$@"; do
+    [ "$arg" = "--emit-llvm-only" ] && EMIT_IR_ONLY=true
+done
+
+# Ensure llc/gcc are on PATH (Homebrew LLVM on macOS)
+if [ "$(uname)" = "Darwin" ]; then
+    for p in /opt/homebrew/opt/llvm/bin /usr/local/opt/llvm/bin; do
+        [ -d "$p" ] && export PATH="$p:$PATH"
+    done
+fi
 
 echo "=== Building ParthI (modular) ==="
 
@@ -32,18 +47,26 @@ done
 
 echo "  ✓ Combined file: $(wc -l < "$COMBINED") lines"
 
-# Step 2: Compile with ajeebc (Rust stage-0 → LLVM)
-echo "  Compiling with ajeebc..."
+# Step 2: Find ajeebc
 AJEEBC="${ROOT}/../ajeebc/build/ajeebc"
 if [ ! -x "$AJEEBC" ]; then
-    echo "  ajeebc not found at $AJEEBC — building it first..."
-    (cd "${ROOT}/../ajeebc" && make rust 2>/dev/null)
+    echo "  ajeebc not found at $AJEEBC — cannot build"
+    exit 1
 fi
 
-"$AJEEBC" "$COMBINED" "build/parthi.ll" --emit-llvm-only 2>/dev/null
+# Step 3: Compile with ajeebc → LLVM IR
+echo "  Compiling with ajeebc..."
+"$AJEEBC" "$COMBINED" "build/parthi.ll" --emit-llvm-only
 echo "  ✓ LLVM IR generated"
 
-# Step 3: Assemble + link
+if [ "$EMIT_IR_ONLY" = true ]; then
+    echo ""
+    echo "✅ ParthI IR generation complete!"
+    echo "   build/parthi.ll"
+    exit 0
+fi
+
+# Step 4: Assemble + link (native build)
 echo "  Assembling with llc..."
 llc "build/parthi.ll" -o "build/parthi.s"
 echo "  Linking with gcc..."

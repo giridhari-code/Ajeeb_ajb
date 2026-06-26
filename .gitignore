@@ -12,5 +12,7 @@ __methods.txt
 *.pyc
 __pycache__/
 bootstrap/
+!ajeebc/bootstrap/
 !runtime/ajeeb_runtime.c
 build/ajeeb_native*
+release/

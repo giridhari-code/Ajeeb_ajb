@@ -5,128 +5,120 @@ on:
     tags:
       - 'v*'
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  build-linux-x86_64:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install LLVM + GCC
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq llvm-dev gcc libc-dev
-
-      - name: Build ajeebc
-        run: |
-          cd ajeebc/crates/ajeeb-compiler
-          cargo build --release
-          mkdir -p ../../build
-          cp target/release/ajeeb_compiler ../../build/ajeebc
-
-      - name: Build parthi
-        run: bash parthi/build.sh
-
-      - name: Build parth
-        run: |
-          cd ajeebc/crates/parth
-          cargo build --release
-          mkdir -p ${{ github.workspace }}/parth/build
-          cp target/release/parth ${{ github.workspace }}/parth/build/parth
-
-      - name: Bootstrap check
-        run: |
-          mkdir -p ajeebc/build
-          ajeebc/build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
-          llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
-          gcc -no-pie ajeebc/build/compiler.s \
-            ajeebc/runtime/ajeeb_runtime.c \
-            -o ajeebc/build/compiler -lm -ldl -Wno-int-to-pointer-cast
-          echo "✓ Self-hosted compiler built"
-          ajeebc/build/ajeebc --emit-llvm-only ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll
-          llc ajeebc/build/test_simple.ll -o ajeebc/build/test_simple.s
-          gcc -no-pie ajeebc/build/test_simple.s \
-            ajeebc/runtime/ajeeb_runtime.c \
-            -o ajeebc/build/test_simple -lm -ldl -Wno-int-to-pointer-cast
-          OUTPUT=$(./ajeebc/build/test_simple 2>/dev/null)
-          if [ "$OUTPUT" != "Hello World" ]; then
-            echo "FAIL: expected 'Hello World', got '$OUTPUT'"
-            exit 1
-          fi
-          echo "✓ Bootstrap check passed"
-
-      - name: Collect artifacts
-        run: |
-          mkdir -p release/packages/ajeeb-std
-          cp ajeebc/build/ajeebc release/ajeebc-linux-x86_64
-          cp parthi/build/parthi release/parthi-linux-x86_64
-          cp parth/build/parth release/parth-linux-x86_64
-          cp ajeebc/runtime/ajeeb_runtime.c release/
-          cp ajeeb-lang/std/*.ajb release/packages/ajeeb-std/
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ajeeb-linux-x86_64
-          path: release/
-
-  build-linux-aarch64:
+  # ── Step 1: Gen0 (aarch64) compiles all .ajb → LLVM IR ──────────
+  generate-ir:
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install LLVM
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq llvm-dev
+
+      - name: Generate LLVM IR (Gen0 aarch64 → platform-independent IR)
+        run: |
+          GEN0="ajeebc/bootstrap/ajeebc-linux-aarch64"
+          chmod +x "$GEN0"
+
+          # Place Gen0 where build scripts expect it
+          mkdir -p ajeebc/build
+          cp "$GEN0" ajeebc/build/ajeebc
+          chmod +x ajeebc/build/ajeebc
+
+          echo "=== Compile compiler.ajb → LLVM IR ==="
+          "$GEN0" ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll --emit-llvm-only
+
+          echo "=== Compile parthi (modular) → LLVM IR ==="
+          bash parthi/build.sh --emit-llvm-only
+
+          echo "=== Compile parth → LLVM IR ==="
+          mkdir -p parth/build
+          "$GEN0" parth/parth_m1.ajb parth/build/output.ll --emit-llvm-only
+
+          echo "=== Compile test_simple → LLVM IR ==="
+          "$GEN0" ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll --emit-llvm-only
+
+          echo "✓ All LLVM IR generated"
+          ls -lh ajeebc/build/*.ll parthi/build/*.ll parth/build/*.ll
+
+      - name: Upload LLVM IR artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm-ir
+          path: |
+            ajeebc/build/compiler.ll
+            ajeebc/build/test_simple.ll
+            parthi/build/parthi.ll
+            parth/build/output.ll
+            ajeebc/runtime/ajeeb_runtime.c
+            ajeeb-lang/std/
+
+  # ── Step 2: Per-platform jobs — llc + gcc → native binary ───────
+  build-linux-aarch64:
+    needs: generate-ir
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Install LLVM + GCC
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq llvm-dev gcc libc-dev
 
-      - name: Build ajeebc
-        run: |
-          cd ajeebc/crates/ajeeb-compiler
-          cargo build --release
-          mkdir -p ../../build
-          cp target/release/ajeeb_compiler ../../build/ajeebc
+      - name: Download LLVM IR
+        uses: actions/download-artifact@v4
+        with:
+          name: llvm-ir
 
-      - name: Build parthi
-        run: bash parthi/build.sh
-
-      - name: Build parth
+      - name: Compile ajeebc (llc + gcc)
         run: |
-          cd ajeebc/crates/parth
-          cargo build --release
-          mkdir -p ${{ github.workspace }}/parth/build
-          cp target/release/parth ${{ github.workspace }}/parth/build/parth
+          mkdir -p release
+          llc -O2 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          gcc -no-pie ajeebc/build/compiler.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/ajeebc-linux-aarch64 -lm -ldl -Wno-int-to-pointer-cast
+          chmod +x release/ajeebc-linux-aarch64
+          echo "✓ ajeebc-linux-aarch64 built"
+
+      - name: Compile parthi (llc + gcc)
+        run: |
+          llc -O2 parthi/build/parthi.ll -o parthi/build/parthi.s
+          gcc -no-pie parthi/build/parthi.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/parthi-linux-aarch64 -lm -ldl -Wno-int-to-pointer-cast
+          chmod +x release/parthi-linux-aarch64
+          echo "✓ parthi-linux-aarch64 built"
+
+      - name: Compile parth (llc + gcc)
+        run: |
+          llc -O2 parth/build/output.ll -o parth/build/output.s
+          gcc -no-pie parth/build/output.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/parth-linux-aarch64 -lm -ldl -Wno-int-to-pointer-cast
+          chmod +x release/parth-linux-aarch64
+          echo "✓ parth-linux-aarch64 built"
+
+      - name: Copy runtime + stdlib
+        run: |
+          cp ajeebc/runtime/ajeeb_runtime.c release/
+          mkdir -p release/packages/ajeeb-std
+          cp ajeeb-lang/std/*.ajb release/packages/ajeeb-std/
 
       - name: Bootstrap check
         run: |
-          mkdir -p ajeebc/build
-          ajeebc/build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
-          llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
-          gcc -no-pie ajeebc/build/compiler.s \
-            ajeebc/runtime/ajeeb_runtime.c \
-            -o ajeebc/build/compiler -lm -ldl -Wno-int-to-pointer-cast
-          echo "✓ Self-hosted compiler built"
-
-      - name: Collect artifacts
-        run: |
-          mkdir -p release/packages/ajeeb-std
-          cp ajeebc/build/ajeebc release/ajeebc-linux-aarch64
-          cp parthi/build/parthi release/parthi-linux-aarch64
-          cp parth/build/parth release/parth-linux-aarch64
-          cp ajeebc/runtime/ajeeb_runtime.c release/
-          cp ajeeb-lang/std/*.ajb release/packages/ajeeb-std/
+          release/ajeebc-linux-aarch64 ajeebc/tests/test_simple.ajb ajeebc/build/test_simple_check.ll --emit-llvm-only
+          llc -O2 ajeebc/build/test_simple_check.ll -o ajeebc/build/test_simple_check.s
+          gcc -no-pie ajeebc/build/test_simple_check.s ajeebc/runtime/ajeeb_runtime.c \
+            -o ajeebc/build/test_simple_check -lm -ldl -Wno-int-to-pointer-cast
+          OUTPUT=$(./ajeebc/build/test_simple_check 2>/dev/null)
+          if [ "$OUTPUT" != "Hello World" ]; then
+            echo "FAIL: expected 'Hello World', got '$OUTPUT'"
+            exit 1
+          fi
+          echo "✓ Bootstrap check passed"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -134,66 +126,137 @@ jobs:
           name: ajeeb-linux-aarch64
           path: release/
 
-  build-macos-arm64:
-    runs-on: macos-latest
+  build-linux-x86_64:
+    needs: generate-ir
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install LLVM
-        run: brew install llvm
-
-      - name: Build ajeebc
+      - name: Install LLVM + GCC
         run: |
-          cd ajeebc/crates/ajeeb-compiler
-          cargo build --release
-          mkdir -p ../../build
-          cp target/release/ajeeb_compiler ../../build/ajeebc
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq llvm-dev gcc libc-dev
 
-      - name: Build parthi
-        run: bash parthi/build.sh
+      - name: Download LLVM IR
+        uses: actions/download-artifact@v4
+        with:
+          name: llvm-ir
 
-      - name: Build parth
+      - name: Compile ajeebc (llc + gcc)
         run: |
-          cd ajeebc/crates/parth
-          cargo build --release
-          mkdir -p ${{ github.workspace }}/parth/build
-          cp target/release/parth ${{ github.workspace }}/parth/build/parth
+          mkdir -p release
+          llc -O2 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          gcc -no-pie ajeebc/build/compiler.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/ajeebc-linux-x86_64 -lm -ldl -Wno-int-to-pointer-cast
+          chmod +x release/ajeebc-linux-x86_64
+          echo "✓ ajeebc-linux-x86_64 built"
+
+      - name: Compile parthi (llc + gcc)
+        run: |
+          llc -O2 parthi/build/parthi.ll -o parthi/build/parthi.s
+          gcc -no-pie parthi/build/parthi.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/parthi-linux-x86_64 -lm -ldl -Wno-int-to-pointer-cast
+          chmod +x release/parthi-linux-x86_64
+          echo "✓ parthi-linux-x86_64 built"
+
+      - name: Compile parth (llc + gcc)
+        run: |
+          llc -O2 parth/build/output.ll -o parth/build/output.s
+          gcc -no-pie parth/build/output.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/parth-linux-x86_64 -lm -ldl -Wno-int-to-pointer-cast
+          chmod +x release/parth-linux-x86_64
+          echo "✓ parth-linux-x86_64 built"
+
+      - name: Copy runtime + stdlib
+        run: |
+          cp ajeebc/runtime/ajeeb_runtime.c release/
+          mkdir -p release/packages/ajeeb-std
+          cp ajeeb-lang/std/*.ajb release/packages/ajeeb-std/
 
       - name: Bootstrap check
         run: |
-          export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
-          mkdir -p ajeebc/build
-          ajeebc/build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
-          llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
-          cc ajeebc/build/compiler.s \
-            ajeebc/runtime/ajeeb_runtime.c \
-            -o ajeebc/build/compiler -lm -Wno-int-to-pointer-cast
-          echo "✓ Self-hosted compiler built"
-          ajeebc/build/ajeebc --emit-llvm-only ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll
-          llc ajeebc/build/test_simple.ll -o ajeebc/build/test_simple.s
-          cc ajeebc/build/test_simple.s \
-            ajeebc/runtime/ajeeb_runtime.c \
-            -o ajeebc/build/test_simple -lm -Wno-int-to-pointer-cast
-          OUTPUT=$(./ajeebc/build/test_simple 2>/dev/null)
+          release/ajeebc-linux-x86_64 ajeebc/tests/test_simple.ajb ajeebc/build/test_simple_check.ll --emit-llvm-only
+          llc -O2 ajeebc/build/test_simple_check.ll -o ajeebc/build/test_simple_check.s
+          gcc -no-pie ajeebc/build/test_simple_check.s ajeebc/runtime/ajeeb_runtime.c \
+            -o ajeebc/build/test_simple_check -lm -ldl -Wno-int-to-pointer-cast
+          OUTPUT=$(./ajeebc/build/test_simple_check 2>/dev/null)
           if [ "$OUTPUT" != "Hello World" ]; then
             echo "FAIL: expected 'Hello World', got '$OUTPUT'"
             exit 1
           fi
           echo "✓ Bootstrap check passed"
 
-      - name: Collect artifacts
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ajeeb-linux-x86_64
+          path: release/
+
+  build-macos-arm64:
+    needs: generate-ir
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM
+        run: brew install llvm
+
+      - name: Download LLVM IR
+        uses: actions/download-artifact@v4
+        with:
+          name: llvm-ir
+
+      - name: Compile ajeebc (llc + cc)
         run: |
-          mkdir -p release/packages/ajeeb-std
-          cp ajeebc/build/ajeebc release/ajeebc-macos-arm64
-          cp parthi/build/parthi release/parthi-macos-arm64
-          cp parth/build/parth release/parth-macos-arm64
+          export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+          mkdir -p release
+          llc -O2 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          cc ajeebc/build/compiler.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/ajeebc-macos-arm64 -lm -Wno-int-to-pointer-cast
+          chmod +x release/ajeebc-macos-arm64
+          echo "✓ ajeebc-macos-arm64 built"
+
+      - name: Compile parthi (llc + cc)
+        run: |
+          export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+          llc -O2 parthi/build/parthi.ll -o parthi/build/parthi.s
+          cc parthi/build/parthi.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/parthi-macos-arm64 -lm -Wno-int-to-pointer-cast
+          chmod +x release/parthi-macos-arm64
+          echo "✓ parthi-macos-arm64 built"
+
+      - name: Compile parth (llc + cc)
+        run: |
+          export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+          llc -O2 parth/build/output.ll -o parth/build/output.s
+          cc parth/build/output.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/parth-macos-arm64 -lm -Wno-int-to-pointer-cast
+          chmod +x release/parth-macos-arm64
+          echo "✓ parth-macos-arm64 built"
+
+      - name: Copy runtime + stdlib
+        run: |
           cp ajeebc/runtime/ajeeb_runtime.c release/
+          mkdir -p release/packages/ajeeb-std
           cp ajeeb-lang/std/*.ajb release/packages/ajeeb-std/
+
+      - name: Bootstrap check
+        run: |
+          export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+          release/ajeebc-macos-arm64 ajeebc/tests/test_simple.ajb ajeebc/build/test_simple_check.ll --emit-llvm-only
+          llc -O2 ajeebc/build/test_simple_check.ll -o ajeebc/build/test_simple_check.s
+          cc ajeebc/build/test_simple_check.s ajeebc/runtime/ajeeb_runtime.c \
+            -o ajeebc/build/test_simple_check -lm -Wno-int-to-pointer-cast
+          OUTPUT=$(./ajeebc/build/test_simple_check 2>/dev/null)
+          if [ "$OUTPUT" != "Hello World" ]; then
+            echo "FAIL: expected 'Hello World', got '$OUTPUT'"
+            exit 1
+          fi
+          echo "✓ Bootstrap check passed"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -202,54 +265,68 @@ jobs:
           path: release/
 
   build-macos-x86_64:
+    needs: generate-ir
     runs-on: macos-13
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Install LLVM
         run: brew install llvm
 
-      - name: Build ajeebc
-        run: |
-          cd ajeebc/crates/ajeeb-compiler
-          cargo build --release
-          mkdir -p ../../build
-          cp target/release/ajeeb_compiler ../../build/ajeebc
+      - name: Download LLVM IR
+        uses: actions/download-artifact@v4
+        with:
+          name: llvm-ir
 
-      - name: Build parthi
-        run: bash parthi/build.sh
-
-      - name: Build parth
+      - name: Compile ajeebc (llc + cc)
         run: |
-          cd ajeebc/crates/parth
-          cargo build --release
-          mkdir -p ${{ github.workspace }}/parth/build
-          cp target/release/parth ${{ github.workspace }}/parth/build/parth
+          export PATH="/usr/local/opt/llvm/bin:$PATH"
+          mkdir -p release
+          llc -O2 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          cc ajeebc/build/compiler.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/ajeebc-macos-x86_64 -lm -Wno-int-to-pointer-cast
+          chmod +x release/ajeebc-macos-x86_64
+          echo "✓ ajeebc-macos-x86_64 built"
+
+      - name: Compile parthi (llc + cc)
+        run: |
+          export PATH="/usr/local/opt/llvm/bin:$PATH"
+          llc -O2 parthi/build/parthi.ll -o parthi/build/parthi.s
+          cc parthi/build/parthi.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/parthi-macos-x86_64 -lm -Wno-int-to-pointer-cast
+          chmod +x release/parthi-macos-x86_64
+          echo "✓ parthi-macos-x86_64 built"
+
+      - name: Compile parth (llc + cc)
+        run: |
+          export PATH="/usr/local/opt/llvm/bin:$PATH"
+          llc -O2 parth/build/output.ll -o parth/build/output.s
+          cc parth/build/output.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/parth-macos-x86_64 -lm -Wno-int-to-pointer-cast
+          chmod +x release/parth-macos-x86_64
+          echo "✓ parth-macos-x86_64 built"
+
+      - name: Copy runtime + stdlib
+        run: |
+          cp ajeebc/runtime/ajeeb_runtime.c release/
+          mkdir -p release/packages/ajeeb-std
+          cp ajeeb-lang/std/*.ajb release/packages/ajeeb-std/
 
       - name: Bootstrap check
         run: |
           export PATH="/usr/local/opt/llvm/bin:$PATH"
-          mkdir -p ajeebc/build
-          ajeebc/build/ajeebc --emit-llvm-only ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll
-          llc ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
-          cc ajeebc/build/compiler.s \
-            ajeebc/runtime/ajeeb_runtime.c \
-            -o ajeebc/build/compiler -lm -Wno-int-to-pointer-cast
-          echo "✓ Self-hosted compiler built"
-
-      - name: Collect artifacts
-        run: |
-          mkdir -p release/packages/ajeeb-std
-          cp ajeebc/build/ajeebc release/ajeebc-macos-x86_64
-          cp parthi/build/parthi release/parthi-macos-x86_64
-          cp parth/build/parth release/parth-macos-x86_64
-          cp ajeebc/runtime/ajeeb_runtime.c release/
-          cp ajeeb-lang/std/*.ajb release/packages/ajeeb-std/
+          release/ajeebc-macos-x86_64 ajeebc/tests/test_simple.ajb ajeebc/build/test_simple_check.ll --emit-llvm-only
+          llc -O2 ajeebc/build/test_simple_check.ll -o ajeebc/build/test_simple_check.s
+          cc ajeebc/build/test_simple_check.s ajeebc/runtime/ajeeb_runtime.c \
+            -o ajeebc/build/test_simple_check -lm -Wno-int-to-pointer-cast
+          OUTPUT=$(./ajeebc/build/test_simple_check 2>/dev/null)
+          if [ "$OUTPUT" != "Hello World" ]; then
+            echo "FAIL: expected 'Hello World', got '$OUTPUT'"
+            exit 1
+          fi
+          echo "✓ Bootstrap check passed"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -258,6 +335,7 @@ jobs:
           path: release/
 
   build-windows-x86_64:
+    needs: generate-ir
     runs-on: windows-latest
     permissions:
       contents: write
@@ -267,35 +345,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Install LLVM + GCC
         run: |
           choco install llvm mingw -y
           echo "C:\Program Files\LLVM\bin" >> $GITHUB_PATH
           echo "C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin" >> $GITHUB_PATH
 
-      - name: Build ajeebc
-        run: |
-          cd ajeebc/crates/ajeeb-compiler
-          cargo build --release
-          mkdir -p ../../build
-          cp target/release/ajeeb_compiler.exe ../../build/ajeebc.exe
+      - name: Download LLVM IR
+        uses: actions/download-artifact@v4
+        with:
+          name: llvm-ir
 
-      - name: Build parth
+      - name: Compile ajeebc (llc + gcc)
         run: |
-          cd ajeebc/crates/parth
-          cargo build --release
-          mkdir -p ${{ github.workspace }}/parth/build
-          cp target/release/parth.exe ${{ github.workspace }}/parth/build/parth.exe
+          mkdir -p release
+          llc -O2 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
+          gcc ajeebc/build/compiler.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/ajeebc-windows-x86_64.exe -lm -Wno-int-to-pointer-cast
+          echo "✓ ajeebc-windows-x86_64.exe built"
 
-      - name: Collect artifacts
+      - name: Compile parth (llc + gcc)
         run: |
-          mkdir -p release/packages/ajeeb-std
-          cp ajeebc/build/ajeebc.exe release/ajeebc-windows-x86_64.exe
-          cp parth/build/parth.exe release/parth-windows-x86_64.exe
+          llc -O2 parth/build/output.ll -o parth/build/output.s
+          gcc parth/build/output.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/parth-windows-x86_64.exe -lm -Wno-int-to-pointer-cast
+          echo "✓ parth-windows-x86_64.exe built"
+
+      - name: Copy runtime + stdlib
+        run: |
           cp ajeebc/runtime/ajeeb_runtime.c release/
+          mkdir -p release/packages/ajeeb-std
           cp ajeeb-lang/std/*.ajb release/packages/ajeeb-std/
 
       - name: Upload artifacts
@@ -304,6 +383,7 @@ jobs:
           name: ajeeb-windows-x86_64
           path: release/
 
+  # ── Step 3: Create GitHub Release ────────────────────────────────
   create-release:
     needs: [build-linux-x86_64, build-linux-aarch64, build-macos-arm64, build-macos-x86_64, build-windows-x86_64]
     runs-on: ubuntu-latest
@@ -371,7 +451,7 @@ jobs:
             | Windows x86_64 | `ajeebc-windows-x86_64.exe` |
 
             ### Components:
-            - **ajeebc** — Ajeeb compiler
+            - **ajeebc** — Ajeeb compiler (built with self-hosted compiler)
             - **parthi** — MIR interpreter
             - **parth** — Project manager CLI
             - **ajeeb_runtime.c** — Runtime library
