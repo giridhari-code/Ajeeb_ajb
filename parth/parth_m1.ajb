@@ -1728,8 +1728,14 @@ function makeBuildDir(outDir: string): int {
 }
 
 function findRuntime(runtimePath: string): string {
-    // Always use installed runtime
-    return "/root/.ajeeb/bin/ajeeb_runtime.c";
+    // Check configured path first (relative to project)
+    if (fileExists(runtimePath) == 1) { return runtimePath; }
+    // Check common installed locations
+    set p1: string = "/root/.ajeeb/bin/ajeeb_runtime.c";
+    if (fileExists(p1) == 1) { return p1; }
+    set p2: string = "/usr/local/bin/ajeeb_runtime.c";
+    if (fileExists(p2) == 1) { return p2; }
+    return runtimePath;
 }
 
 function findAjeebc(): string {
