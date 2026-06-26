@@ -46,7 +46,7 @@ fn get_registry_url(cfg: &ProjectConfig) -> String {
 }
 
 fn cmd_help() {
-    println!("Ajeeb Package Manager — parth v1.0.0");
+    println!("Ajeeb Package Manager — parth v1.0.1");
     println!();
     println!("USAGE:");
     println!("  parth <command> [arguments]");

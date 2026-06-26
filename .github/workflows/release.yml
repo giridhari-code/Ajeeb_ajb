@@ -334,6 +334,9 @@ jobs:
             cp -n "$dir"packages/ajeeb-std/* release/packages/ajeeb-std/ 2>/dev/null || true
           done
           chmod +x release/ajeebc-* release/parthi-* release/parth-* 2>/dev/null || true
+          # Generate SHA256SUMS.txt
+          cd release && sha256sum ajeebc-* parth-* ajeeb-compiler-* 2>/dev/null > SHA256SUMS.txt || true
+          echo "v${GITHUB_REF#refs/tags/}" > version.txt
           ls -lh release/
 
       - name: Get tag name
@@ -352,6 +355,10 @@ jobs:
             **Linux / macOS:**
             ```bash
             curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/scripts/install.sh | bash
+            ```
+            **Build from source (requires Rust):**
+            ```bash
+            curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/scripts/install.sh | bash -s -- --build-from-source
             ```
             **Windows (PowerShell):**
             ```powershell
@@ -377,6 +384,9 @@ jobs:
             - **parth** — Project manager CLI
             - **ajeeb_runtime.c** — Runtime library
             - **ajeeb-std/** — Standard library
+
+            ### SHA256 checksums:
+            See `SHA256SUMS.txt` for binary checksums.
           files: |
             release/ajeebc-linux-x86_64
             release/ajeebc-linux-aarch64
@@ -395,3 +405,5 @@ jobs:
             release/parth-windows-x86_64.exe
             release/ajeeb_runtime.c
             release/packages/ajeeb-std/*
+            release/SHA256SUMS.txt
+            release/version.txt

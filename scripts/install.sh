@@ -1,10 +1,25 @@
 #!/usr/bin/env bash
 # Ajeeb — ek command mein install!
-# curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/install.sh | bash
+# curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/scripts/install.sh | bash
 set -euo pipefail
 
 REPO="giridhari-code/Ajeeb_ajb"
 BIN_DIR="${HOME}/.ajeeb/bin"
+BUILD_FROM_SOURCE=0
+
+# ── Parse flags ─────────────────────────────────────
+for arg in "$@"; do
+    case "$arg" in
+        --build-from-source) BUILD_FROM_SOURCE=1 ;;
+        --help|-h)
+            echo "Usage: install.sh [--build-from-source]"
+            echo ""
+            echo "  (default)  Download prebuilt binaries for your platform"
+            echo "  --build-from-source  Build from source using Rust/Cargo"
+            exit 0
+            ;;
+    esac
+done
 
 # ── Detect OS + Architecture ────────────────────────
 OS_RAW=$(uname -s)
@@ -41,33 +56,26 @@ echo "  Ajeeb install ho raha hai... ($PLATFORM)"
 echo "================================================"
 echo ""
 
-# ── Dependency checks ──────────────────────────────
+# ── Dependency checks (only warn, don't block) ─────
 MISSING=""
 if ! command -v gcc &>/dev/null && ! command -v cc &>/dev/null && ! command -v clang &>/dev/null; then
-    MISSING="${MISSING}  ❌ gcc/clang nahi mila!
-       Linux:  sudo apt install gcc
-       macOS:  xcode-select --install\n"
+    MISSING="${MISSING}  ⚠️  gcc/clang nahi mila\n"
 fi
 
 if ! command -v llc &>/dev/null; then
-    MISSING="${MISSING}  ❌ llc (LLVM) nahi mila!
-       Linux:  sudo apt install llvm
-       macOS:  brew install llvm\n"
+    MISSING="${MISSING}  ⚠️  llc (LLVM) nahi mila\n"
 fi
 
 if [ -n "$MISSING" ]; then
-    echo "⚠️  Zaroorat hai:"
+    echo "⚠️  Zaroorat hai (compile ke liye):"
     echo -e "$MISSING"
-    echo ""
-    echo "Ajeeb binaries download ho jayenge, lekin compile tabhi karega"
-    echo "jab upar ke tools available honge."
     echo "──────────────────────────────────────────────────────────"
 fi
 
 # ── Latest version check ───────────────────────────
 echo "  Checking latest version..."
 VERSION=$(curl -sSf "https://api.github.com/repos/${REPO}/releases/latest" \
-    | grep '"tag_name"' | cut -d '"' -f 4 || echo "v0.1.1")
+    | grep '"tag_name"' | cut -d '"' -f 4 || echo "v1.0.1")
 
 echo "  Version: ${VERSION}"
 echo ""
@@ -89,30 +97,53 @@ download() {
     fi
 }
 
-# Download or build from source
-if ! download "ajeebc"; then
-    if command -v cargo &>/dev/null; then
-        echo "  Building ajeebc from source (cargo)..."
-        TMPDIR=$(mktemp -d)
-        git clone --depth 1 "https://github.com/${REPO}.git" "$TMPDIR" 2>/dev/null
-        if cd "$TMPDIR/ajeebc/crates/ajeeb-compiler" && cargo build --release; then
-            cp target/release/ajeeb_compiler "${BIN_DIR}/ajeebc"
-            echo "  ✓ ajeebc (built from source)"
-        else
-            echo "  ❌ cargo build fail — Rust toolchain check karo"
-            cd / && rm -rf "$TMPDIR"
-            exit 1
-        fi
-        cd / && rm -rf "$TMPDIR"
-    else
-        echo "  ❌ ajeebc nahi mila aur cargo bhi nahi hai"
-        echo "  Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+# ── Download prebuilt binaries (default) ───────────
+if [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
+    echo "  Mode: Download prebuilt binaries"
+    echo ""
+
+    if ! download "ajeebc"; then
+        echo ""
+        echo "❌ ajeebc binary not available for ${PLATFORM}"
+        echo "   To build from source, re-run with:"
+        echo "     curl -sSf .../install.sh | bash -s -- --build-from-source"
         exit 1
     fi
-fi
-ln -sf "${BIN_DIR}/ajeebc" "${BIN_DIR}/ajeeb_compiler" 2>/dev/null || true
+    ln -sf "${BIN_DIR}/ajeebc" "${BIN_DIR}/ajeeb_compiler" 2>/dev/null || true
 
-if ! download "parthi"; then
+    if ! download "parthi"; then
+        echo "  ⚠️  parthi not available for ${PLATFORM}, skipping"
+    fi
+
+    if ! download "parth"; then
+        echo "  ⚠️  parth not available for ${PLATFORM}, skipping"
+    fi
+
+# ── Build from source (explicit flag) ──────────────
+else
+    echo "  Mode: Build from source"
+    echo ""
+
+    if ! command -v cargo &>/dev/null; then
+        echo "❌ --build-from-source requires cargo (Rust toolchain)"
+        echo "   Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+        exit 1
+    fi
+
+    echo "  Building ajeebc from source (cargo)..."
+    TMPDIR=$(mktemp -d)
+    git clone --depth 1 "https://github.com/${REPO}.git" "$TMPDIR" 2>/dev/null
+    if cd "$TMPDIR/ajeebc/crates/ajeeb-compiler" && cargo build --release; then
+        cp target/release/ajeeb_compiler "${BIN_DIR}/ajeebc"
+        echo "  ✓ ajeebc (built from source)"
+    else
+        echo "  ❌ cargo build fail — Rust toolchain check karo"
+        cd / && rm -rf "$TMPDIR"
+        exit 1
+    fi
+    cd / && rm -rf "$TMPDIR"
+    ln -sf "${BIN_DIR}/ajeebc" "${BIN_DIR}/ajeeb_compiler" 2>/dev/null || true
+
     if command -v cargo &>/dev/null && [ -f "${BIN_DIR}/ajeebc" ]; then
         echo "  Building parthi from source..."
         TMPDIR=$(mktemp -d)
@@ -124,9 +155,7 @@ if ! download "parthi"; then
     else
         echo "  ⚠️  parthi skip — cargo ya ajeebc nahi hai"
     fi
-fi
 
-if ! download "parth"; then
     if command -v cargo &>/dev/null; then
         echo "  Building parth from source..."
         TMPDIR=$(mktemp -d)

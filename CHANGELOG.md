@@ -4,6 +4,26 @@ All notable changes to Ajeeb will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.0.1] - 2026-06-26
+
+### Fixed
+
+#### Installer
+- ARM64 Linux prebuilt binaries now available (`linux-aarch64`)
+- Installer no longer falls back to Cargo/rustc by default
+- Added `--build-from-source` flag for explicit source builds
+- Clear error messages when binary not available
+
+#### Parth Package Manager
+- Binary lookup no longer searches `build/` directory (repository paths)
+- New search order: bundled → `~/.ajeeb/bin/` → `PATH` → error with install instructions
+- Workspace members built with `parth build` instead of `cargo run -p parth`
+- Error messages now show installation URL instead of "Run: make"
+
+#### Compiler Lookup
+- Same improved search order as parthi
+- Runtime file searched in `~/.ajeeb/bin/` and beside parth executable
+
 ## [1.0.0] - 2026-06-25
 
 ### Added
