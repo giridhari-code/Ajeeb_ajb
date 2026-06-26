@@ -19,7 +19,7 @@ pub fn cmd_info() {
 }
 
 pub fn cmd_version() {
-    println!("parth 1.0.0 — Ajeeb Package Manager");
+    println!("parth 1.0.1 — Ajeeb Package Manager");
     if let Ok(content) = fs::read_to_string("parth.das") {
         for line in content.lines() {
             let t = line.trim();

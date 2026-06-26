@@ -1,62 +1,66 @@
-# Release Notes — Ajeeb v1.0.1
+# RELEASE_NOTES.md
 
-**Hotfix Release**
+## Ajeeb v1.0.1 — Rust-Free User Experience
 
-v1.0.1 is a hotfix release that fixes ARM64 Linux support and improves the installer and package manager binary lookup.
+**Release Date:** June 26, 2026
 
-## Fixes
+### What's New
 
-### Installer
+This release makes Ajeeb fully usable without Rust or Cargo. Users can install and use Ajeeb with a single command, with no build tools required.
 
-- **ARM64 Linux support** — Pre-built binaries now available for linux-aarch64
-- **No more Cargo/Rustc by default** — Installer downloads prebuilt binaries only; use `--build-from-source` flag to build from source
-- **Clear error messages** — When binary is not available, shows how to build from source instead of silently falling back to cargo
+### Key Changes
 
-### Parth Package Manager
+- **Installer**: Never suggests building from source when downloads fail. Fails with clear error message and GitHub issue link.
+- **Checksum Verification**: Installer now downloads and verifies SHA256SUMS.txt to ensure binary integrity.
+- **Binary Discovery**: All binaries (ajeebc, parth, parthi) are automatically found via PATH or `~/.ajeeb/bin/`.
+- **Runtime Discovery**: `ajeeb_runtime.c` is automatically located relative to the installed binaries.
+- **Self-Hosted Parth**: The package manager is now self-hosted (compiled by ajeebc itself), eliminating Rust dependency for the user-facing tool.
 
-- **Fixed binary lookup** — `parth run`, `parth build`, `parth test` no longer search `build/parthi` or `build/ajeebc` (repository build paths)
-- **New search order**: bundled beside parth → `~/.ajeeb/bin/` → `PATH` → error with install instructions
-- **No more `build/parthi not found`** — Never requires repository build artifacts
-- **No more `Run: make`** — Never suggests building from source
-- **Workspace members** — `parth build` now invokes `parth build` for workspace members instead of `cargo run -p parth`
+### Bug Fixes
 
-### Compiler Lookup
+- `parth init` now generates `[compiler]` section in `parth.das` (consistency with `parth new`)
+- `parth build` uses `--emit-llvm-only` flag for clean pipeline separation
+- `parth run --native` no longer crashes on missing `.c` file
+- `parth test` gracefully handles missing `tests/` directory
+- `parth --version` now shows "(ajeeb-native)" to indicate self-hosted status
+- Self-hosted parth binary discovery is portable across user accounts (no hardcoded `/root/`)
 
-- Same search order as parthi: bundled → `~/.ajeeb/bin/` → `PATH` → clear error
-- No more dependency on `find_ajeeb_root()` for installed binary search
-- Runtime file (`ajeeb_runtime.c`) also searched in `~/.ajeeb/bin/` and beside parth
+### Platform Support
 
-## Release Assets
+| Platform | Binary | Status |
+|----------|--------|--------|
+| Linux x86_64 | `ajeebc-linux-x86_64`, `parth-linux-x86_64`, `parthi-linux-x86_64` | ✅ Available |
+| Linux aarch64 | `ajeebc-linux-aarch64`, `parth-linux-aarch64`, `parthi-linux-aarch64` | ⏳ CI builds |
+| macOS ARM64 | `ajeebc-macos-arm64`, `parth-macos-arm64`, `parthi-macos-arm64` | ⏳ CI builds |
+| macOS x86_64 | `ajeebc-macos-x86_64`, `parth-macos-x86_64`, `parthi-macos-x86_64` | ⏳ CI builds |
+| Windows x86_64 | `ajeebc-windows-x86_64.exe`, `parth-windows-x86_64.exe` | ⏳ CI builds |
 
-| Platform | Binary |
-|----------|--------|
-| Linux x86_64 | `ajeebc-linux-x86_64`, `parthi-linux-x86_64`, `parth-linux-x86_64` |
-| Linux aarch64 | `ajeebc-linux-aarch64`, `parthi-linux-aarch64`, `parth-linux-aarch64` |
+### Installation
 
-## Installation
-
+**Linux / macOS:**
 ```bash
-# Download prebuilt binaries (default)
 curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/scripts/install.sh | bash
-
-# Build from source (requires Rust)
-curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/scripts/install.sh | bash -s -- --build-from-source
 ```
 
-## Verification
-
-After install, verify:
+**After installation:**
 ```bash
 export PATH="$HOME/.ajeeb/bin:$PATH"
-ajeebc --version
-parthi --version
-parth --version
+parth init hello
+cd hello
+parth run
 ```
 
-## Platforms
+### Requirements
 
-- Linux x86_64
-- Linux aarch64 (new in v1.0.1)
-- macOS x86_64
-- macOS arm64
-- Windows x86_64
+- `gcc` or `clang` (for compiling generated code)
+- `llc` (LLVM, for code generation)
+- **NO Rust or Cargo required**
+
+### SHA256 Checksums
+
+See `SHA256SUMS.txt` for binary checksums.
+
+### Known Issues
+
+- `parth run` (without arguments) uses interpreter mode by default (fast). Use `parth run src/main.ajb --native` for native compilation.
+- Windows support requires PowerShell installer (`install.ps1`).

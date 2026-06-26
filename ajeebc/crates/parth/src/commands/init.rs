@@ -23,6 +23,11 @@ pub fn cmd_init() {
          \n\
          [dependencies]\n\
          \n\
+         [compiler]\n\
+         target = \"native\"\n\
+         output = \"build/\"\n\
+         runtime = \"runtime/ajeeb_runtime.c\"\n\
+         \n\
          [profile.dev]\n\
          opt-level = \"0\"\n\
          debug = \"true\"\n\
@@ -36,6 +41,7 @@ pub fn cmd_init() {
     fs::write("parth.das", das).expect("Cannot write parth.das");
     let main_ajb = "function main(): int {\n    println(\"Hello from Ajeeb!\");\n    return 0;\n}\n";
     fs::write("src/main.ajb", main_ajb).expect("Cannot write main.ajb");
+    fs::create_dir_all("tests").ok();
     println!("✓ Initialized Ajeeb project in current directory");
     println!("📦 Name: {}", name);
 }
@@ -57,6 +63,7 @@ pub fn cmd_new(args: &[String]) {
     }
     fs::create_dir_all(dir.join("src")).expect("Cannot create src dir");
     fs::create_dir_all(dir.join("build")).expect("Cannot create build dir");
+    fs::create_dir_all(dir.join("tests")).ok();
 
     let das = format!(
         "[package]\n\

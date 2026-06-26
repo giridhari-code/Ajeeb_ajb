@@ -74,7 +74,7 @@ pub fn cmd_build_file(args: &[String]) {
             println!("⚡ Using ajeebc compiler");
             let output_ll = build_dir.join("output.ll");
             let status = Command::new(&native_binary)
-                .args([&abs_file_path.to_string_lossy(), &output_ll.to_string_lossy(), "--skip-run"])
+                .args([&abs_file_path.to_string_lossy(), &output_ll.to_string_lossy(), "--emit-llvm-only"])
                 .current_dir(&project_dir)
                 .status()
                 .expect("Failed to run ajeebc");
@@ -92,7 +92,8 @@ pub fn cmd_build_file(args: &[String]) {
                         asm_file.to_string_lossy().to_string(),
                         runtime_src.to_string_lossy().to_string(),
                         "-o".to_string(), bin_name.to_string_lossy().to_string(),
-                        "-Wall".to_string(), "-Wno-int-to-pointer-cast".to_string(), "-Wno-pointer-to-int-cast".to_string(),
+                        "-no-pie".to_string(), "-lm".to_string(), "-ldl".to_string(),
+                        "-Wno-int-to-pointer-cast".to_string(), "-Wno-pointer-to-int-cast".to_string(),
                     ];
                     let gcc_status = Command::new("gcc").args(&gcc_args).status().expect("Failed to run gcc");
                     if !gcc_status.success() {
@@ -167,15 +168,20 @@ pub fn cmd_run_file(args: &[String]) {
         let bin_path = PathBuf::from("build").join(&*stem);
         fs::create_dir_all("build").ok();
         let output_ll = "build/output.ll";
+        let output_s = "build/output.s";
 
         println!("⚡ Compiling...");
-        let status = Command::new(&compiler_bin).args([file_path, output_ll, "--skip-run"]).status();
+        let status = Command::new(&compiler_bin).args([file_path, output_ll, "--emit-llvm-only"]).status();
         if !status.map(|s| s.success()).unwrap_or(false) { eprintln!("❌ Compile failed"); std::process::exit(1); }
 
-        let c_path = output_ll.replace(".ll", ".c");
+        println!("🔧 Assembling with llc...");
+        let llc_status = Command::new("llc").args(["-O2", output_ll, "-o", output_s]).status();
+        if !llc_status.map(|s| s.success()).unwrap_or(false) { eprintln!("❌ llc failed"); std::process::exit(1); }
+
         let runtime_src = find_installed_runtime();
-        let status = Command::new("gcc").args(["-O2", "-o", &bin_path.to_string_lossy(), &c_path, &runtime_src.to_string_lossy(), "-lm"]).status();
-        if !status.map(|s| s.success()).unwrap_or(false) { eprintln!("❌ Link failed"); std::process::exit(1); }
+        println!("🔗 Linking...");
+        let gcc_status = Command::new("gcc").args(["-no-pie", output_s, &runtime_src.to_string_lossy(), "-o", &bin_path.to_string_lossy(), "-lm", "-ldl", "-Wno-int-to-pointer-cast", "-Wno-pointer-to-int-cast"]).status();
+        if !gcc_status.map(|s| s.success()).unwrap_or(false) { eprintln!("❌ Link failed"); std::process::exit(1); }
 
         println!("🚀 Running...\n");
         let run_status = Command::new(&bin_path).status().expect("run failed");
@@ -286,7 +292,7 @@ pub fn cmd_build() {
             let output_s = build_dir.join("output.s");
             let output_ll_str = output_ll.to_string_lossy().to_string();
             let status = Command::new(&compiler)
-                .args([&combined_str, &output_ll_str, "--skip-run"])
+                .args([&combined_str, &output_ll_str, "--emit-llvm-only"])
                 .current_dir(&project_dir)
                 .status()
                 .expect("Failed to run ajeebc");
@@ -311,7 +317,8 @@ pub fn cmd_build() {
                     }
                     gcc_args.extend([
                         "-o".to_string(), bin_path.to_string_lossy().to_string(),
-                        "-Wall".to_string(), "-Wno-int-to-pointer-cast".to_string(), "-Wno-pointer-to-int-cast".to_string(),
+                        "-no-pie".to_string(), "-lm".to_string(), "-ldl".to_string(),
+                        "-Wno-int-to-pointer-cast".to_string(), "-Wno-pointer-to-int-cast".to_string(),
                     ]);
                     let gcc_status = Command::new("gcc")
                         .args(&gcc_args)
@@ -480,8 +487,9 @@ pub fn cmd_run() {
 pub fn cmd_test() {
     let test_dir = Path::new("tests");
     if !test_dir.exists() {
-        eprintln!("Error: tests/ directory not found");
-        std::process::exit(1);
+        println!("ℹ️  No tests/ directory found.");
+        println!("   Create tests/ directory with .ajb test files, then run 'parth test' again.");
+        std::process::exit(0);
     }
     let mut passed = 0u32;
     let mut failed = 0u32;
@@ -491,6 +499,11 @@ pub fn cmd_test() {
         .filter(|e| e.path().extension().map(|ex| ex == "ajb").unwrap_or(false))
         .collect();
     entries.sort_by_key(|e| e.file_name());
+
+    if entries.is_empty() {
+        println!("ℹ️  No .ajb test files in tests/ directory.");
+        std::process::exit(0);
+    }
 
     let compiler_bin = find_installed_bin("ajeebc")
         .or_else(|| find_installed_bin("ajeeb_compiler"))

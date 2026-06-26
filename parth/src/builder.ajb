@@ -20,22 +20,47 @@ function makeBuildDir(outDir: string): int {
 }
 
 function findRuntime(runtimePath: string): string {
-    // Always use installed runtime - never use project-relative paths
-    set installed: string = "/root/.ajeeb/bin/ajeeb_runtime.c";
-    return installed;
+    // Check configured path first (relative to project)
+    if (fileExists(runtimePath) == 1) { return runtimePath; }
+    // Find HOME directory
+    set homeDir: string = exec("echo $HOME 2>/dev/null");
+    homeDir = trim(homeDir);
+    if (len(homeDir) > 0) {
+        set p1: string = str_concat(homeDir, "/.ajeeb/bin/ajeeb_runtime.c");
+        if (fileExists(p1) == 1) { return p1; }
+    }
+    // Check relative to ajeebc binary
+    set whichOut: string = exec("which ajeebc 2>/dev/null");
+    whichOut = trim(whichOut);
+    if (len(whichOut) > 0) {
+        set dirCmd: string = str_concat("dirname ", whichOut);
+        set binDir: string = trim(exec(dirCmd));
+        if (len(binDir) > 0) {
+            set p2: string = str_concat(binDir, "/ajeeb_runtime.c");
+            if (fileExists(p2) == 1) { return p2; }
+        }
+    }
+    return runtimePath;
 }
 
 function findAjeebc(): string {
     // Check PATH first
     set r: int = exec("which ajeebc > /dev/null 2>&1");
     if (r == 0) { return "ajeebc"; }
-    // Check relative paths
+    // Check relative paths from common locations
     set p1: string = "../build/ajeebc";
     if (fileExists(p1) == 1) { return p1; }
     set p2: string = "../ajeebc/build/compiler";
     if (fileExists(p2) == 1) { return p2; }
     set p3: string = "../build/ajeeb_native";
     if (fileExists(p3) == 1) { return p3; }
+    // Check ~/.ajeeb/bin/ajeebc
+    set homeDir: string = exec("echo $HOME 2>/dev/null");
+    homeDir = trim(homeDir);
+    if (len(homeDir) > 0) {
+        set p4: string = str_concat(homeDir, "/.ajeeb/bin/ajeebc");
+        if (fileExists(p4) == 1) { return p4; }
+    }
     return "ajeebc";
 }
 

@@ -1,9 +1,3 @@
-# SHA256 checksums for Ajeeb v1.0.1 release binaries
-# Linux x86_64
 be2657aed71b2303a19ad4376788c152d0fccc607f235a3bc84a6f5963ced961  ajeebc-linux-x86_64
-06382a23d48345ebd7451815dee11bd02d19e3234e2fb7be95ecff30fe8fe03b  parth-linux-x86_64
-fe5525ed5ab98b27820d6fcd6dac6d4f5e48ba781cd06e6fb57d062e55d9b6f8  ajeeb-compiler-linux-x86_64
-# Linux aarch64 (populated after CI build)
-PLACEHOLDER_aarch64  ajeebc-linux-aarch64
-PLACEHOLDER_aarch64  parth-linux-aarch64
-PLACEHOLDER_aarch64  ajeeb-compiler-linux-aarch64
+ad7fc4629f7bcbea345cb2337097f692e35ef40915ef6d59bad9e6da8f089a79  parthi-linux-x86_64
+5b73aa3ff2e65fc28f2ec318300b46d2c2729acddd7b7d0e2be2a9e4a42ce1bb  parth-linux-x86_64

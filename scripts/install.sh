@@ -5,17 +5,15 @@ set -euo pipefail
 
 REPO="giridhari-code/Ajeeb_ajb"
 BIN_DIR="${HOME}/.ajeeb/bin"
-BUILD_FROM_SOURCE=0
 
 # ── Parse flags ─────────────────────────────────────
 for arg in "$@"; do
     case "$arg" in
-        --build-from-source) BUILD_FROM_SOURCE=1 ;;
         --help|-h)
-            echo "Usage: install.sh [--build-from-source]"
+            echo "Usage: install.sh"
             echo ""
-            echo "  (default)  Download prebuilt binaries for your platform"
-            echo "  --build-from-source  Build from source using Rust/Cargo"
+            echo "Downloads prebuilt Ajeeb binaries for your platform."
+            echo "No Rust or Cargo required."
             exit 0
             ;;
     esac
@@ -30,7 +28,6 @@ case "$OS_RAW" in
         case "$ARCH_RAW" in
             x86_64|amd64)  PLATFORM="linux-x86_64" ;;
             aarch64|arm64) PLATFORM="linux-aarch64" ;;
-            armv7l|armhf)  PLATFORM="linux-armv7" ;;
             *)             PLATFORM="linux-x86_64"; echo "⚠️  Unknown arch ($ARCH_RAW), using x86_64" ;;
         esac
         ;;
@@ -59,11 +56,11 @@ echo ""
 # ── Dependency checks (only warn, don't block) ─────
 MISSING=""
 if ! command -v gcc &>/dev/null && ! command -v cc &>/dev/null && ! command -v clang &>/dev/null; then
-    MISSING="${MISSING}  ⚠️  gcc/clang nahi mila\n"
+    MISSING="${MISSING}  ⚠️  gcc/clang nahi mila (compile ke liye chahiye)\n"
 fi
 
 if ! command -v llc &>/dev/null; then
-    MISSING="${MISSING}  ⚠️  llc (LLVM) nahi mila\n"
+    MISSING="${MISSING}  ⚠️  llc (LLVM) nahi mila (compile ke liye chahiye)\n"
 fi
 
 if [ -n "$MISSING" ]; then
@@ -92,87 +89,55 @@ download() {
         echo "  ✓ ${name}"
         return 0
     else
-        echo "  ⚠️  ${name} (${PLATFORM}) release mein nahi hai"
         return 1
     fi
 }
 
-# ── Download prebuilt binaries (default) ───────────
-if [ "$BUILD_FROM_SOURCE" -eq 0 ]; then
-    echo "  Mode: Download prebuilt binaries"
+# ── Download prebuilt binaries ─────────────────────
+echo "  Mode: Download prebuilt binaries"
+echo ""
+
+if ! download "ajeebc"; then
     echo ""
+    echo "❌ ajeebc binary release mein nahi hai (${PLATFORM})"
+    echo "   GitHub issue karo: https://github.com/${REPO}/issues"
+    exit 1
+fi
+ln -sf "${BIN_DIR}/ajeebc" "${BIN_DIR}/ajeeb_compiler" 2>/dev/null || true
 
-    if ! download "ajeebc"; then
-        echo ""
-        echo "❌ ajeebc binary not available for ${PLATFORM}"
-        echo "   To build from source, re-run with:"
-        echo "     curl -sSf .../install.sh | bash -s -- --build-from-source"
-        exit 1
+if ! download "parth"; then
+    echo ""
+    echo "❌ parth binary release mein nahi hai (${PLATFORM})"
+    echo "   GitHub issue karo: https://github.com/${REPO}/issues"
+    exit 1
+fi
+
+if ! download "parthi"; then
+    echo "  ⚠️  parthi not available for ${PLATFORM}, skipping (optional)"
+fi
+
+# ── Verify checksums ───────────────────────────────
+echo ""
+echo "  Verifying checksums..."
+SUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/SHA256SUMS.txt"
+SUMS_FILE="${BIN_DIR}/SHA256SUMS.txt"
+if curl -sSfL "$SUMS_URL" -o "$SUMS_FILE" 2>/dev/null; then
+    cd "$BIN_DIR"
+    if sha256sum -c "$SUMS_FILE" 2>/dev/null; then
+        echo "  ✓ Checksums verified"
+    else
+        echo "  ⚠️  Checksum verification failed — binary may be corrupted"
+        echo "     Re-run install or download manually from GitHub Releases"
     fi
-    ln -sf "${BIN_DIR}/ajeebc" "${BIN_DIR}/ajeeb_compiler" 2>/dev/null || true
-
-    if ! download "parthi"; then
-        echo "  ⚠️  parthi not available for ${PLATFORM}, skipping"
-    fi
-
-    if ! download "parth"; then
-        echo "  ⚠️  parth not available for ${PLATFORM}, skipping"
-    fi
-
-# ── Build from source (explicit flag) ──────────────
+    cd - >/dev/null
 else
-    echo "  Mode: Build from source"
-    echo ""
-
-    if ! command -v cargo &>/dev/null; then
-        echo "❌ --build-from-source requires cargo (Rust toolchain)"
-        echo "   Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
-        exit 1
-    fi
-
-    echo "  Building ajeebc from source (cargo)..."
-    TMPDIR=$(mktemp -d)
-    git clone --depth 1 "https://github.com/${REPO}.git" "$TMPDIR" 2>/dev/null
-    if cd "$TMPDIR/ajeebc/crates/ajeeb-compiler" && cargo build --release; then
-        cp target/release/ajeeb_compiler "${BIN_DIR}/ajeebc"
-        echo "  ✓ ajeebc (built from source)"
-    else
-        echo "  ❌ cargo build fail — Rust toolchain check karo"
-        cd / && rm -rf "$TMPDIR"
-        exit 1
-    fi
-    cd / && rm -rf "$TMPDIR"
-    ln -sf "${BIN_DIR}/ajeebc" "${BIN_DIR}/ajeeb_compiler" 2>/dev/null || true
-
-    if command -v cargo &>/dev/null && [ -f "${BIN_DIR}/ajeebc" ]; then
-        echo "  Building parthi from source..."
-        TMPDIR=$(mktemp -d)
-        git clone --depth 1 "https://github.com/${REPO}.git" "$TMPDIR" 2>/dev/null
-        cd "$TMPDIR" && AJEEBC_PATH="${BIN_DIR}/ajeebc" bash parthi/build.sh
-        cp parthi/build/parthi "${BIN_DIR}/parthi"
-        cd / && rm -rf "$TMPDIR"
-        echo "  ✓ parthi (built from source)"
-    else
-        echo "  ⚠️  parthi skip — cargo ya ajeebc nahi hai"
-    fi
-
-    if command -v cargo &>/dev/null; then
-        echo "  Building parth from source..."
-        TMPDIR=$(mktemp -d)
-        git clone --depth 1 "https://github.com/${REPO}.git" "$TMPDIR" 2>/dev/null
-        cd "$TMPDIR/ajeebc/crates/parth" && cargo build --release
-        cp target/release/parth "${BIN_DIR}/parth"
-        cd / && rm -rf "$TMPDIR"
-        echo "  ✓ parth (built from source)"
-    else
-        echo "  ⚠️  parth skip — cargo nahi hai"
-    fi
+    echo "  ⚠️  SHA256SUMS.txt not available, skipping verification"
 fi
 
 # ── Runtime ────────────────────────────────────────
 echo ""
 echo "  Downloading runtime library..."
-RUNTIME_URL="https://raw.githubusercontent.com/${REPO}/${VERSION}/ajeebc/runtime/ajeeb_runtime.c"
+RUNTIME_URL="https://github.com/${REPO}/releases/download/${VERSION}/ajeeb_runtime.c"
 curl -sSfL "$RUNTIME_URL" -o "${BIN_DIR}/ajeeb_runtime.c" || {
     echo "  ⚠️  Runtime download fail"
 }
@@ -180,28 +145,12 @@ curl -sSfL "$RUNTIME_URL" -o "${BIN_DIR}/ajeeb_runtime.c" || {
 # ── Standard library ──────────────────────────────
 echo ""
 echo "  Downloading ajeeb-std packages..."
-STD_DIR="${BIN_DIR}/../packages/ajeeb-std"
+STD_DIR="${HOME}/.ajeeb/packages/ajeeb-std"
 mkdir -p "$STD_DIR"
-for f in io.ajb math.ajb string.ajb array.ajb fs.ajb result.ajb collections.ajb; do
+for f in io.ajb math.ajb string.ajb array.ajb fs.ajb result.ajb collections.ajb option.ajb path.ajb process.ajb test.ajb time.ajb json.ajb; do
     URL="https://raw.githubusercontent.com/${REPO}/${VERSION}/ajeeb-lang/std/${f}"
     curl -sSfL "$URL" -o "${STD_DIR}/${f}" 2>/dev/null && echo "  ✓ ajeeb-std/${f}" || true
 done
-
-# ── Default parth.das template ────────────────────
-cat > "${BIN_DIR}/parth.das.template" << 'DASTPL'
-[package]
-name = "my-project"
-version = "0.1.0"
-author = ""
-
-[dependencies]
-
-[compiler]
-target = "native"
-output = "build/"
-runtime = "runtime/ajeeb_runtime.c"
-DASTPL
-echo "  ✓ parth.das template"
 
 # ── PATH setup ─────────────────────────────────────
 if [[ ":$PATH:" != *":${BIN_DIR}:"* ]]; then

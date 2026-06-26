@@ -335,8 +335,9 @@ jobs:
           done
           chmod +x release/ajeebc-* release/parthi-* release/parth-* 2>/dev/null || true
           # Generate SHA256SUMS.txt
-          cd release && sha256sum ajeebc-* parth-* ajeeb-compiler-* 2>/dev/null > SHA256SUMS.txt || true
+          cd release && sha256sum ajeebc-* parthi-* parth-* 2>/dev/null > SHA256SUMS.txt || true
           echo "v${GITHUB_REF#refs/tags/}" > version.txt
+          cat SHA256SUMS.txt
           ls -lh release/
 
       - name: Get tag name

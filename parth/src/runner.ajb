@@ -8,8 +8,12 @@ import parser;
 function findParthi(): string {
     set r: int = exec("which parthi > /dev/null 2>&1");
     if (r == 0) { return "parthi"; }
-    set p1: string = "/root/.parth/bin/parthi";
-    if (fileExists(p1) == 1) { return p1; }
+    set homeDir: string = exec("echo $HOME 2>/dev/null");
+    homeDir = trim(homeDir);
+    if (len(homeDir) > 0) {
+        set p1: string = str_concat(homeDir, "/.ajeeb/bin/parthi");
+        if (fileExists(p1) == 1) { return p1; }
+    }
     return "parthi";
 }
 
