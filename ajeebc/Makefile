@@ -121,7 +121,7 @@ clean:
 	rm -rf $(BUILD)/output*.c $(BUILD)/combined.ajb $(BUILD)/output.s $(BUILD)/output.ll
 	rm -f $(BUILD)/*.o
 	rm -f $(BUILD)/compiler
-	@echo "🧹 Build directory cleaned (preserved ajeeb_compiler, ajeebc, parth)"
+	@echo "🧹 Build directory cleaned (preserved ajeeb_compiler, ajeebc)"
 
 clean-all: clean
 	rm -rf $(BUILD)
