@@ -212,7 +212,7 @@ ajeeb_compiler/
 ├── docs/             # Documentation
 ├── scripts/          # Install scripts
 ├── parth/            # Package manager (Ajeeb)
-├── parthi/           # MIR interpreter
+├── piri/             # MIR interpreter
 └── takshak/          # Web framework
 ```
 

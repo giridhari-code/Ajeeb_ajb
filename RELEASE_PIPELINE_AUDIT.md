@@ -28,8 +28,8 @@
 
 **Fix:** Changed all references to `ajeeb-lang/std/*.ajb`
 
-### BUG 3: parthi/build.sh missing --emit-llvm-only
-**Line affected:** 43 of parthi/build.sh
+### BUG 3: piri/build.sh missing --emit-llvm-only
+**Line affected:** 43 of piri/build.sh
 
 **Problem:** Without `--emit-llvm-only`, ajeebc attempts full compilation pipeline
 
@@ -49,7 +49,7 @@
 ### BUG 5: AJEEBC_PATH env var unused
 **Lines affected:** 36, 106, 163, 232
 
-**Problem:** Workflow set `AJEEBC_PATH` env var but `parthi/build.sh` doesn't use it
+**Problem:** Workflow set `AJEEBC_PATH` env var but `piri/build.sh` doesn't use it
 
 **Impact:** Misleading configuration (build.sh uses hardcoded relative path)
 
@@ -62,7 +62,7 @@
 | File | Changes |
 |------|---------|
 | `.github/workflows/release.yml` | Fixed all ajeebc paths, stdlib paths, removed --build-from-source, removed unused env vars |
-| `parthi/build.sh` | Added `--emit-llvm-only` flag |
+| `piri/build.sh` | Added `--emit-llvm-only` flag |
 
 ---
 
@@ -75,7 +75,7 @@
 - Removed `AJEEBC_PATH` env vars
 - Removed `--build-from-source` from release notes
 
-### parthi/build.sh
+### piri/build.sh
 - 1 line changed
 - Added `--emit-llvm-only` flag to ajeebc invocation
 
@@ -102,7 +102,7 @@
 
 2. **Stdlib inclusion:** The release now correctly includes all standard library files from `ajeeb-lang/std/`.
 
-3. **Clean pipeline:** The `--emit-llvm-only` flag ensures parthi builds don't conflict with the LLVM pipeline.
+3. **Clean pipeline:** The `--emit-llvm-only` flag ensures piri builds don't conflict with the LLVM pipeline.
 
 4. **User experience:** Release notes no longer reference removed features.
 

@@ -16,7 +16,7 @@ Parth is the Cargo-equivalent for the Ajeeb programming language. It manages pro
 | `parth add <pkg>[@<version>]` | Add a dependency |
 | `parth remove <pkg>` | Remove a dependency |
 | `parth build [file.ajb]` | Compile project or single file |
-| `parth run [file.ajb]` | Run with ParthI interpreter (fast) |
+| `parth run [file.ajb]` | Run with Piri interpreter (fast) |
 | `parth run file.ajb --native` | Compile to native binary, then run |
 | `parth test` | Run all tests in `tests/` directory |
 | `parth bench [filter]` | Run benchmarks in `benches/` directory |
@@ -63,9 +63,9 @@ Defined in `parth/src/main.ajb`:
 | `parth init [name]` | Initialize project in current directory |
 | `parth new <name>` | Create a new project directory |
 | `parth build` | Compile project via Ajeeb compiler |
-| `parth run` | Run project with ParthI interpreter |
+| `parth run` | Run project with Piri interpreter |
 | `parth test` | Run tests from `tests/` folder |
-| `parth install <tool>` | Download tool binary (`ajeebc` or `parthi`) |
+| `parth install <tool>` | Download tool binary (`ajeebc` or `piri`) |
 | `parth generate-lockfile` | Generate lock file for dependencies |
 
 ## Project Layout

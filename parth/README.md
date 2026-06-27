@@ -19,6 +19,6 @@ parth test
 | `init [name]` | Project initialize karo current dir mein |
 | `new <name>` | Naya project banao |
 | `build` | ajeebc se compile karo (LLVM + gcc) |
-| `run` | ParthI interpreter se chalao |
+| `run` | Piri interpreter se chalao |
 | `test` | Tests chalao |
-| `install <tool>` | Tool download karo (ajeebc/parthi) |
+| `install <tool>` | Tool download karo (ajeebc/piri) |

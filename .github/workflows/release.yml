@@ -32,8 +32,8 @@ jobs:
           echo "=== Compile compiler.ajb → LLVM IR ==="
           "$GEN0" ajeebc/compiler/compiler.ajb ajeebc/build/compiler.ll --emit-llvm-only
 
-          echo "=== Compile parthi (modular) → LLVM IR ==="
-          bash parthi/build.sh --emit-llvm-only
+          echo "=== Compile piri (modular) → LLVM IR ==="
+          bash piri/build.sh --emit-llvm-only
 
           echo "=== Compile parth → LLVM IR ==="
           mkdir -p parth/build
@@ -43,13 +43,13 @@ jobs:
           "$GEN0" ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll --emit-llvm-only
 
           # Strip target triple from .ll files so llc uses local target
-          for f in ajeebc/build/compiler.ll ajeebc/build/test_simple.ll parthi/build/parthi.ll parth/build/output.ll; do
+          for f in ajeebc/build/compiler.ll ajeebc/build/test_simple.ll piri/build/piri.ll parth/build/output.ll; do
             sed -i 's/^target triple =.*//' "$f"
             sed -i 's/^target datalayout =.*//' "$f"
           done
 
           echo "✓ All LLVM IR generated (target-independent)"
-          ls -lh ajeebc/build/*.ll parthi/build/*.ll parth/build/*.ll
+          ls -lh ajeebc/build/*.ll piri/build/*.ll parth/build/*.ll
 
       - name: Upload LLVM IR artifacts
         uses: actions/upload-artifact@v4
@@ -58,7 +58,7 @@ jobs:
           path: |
             ajeebc/build/compiler.ll
             ajeebc/build/test_simple.ll
-            parthi/build/parthi.ll
+            piri/build/piri.ll
             parth/build/output.ll
             ajeebc/runtime/ajeeb_runtime.c
             ajeeb-lang/std/
@@ -91,13 +91,13 @@ jobs:
           chmod +x release/ajeebc-linux-aarch64
           echo "✓ ajeebc-linux-aarch64 built"
 
-      - name: Compile parthi (llc + gcc)
+      - name: Compile piri (llc + gcc)
         run: |
-          llc -O2 --march=aarch64 parthi/build/parthi.ll -o parthi/build/parthi.s
-          gcc -no-pie parthi/build/parthi.s ajeebc/runtime/ajeeb_runtime.c \
-            -o release/parthi-linux-aarch64 -lm -ldl -Wno-int-to-pointer-cast
-          chmod +x release/parthi-linux-aarch64
-          echo "✓ parthi-linux-aarch64 built"
+          llc -O2 --march=aarch64 piri/build/piri.ll -o piri/build/piri.s
+          gcc -no-pie piri/build/piri.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/piri-linux-aarch64 -lm -ldl -Wno-int-to-pointer-cast
+          chmod +x release/piri-linux-aarch64
+          echo "✓ piri-linux-aarch64 built"
 
       - name: Compile parth (llc + gcc)
         run: |
@@ -159,13 +159,13 @@ jobs:
           chmod +x release/ajeebc-linux-x86_64
           echo "✓ ajeebc-linux-x86_64 built"
 
-      - name: Compile parthi (llc + gcc)
+      - name: Compile piri (llc + gcc)
         run: |
-          llc -O2 --march=x86-64 parthi/build/parthi.ll -o parthi/build/parthi.s
-          gcc -no-pie parthi/build/parthi.s ajeebc/runtime/ajeeb_runtime.c \
-            -o release/parthi-linux-x86_64 -lm -ldl -Wno-int-to-pointer-cast
-          chmod +x release/parthi-linux-x86_64
-          echo "✓ parthi-linux-x86_64 built"
+          llc -O2 --march=x86-64 piri/build/piri.ll -o piri/build/piri.s
+          gcc -no-pie piri/build/piri.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/piri-linux-x86_64 -lm -ldl -Wno-int-to-pointer-cast
+          chmod +x release/piri-linux-x86_64
+          echo "✓ piri-linux-x86_64 built"
 
       - name: Compile parth (llc + gcc)
         run: |
@@ -226,14 +226,14 @@ jobs:
           chmod +x release/ajeebc-macos-arm64
           echo "✓ ajeebc-macos-arm64 built"
 
-      - name: Compile parthi (llc + cc)
+      - name: Compile piri (llc + cc)
         run: |
           export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
-          llc -O2 --march=aarch64 parthi/build/parthi.ll -o parthi/build/parthi.s
-          cc parthi/build/parthi.s ajeebc/runtime/ajeeb_runtime.c \
-            -o release/parthi-macos-arm64 -lm -Wno-int-to-pointer-cast
-          chmod +x release/parthi-macos-arm64
-          echo "✓ parthi-macos-arm64 built"
+          llc -O2 --march=aarch64 piri/build/piri.ll -o piri/build/piri.s
+          cc piri/build/piri.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/piri-macos-arm64 -lm -Wno-int-to-pointer-cast
+          chmod +x release/piri-macos-arm64
+          echo "✓ piri-macos-arm64 built"
 
       - name: Compile parth (llc + cc)
         run: |
@@ -296,14 +296,14 @@ jobs:
           chmod +x release/ajeebc-macos-x86_64
           echo "✓ ajeebc-macos-x86_64 built"
 
-      - name: Compile parthi (llc + cc)
+      - name: Compile piri (llc + cc)
         run: |
           export PATH="/usr/local/opt/llvm/bin:$PATH"
-          llc -O2 --march=x86-64 parthi/build/parthi.ll -o parthi/build/parthi.s
-          cc parthi/build/parthi.s ajeebc/runtime/ajeeb_runtime.c \
-            -o release/parthi-macos-x86_64 -lm -Wno-int-to-pointer-cast
-          chmod +x release/parthi-macos-x86_64
-          echo "✓ parthi-macos-x86_64 built"
+          llc -O2 --march=x86-64 piri/build/piri.ll -o piri/build/piri.s
+          cc piri/build/piri.s ajeebc/runtime/ajeeb_runtime.c \
+            -o release/piri-macos-x86_64 -lm -Wno-int-to-pointer-cast
+          chmod +x release/piri-macos-x86_64
+          echo "✓ piri-macos-x86_64 built"
 
       - name: Compile parth (llc + cc)
         run: |
@@ -406,14 +406,14 @@ jobs:
           mkdir -p release/packages/ajeeb-std
           for dir in all-artifacts/*/; do
             cp "$dir"ajeebc-* release/ 2>/dev/null || true
-            cp "$dir"parthi-* release/ 2>/dev/null || true
+            cp "$dir"piri-* release/ 2>/dev/null || true
             cp "$dir"parth-* release/ 2>/dev/null || true
             cp "$dir"ajeeb_runtime.c release/ 2>/dev/null || true
             cp -n "$dir"packages/ajeeb-std/* release/packages/ajeeb-std/ 2>/dev/null || true
           done
-          chmod +x release/ajeebc-* release/parthi-* release/parth-* 2>/dev/null || true
+          chmod +x release/ajeebc-* release/piri-* release/parth-* 2>/dev/null || true
           # Generate SHA256SUMS.txt
-          cd release && sha256sum ajeebc-* parthi-* parth-* 2>/dev/null > SHA256SUMS.txt || true
+          cd release && sha256sum ajeebc-* piri-* parth-* 2>/dev/null > SHA256SUMS.txt || true
           echo "v${GITHUB_REF#refs/tags/}" > version.txt
           echo "=== SHA256SUMS.txt ==="
           cat SHA256SUMS.txt
@@ -458,7 +458,7 @@ jobs:
 
             ### Components:
             - **ajeebc** — Ajeeb compiler (built with self-hosted compiler)
-            - **parthi** — MIR interpreter
+            - **piri** — MIR interpreter
             - **parth** — Project manager CLI
             - **ajeeb_runtime.c** — Runtime library
             - **ajeeb-std/** — Standard library
@@ -471,10 +471,10 @@ jobs:
             release/ajeebc-macos-arm64
             release/ajeebc-macos-x86_64
             release/ajeebc-windows-x86_64.exe
-            release/parthi-linux-x86_64
-            release/parthi-linux-aarch64
-            release/parthi-macos-arm64
-            release/parthi-macos-x86_64
+            release/piri-linux-x86_64
+            release/piri-linux-aarch64
+            release/piri-macos-arm64
+            release/piri-macos-x86_64
             release/parth-linux-x86_64
             release/parth-linux-aarch64
             release/parth-macos-arm64

@@ -1,1 +1,0 @@
-function main(): int { set x: int = 10; return x; }

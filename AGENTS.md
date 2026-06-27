@@ -1,5 +1,25 @@
 # Ajeeb Compiler — Agent Guide
 
+## ⚠️ Stabilization Mode (June 2026)
+
+**Releases temporarily disabled.** The release pipeline (`.github/workflows/release.yml.disabled`)
+has been paused during stabilization. No GitHub Releases are created automatically.
+
+**What still works:**
+- Local source builds: `cd ajeebc && make native`
+- All tests: `make test`
+- Bootstrap verification: `make bootstrap`
+- Source install: clone + `make native`
+
+**What's disabled:**
+- Automated GitHub Releases on tag push
+- Cross-platform binary builds in CI
+- Installer script downloads (until releases resume)
+
+To re-enable releases, rename `.github/workflows/release.yml.disabled` back to `release.yml`.
+
+See [Stabilization Plan](#stabilization-plan) below for the checklist.
+
 ## Quick Start
 ```bash
 # Build (no Rust needed if binaries exist)
@@ -152,3 +172,50 @@ Verification: `cargo test` ✓, `bash tests/bootstrap_check.sh` ✓ (bootstrap s
 - LLVM codegen has `__index` limitation for non-constant index expressions
 - Test files: `tests/test_std_math.ajb`, `tests/test_std_string.ajb`, `tests/test_std_array.ajb`
 - Run tests: `cargo run -p ajeeb-compiler --bin ajeeb_compiler -- --interpret tests/test_std_<module>.ajb`
+
+## Stabilization Plan
+
+### Phase 1: Compiler Bugs
+- [ ] Fix `__index` limitation for non-constant array index expressions
+- [ ] Fix `class` semantic analyzer bug (first pass doesn't register class in `struct_defs`)
+- [ ] Fix output truncation in C codegen for large files (~4324+ lines)
+- [ ] Verify self-hosting: ajeebc compiles compiler.ajb → native binary
+- [ ] Run full test suite: `make test`
+
+### Phase 2: Parth Bugs
+- [ ] Verify `parth init` / `parth build` / `parth run` pipeline end-to-end
+- [ ] Test dependency resolution with standard library packages
+- [ ] Cross-platform parity: Linux aarch64, x86_64, macOS arm64, x86_64, Windows x86_64
+
+### Phase 3: Installer Bugs
+- [ ] Test `install.sh` on fresh Linux (no existing ajeeb installation)
+- [ ] Test `install.sh` on fresh macOS (arm64 + x86_64)
+- [ ] Test `install.ps1` on fresh Windows (PowerShell)
+- [ ] Verify SHA256 checksum verification works
+- [ ] Verify PATH setup in `.bashrc` / `.zshrc`
+
+### Phase 4: Fresh-Machine Testing
+- [ ] Clone repo on clean Ubuntu 24.04 → `make native` → `make test`
+- [ ] Clone repo on clean macOS 15 (M1) → `make native` → `make test`
+- [ ] Clone repo on clean Windows (MSYS2) → `make native` → `make test`
+- [ ] Verify Gen0 bootstrap binary runs on aarch64
+
+### Phase 5: ARM64 Validation
+- [ ] `make native` on aarch64 Linux (native)
+- [ ] `make native` on macOS ARM64 (native)
+- [ ] Cross-compile: Gen0 aarch64 → `llc --march=x86-64` on x86_64 host
+- [ ] Cross-compile: Gen0 aarch64 → `llc --march=x86-64` on macOS x86_64
+
+### Phase 6: Self-Hosted Toolchain Validation
+- [ ] Gen0 compiles compiler.ajb → Gen1
+- [ ] Gen1 re-compiles compiler.ajb → Gen2
+- [ ] Gen1 and Gen2 produce identical output
+- [ ] `make bootstrap-full` passes on all platforms
+
+### Re-enabling Releases
+1. All checkboxes above must be checked
+2. Rename `release.yml.disabled` → `release.yml`
+3. Delete old tags and releases (start fresh at v0.1.0)
+4. Push tag `v0.1.0` to trigger first release
+5. Verify all 5 platform binaries in GitHub Release
+6. Verify installer downloads work end-to-end

@@ -106,6 +106,21 @@ impl Codegen {
                         return Ok(final_reg);
                     }
                     BinOp::Eq => {
+                        let is_str = matches!(left.as_ref(), Expr::StringLit(..))
+                            || matches!(right.as_ref(), Expr::StringLit(..))
+                            || self.string_regs.contains(&lhs)
+                            || self.string_regs.contains(&rhs);
+                        if is_str {
+                            self.declare_extern("strcmp_ajeeb");
+                            let cmp_reg = self.fresh();
+                            write!(self.body, "  {} = call i64 @strcmp_ajeeb(i64 {}, i64 {})\n", cmp_reg, lhs, rhs).unwrap();
+                            let is_zero = self.fresh();
+                            write!(self.body, "  {} = icmp eq i64 {}, 0\n", is_zero, cmp_reg).unwrap();
+                            let zext = self.fresh();
+                            write!(self.body, "  {} = zext i1 {} to i64\n", zext, is_zero).unwrap();
+                            self.bool_regs.insert(zext.clone());
+                            return Ok(zext);
+                        }
                         let (cmp_lhs, cmp_rhs) = if self.enum_regs.contains(&lhs) && self.enum_regs.contains(&rhs) {
                             let lp = self.fresh();
                             write!(self.body, "  {} = inttoptr i64 {} to ptr\n", lp, lhs).unwrap();
@@ -127,6 +142,23 @@ impl Codegen {
                         return Ok(zext);
                     }
                     BinOp::Neq => {
+                        let is_str = matches!(left.as_ref(), Expr::StringLit(..))
+                            || matches!(right.as_ref(), Expr::StringLit(..))
+                            || self.string_regs.contains(&lhs)
+                            || self.string_regs.contains(&rhs);
+                        if is_str {
+                            self.declare_extern("strcmp_ajeeb");
+                            let cmp_reg = self.fresh();
+                            write!(self.body, "  {} = call i64 @strcmp_ajeeb(i64 {}, i64 {})\n", cmp_reg, lhs, rhs).unwrap();
+                            let is_zero = self.fresh();
+                            write!(self.body, "  {} = icmp eq i64 {}, 0\n", is_zero, cmp_reg).unwrap();
+                            let is_ne = self.fresh();
+                            write!(self.body, "  {} = xor i1 {}, 1\n", is_ne, is_zero).unwrap();
+                            let zext = self.fresh();
+                            write!(self.body, "  {} = zext i1 {} to i64\n", zext, is_ne).unwrap();
+                            self.bool_regs.insert(zext.clone());
+                            return Ok(zext);
+                        }
                         let (cmp_lhs, cmp_rhs) = if self.enum_regs.contains(&lhs) && self.enum_regs.contains(&rhs) {
                             let lp = self.fresh();
                             write!(self.body, "  {} = inttoptr i64 {} to ptr\n", lp, lhs).unwrap();

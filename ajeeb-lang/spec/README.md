@@ -10,7 +10,7 @@ bash install.sh
 
 Isse yeh banege:
 - `build/ajeebc` — Rust compiler (Ajeeb → LLVM IR)
-- `build/parthi` — ParthI interpreter (Ajeeb code seedha chalao)
+- `build/piri` — Piri interpreter (Ajeeb code seedha chalao)
 - `build/parth` — CLI project manager
 
 ## Use karo
@@ -18,7 +18,7 @@ Isse yeh banege:
 ```bash
 ./build/parth init my-project
 cd my-project
-../build/parth run       # interpret karo (ParthI)
+../build/parth run       # interpret karo (Piri)
 ../build/parth build     # compile karo (native binary)
 ../build/parth test      # tests chalao
 ```
@@ -46,7 +46,7 @@ function main(): int {
 | `parth init [name]` | Current dir mein project banaye |
 | `parth new <name>` | Naya folder bana ke project banaye |
 | `parth build` | Native binary banaye (LLVM + gcc) |
-| `parth run` | ParthI se code chalaaye |
+| `parth run` | Piri se code chalaaye |
 | `parth test` | Tests chalaaye |
 
 ## Errors
@@ -59,6 +59,6 @@ Saare errors **Hinglish** mein aate hain! Examples:
 ## Architecture
 
 ```
-.ajb file → Lexer → Parser → HIR → MIR → ParthI (interpreter)
+.ajb file → Lexer → Parser → HIR → MIR → Piri (interpreter)
                                          → LLVM IR → native binary
 ```

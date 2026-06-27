@@ -23,7 +23,7 @@
 
 #### Release Assets
 
-- Added `parthi-linux-x86_64` binary
+- Added `piri-linux-x86_64` binary
 - Regenerated `SHA256SUMS.txt` with all three binaries
 - Updated `version.txt` to `v1.0.1`
 
@@ -33,7 +33,7 @@
 
 - **Compiler**: Full Ajeeb compiler with LLVM backend (default) and C fallback
 - **Package Manager**: Self-hosted `parth` with init, build, run, test commands
-- **Interpreter**: `parthi` MIR interpreter for fast development
+- **Interpreter**: `piri` MIR interpreter for fast development
 - **Standard Library**: 14 packages (io, math, string, array, fs, result, collections, option, path, process, test, time, json)
 - **Installer**: Bash installer for Linux/macOS, PowerShell for Windows
 

@@ -1,1 +1,0 @@
-function helper(): int { return 42; }

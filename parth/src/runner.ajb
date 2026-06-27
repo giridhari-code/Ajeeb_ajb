@@ -5,16 +5,23 @@
 import builder;
 import parser;
 
-function findParthi(): string {
-    set r: int = exec("which parthi > /dev/null 2>&1");
-    if (r == 0) { return "parthi"; }
+function findPiri(): string {
+    // Try piri first (new name)
+    set r: int = exec("which piri > /dev/null 2>&1");
+    if (r == 0) { return "piri"; }
+    // Backward compat: try parthi (old name)
+    set r2: int = exec("which parthi > /dev/null 2>&1");
+    if (r2 == 0) { return "parthi"; }
     set homeDir: string = exec("echo $HOME 2>/dev/null");
     homeDir = trim(homeDir);
     if (len(homeDir) > 0) {
-        set p1: string = str_concat(homeDir, "/.ajeeb/bin/parthi");
+        set p1: string = str_concat(homeDir, "/.ajeeb/bin/piri");
         if (fileExists(p1) == 1) { return p1; }
+        // Backward compat: check old location
+        set p2: string = str_concat(homeDir, "/.ajeeb/bin/parthi");
+        if (fileExists(p2) == 1) { return p2; }
     }
-    return "parthi";
+    return "piri";
 }
 
 function runProject(): int {
@@ -50,8 +57,8 @@ function runProject(): int {
         set binPath: string = str_concat(outDir, name);
         r = exec(binPath);
     } else {
-        set parthi: string = findParthi();
-        set cmd: string = str_concat(parthi, " ");
+        set piri: string = findPiri();
+        set cmd: string = str_concat(piri, " ");
         cmd = str_concat(cmd, entry);
         r = exec(cmd);
     }
@@ -62,5 +69,75 @@ function runProject(): int {
         errMsg = str_concat(errMsg, ")");
         println(errMsg);
     }
+    return r;
+}
+
+function runFile(filePath: string): int {
+    if (len(filePath) == 0) {
+        println("Usage: parth run <file.ajb>");
+        return 1;
+    }
+    set content: string = readFile(filePath);
+    if (len(content) == 0) {
+        println(str_concat("Error: file nahi mili — ", filePath));
+        return 1;
+    }
+    mkdir("build");
+    set ajeebc: string = findAjeebc();
+    set runtimePath: string = findRuntime("runtime/ajeeb_runtime.c");
+    set baseName: string = filePath;
+    set sl: int = len(filePath);
+    set lastSlash: int = -1;
+    set si: int = 0;
+    while (si < sl) {
+        set cc: int = charCode(filePath, si);
+        if (cc == 47) { lastSlash = si; }
+        si = si + 1;
+    }
+    if (lastSlash >= 0) {
+        baseName = substring(filePath, lastSlash + 1, sl);
+    }
+    if (sl > 4 && strcmp_ajeeb(substring(baseName, len(baseName) - 4, len(baseName)), ".ajb") == 0) {
+        baseName = substring(baseName, 0, len(baseName) - 4);
+    }
+    set binPath: string = str_concat("build/", baseName);
+    println(str_concat("Compiling: ", filePath));
+
+    set llFile: string = "build/output.ll";
+    set cmd1: string = str_concat(ajeebc, " ");
+    cmd1 = str_concat(cmd1, filePath);
+    cmd1 = str_concat(cmd1, " ");
+    cmd1 = str_concat(cmd1, llFile);
+    cmd1 = str_concat(cmd1, " --emit-llvm-only");
+    set r: int = exec(cmd1);
+    if (r != 0) {
+        println("ajeebc compile fail!");
+        return r;
+    }
+
+    set asmFile: string = "build/output.s";
+    set llcCmd: string = str_concat("llc -O2 ", llFile);
+    llcCmd = str_concat(llcCmd, " -o ");
+    llcCmd = str_concat(llcCmd, asmFile);
+    r = exec(llcCmd);
+    if (r != 0) {
+        println("llc compile fail!");
+        return r;
+    }
+
+    set gccCmd: string = str_concat("gcc -no-pie ", asmFile);
+    gccCmd = str_concat(gccCmd, " ");
+    gccCmd = str_concat(gccCmd, runtimePath);
+    gccCmd = str_concat(gccCmd, " -o ");
+    gccCmd = str_concat(gccCmd, binPath);
+    gccCmd = str_concat(gccCmd, " -lm -ldl 2>&1");
+    r = exec(gccCmd);
+    if (r != 0) {
+        println("gcc link fail!");
+        return r;
+    }
+    println(str_concat("  Binary -> ", binPath));
+    println(str_concat("Running: ", binPath));
+    r = exec(binPath);
     return r;
 }

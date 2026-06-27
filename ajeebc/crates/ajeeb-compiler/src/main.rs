@@ -190,6 +190,10 @@ fn main() -> io::Result<()> {
         let mut loader = ModuleLoader::new();
         let entry_dir = entry_path.parent().unwrap_or(Path::new("."));
         loader.add_import_path(entry_dir.to_path_buf());
+        let src_dir = entry_dir.join("src");
+        if src_dir.exists() {
+            loader.add_import_path(src_dir);
+        }
 
         if Path::new("packages/ajeeb-std").exists() {
             loader.add_import_path(Path::new("packages/ajeeb-std").to_path_buf());
@@ -203,6 +207,10 @@ fn main() -> io::Result<()> {
                 let std_path = dir.join("packages/ajeeb-std");
                 if std_path.exists() {
                     loader.add_import_path(std_path);
+                }
+                let src_path = dir.join("src");
+                if src_path.exists() {
+                    loader.add_import_path(src_path);
                 }
                 break;
             }

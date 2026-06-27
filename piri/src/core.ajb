@@ -1,0 +1,7 @@
+// core.ajb — Piri Constants & Buffer Helpers
+// Like Miri's lib.rs type aliases + config enums
+// NOTE: Ajeeb const not used (type-checker issues) — hardcoded values with comments
+
+// === BUFFER HELPERS ===
+function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
+function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }

@@ -7,6 +7,7 @@ pub mod strings;
 pub mod types;
 
 use crate::ast::{Stmt, TypeAnnot};
+use crate::hir::HirType;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
@@ -61,6 +62,8 @@ pub struct Codegen {
     // Enum type tracking — for comparing enum tags instead of pointers
     enum_vars: HashSet<String>,     // variable names known to hold enum values
     enum_regs: HashSet<String>,      // LLVM register names holding enum pointers (ptrtoint results)
+    // Array element type tracking — for propagating string_regs through __index
+    array_elem_types: HashMap<String, HirType>,  // var_name → element type of array
 }
 
 impl Codegen {
@@ -111,6 +114,7 @@ impl Codegen {
             enum_vars: HashSet::new(),
             float_vars: HashSet::new(),
             float_regs: HashSet::new(),
+            array_elem_types: HashMap::new(),
         }
     }
 
@@ -205,6 +209,13 @@ impl Codegen {
                     if base != name && !self.struct_defs.contains_key(base) {
                         self.struct_defs.insert(base.to_string(), self.struct_defs[name].clone());
                     }
+                }
+                Stmt::Class { name, fields, .. } => {
+                    // Register class fields in struct_defs (same as struct)
+                    let field_list: Vec<(String, TypeAnnot)> = fields.iter()
+                        .map(|f| (f.name.clone(), f.type_ann.clone()))
+                        .collect();
+                    self.struct_defs.insert(name.clone(), field_list);
                 }
                 Stmt::EnumDef { name, variants, .. } => {
                     let var_list: Vec<(String, Vec<TypeAnnot>)> = variants.iter()

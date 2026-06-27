@@ -29,8 +29,16 @@ impl Codegen {
             self.fn_return_types.insert(f.name.clone(), hir_type_to_type_ann(&f.return_type));
         }
 
-        for f in &prog.functions {
+        // Emit main last so all called functions are defined before it.
+        // This avoids the need for forward declarations (LLVM doesn't allow
+        // both 'declare' and 'define' for the same function).
+        let mut non_main: Vec<&mir_mod::MirFn> = prog.functions.iter().filter(|f| f.name != "main").collect();
+        let main_fn: Option<&mir_mod::MirFn> = prog.functions.iter().find(|f| f.name == "main");
+        for f in &non_main {
             self.emit_mir_fn(f)?;
+        }
+        if let Some(m) = main_fn {
+            self.emit_mir_fn(m)?;
         }
 
         if !self.user_fns.contains("main") {
@@ -52,15 +60,20 @@ impl Codegen {
         let saved_string_regs = self.string_regs.clone();
         let saved_var_types = self.var_types.clone();
         let saved_bool_regs = self.bool_regs.clone();
+        let saved_bool_vars = self.bool_vars.clone();
         let saved_float_regs = self.float_regs.clone();
         let saved_float_vars = self.float_vars.clone();
         let saved_array_regs = self.array_regs.clone();
         let saved_array_vars = self.array_vars.clone();
+        let saved_array_elem_types = self.array_elem_types.clone();
         let saved_enum_regs = self.enum_regs.clone();
         let saved_enum_vars = self.enum_vars.clone();
         let saved_mir_temps = self.mir_temps.clone();
         self.string_regs.clear();
+        self.string_vars.clear();
         self.bool_regs.clear();
+        self.bool_vars.clear();
+        self.var_types.clear();
         self.float_regs.clear();
         self.float_vars.clear();
         self.array_regs.clear();
@@ -84,11 +97,15 @@ impl Codegen {
             fn_vars.insert(pname.clone(), reg);
         }
 
-        for (lname, _) in &f.locals {
+        for (lname, ltype) in &f.locals {
             if !fn_vars.contains_key(lname) {
                 let reg = self.fresh();
                 write!(fn_body, "  {} = alloca i64, align 8\n", reg).unwrap();
                 fn_vars.insert(lname.clone(), reg);
+            }
+            // Track array element types for __index type propagation
+            if let HirType::Array(inner) = ltype {
+                self.array_elem_types.insert(lname.clone(), (**inner).clone());
             }
         }
 
@@ -129,10 +146,12 @@ impl Codegen {
         self.string_regs = saved_string_regs;
         self.var_types = saved_var_types;
         self.bool_regs = saved_bool_regs;
+        self.bool_vars = saved_bool_vars;
         self.float_regs = saved_float_regs;
         self.float_vars = saved_float_vars;
         self.array_regs = saved_array_regs;
         self.array_vars = saved_array_vars;
+        self.array_elem_types = saved_array_elem_types;
         self.enum_regs = saved_enum_regs;
         self.enum_vars = saved_enum_vars;
         self.mir_temps = saved_mir_temps;
@@ -249,12 +268,24 @@ impl Codegen {
                     "assert_eq" => {
                         let left = compiled_args.get(0).ok_or("assert_eq expects 2 arguments")?;
                         let right = compiled_args.get(1).ok_or("assert_eq expects 2 arguments")?;
-                        let cmp_reg = self.fresh();
-                        write!(self.body, "  {} = icmp eq i64 {}, {}\n", cmp_reg, left, right).unwrap();
+                        let is_str = self.string_regs.contains(left) || self.string_regs.contains(right);
+                        let cmp_reg = if is_str {
+                            self.declare_extern("strcmp_ajeeb");
+                            let cmp_val = self.fresh();
+                            write!(self.body, "  {} = call i64 @strcmp_ajeeb(i64 {}, i64 {})\n", cmp_val, left, right).unwrap();
+                            let cr = self.fresh();
+                            write!(self.body, "  {} = icmp eq i64 {}, 0\n", cr, cmp_val).unwrap();
+                            cr
+                        } else {
+                            let cr = self.fresh();
+                            write!(self.body, "  {} = icmp eq i64 {}, {}\n", cr, left, right).unwrap();
+                            cr
+                        };
                         let cont_label = self.fresh_label();
                         let fail_label = self.fresh_label();
                         write!(self.body, "  br i1 {}, label %{}, label %{}\n", cmp_reg, cont_label, fail_label).unwrap();
                         write!(self.body, "{}:\n", fail_label).unwrap();
+                        self.declare_extern("exit");
                         write!(self.body, "  call void @exit(i32 1)\n").unwrap();
                         write!(self.body, "  unreachable\n").unwrap();
                         write!(self.body, "{}:\n", cont_label).unwrap();
@@ -301,6 +332,30 @@ impl Codegen {
                                 write!(self.body, "  {} = getelementptr inbounds i64, ptr {}, i64 {}\n", elem_ptr, ptr, one).unwrap();
                                 let val = self.fresh();
                                 write!(self.body, "  {} = load i64, ptr {}\n", val, elem_ptr).unwrap();
+                                // Propagate element type from the array to the loaded value
+                                let mut elem_is_string = false;
+                                // Check if the obj register has element type info
+                                if let Some(HirType::Str) = self.array_elem_types.get(obj) {
+                                    elem_is_string = true;
+                                }
+                                // Also check by matching variable name
+                                if !elem_is_string {
+                                    for (vname, vreg) in &self.variables {
+                                        if vreg == obj {
+                                            if let Some(HirType::Str) = self.array_elem_types.get(vname) {
+                                                elem_is_string = true;
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                                if elem_is_string {
+                                    self.string_regs.insert(val.clone());
+                                }
+                                // Store element type info for the loaded value
+                                if let Some(elem_ty) = self.array_elem_types.get(obj).cloned() {
+                                    self.array_elem_types.insert(val.clone(), elem_ty);
+                                }
                                 if let Some(ref dest_name) = dest {
                                     if let Some(var_reg) = self.variables.get(dest_name).cloned() {
                                         write!(self.body, "  store i64 {}, ptr {}\n", val, var_reg).unwrap();
@@ -400,19 +455,19 @@ impl Codegen {
                              } else {
                                  args_str.clone()
                              };
-                              let reg = self.fresh();
-                              write!(self.body, "  {} = call i64 @{}({})\n", reg, call_func, final_args_str).unwrap();
-                             let is_string_ret = matches!(call_func.as_str(),
-                                 "str_concat" | "itoa" | "substring" | "toUpperCase" | "toLowerCase"
-                                 | "trim" | "readFile" | "readArg" | "replace" | "chr"
-                             ) || self.fn_return_types.get(call_func.as_str())
-                                 .map(|rt| matches!(rt, TypeAnnot::String))
-                                 .unwrap_or(false);
-                              if is_string_ret {
-                                  self.string_regs.insert(reg.clone());
-                                  self.string_vars.insert(dest_name.clone());
-                              }
-                              if let Some(var_reg) = self.variables.get(dest_name).cloned() {
+                               let reg = self.fresh();
+                               write!(self.body, "  {} = call i64 @{}({})\n", reg, call_func, final_args_str).unwrap();
+                               let is_string_ret = matches!(call_func.as_str(),
+                                   "str_concat" | "itoa" | "substring" | "toUpperCase" | "toLowerCase"
+                                   | "trim" | "readFile" | "readArg" | "replace"
+                               ) || self.fn_return_types.get(call_func.as_str())
+                                  .map(|rt| matches!(rt, TypeAnnot::String))
+                                  .unwrap_or(false);
+                                if is_string_ret {
+                                    self.string_regs.insert(reg.clone());
+                                    self.string_vars.insert(dest_name.clone());
+                                }
+                               if let Some(var_reg) = self.variables.get(dest_name).cloned() {
                                   write!(self.body, "  store i64 {}, ptr {}\n", reg, var_reg).unwrap();
                               } else {
                                   self.mir_temps.insert(dest_name.clone(), reg);
@@ -501,6 +556,18 @@ impl Codegen {
                         return Ok(final_reg);
                     }
                     MirBinOp::Eq => {
+                        let is_str = self.string_regs.contains(&l) || self.string_regs.contains(&r);
+                        if is_str {
+                            self.declare_extern("strcmp_ajeeb");
+                            let cmp_val = self.fresh();
+                            write!(self.body, "  {} = call i64 @strcmp_ajeeb(i64 {}, i64 {})\n", cmp_val, l, r).unwrap();
+                            let cmp = self.fresh();
+                            write!(self.body, "  {} = icmp eq i64 {}, 0\n", cmp, cmp_val).unwrap();
+                            let zext = self.fresh();
+                            write!(self.body, "  {} = zext i1 {} to i64\n", zext, cmp).unwrap();
+                            self.bool_regs.insert(zext.clone());
+                            return Ok(zext);
+                        }
                         let cmp = self.fresh();
                         write!(self.body, "  {} = icmp eq i64 {}, {}\n", cmp, l, r).unwrap();
                         let zext = self.fresh();
@@ -509,8 +576,21 @@ impl Codegen {
                         return Ok(zext);
                     }
                     MirBinOp::Neq => {
-                        let cmp = self.fresh();
-                        write!(self.body, "  {} = icmp ne i64 {}, {}\n", cmp, l, r).unwrap();
+                        let is_str = self.string_regs.contains(&l) || self.string_regs.contains(&r);
+                        let cmp = if is_str {
+                            self.declare_extern("strcmp_ajeeb");
+                            let cmp_val = self.fresh();
+                            write!(self.body, "  {} = call i64 @strcmp_ajeeb(i64 {}, i64 {})\n", cmp_val, l, r).unwrap();
+                            let is_zero = self.fresh();
+                            write!(self.body, "  {} = icmp eq i64 {}, 0\n", is_zero, cmp_val).unwrap();
+                            let cr = self.fresh();
+                            write!(self.body, "  {} = xor i1 {}, 1\n", cr, is_zero).unwrap();
+                            cr
+                        } else {
+                            let cr = self.fresh();
+                            write!(self.body, "  {} = icmp ne i64 {}, {}\n", cr, l, r).unwrap();
+                            cr
+                        };
                         let zext = self.fresh();
                         write!(self.body, "  {} = zext i1 {} to i64\n", zext, cmp).unwrap();
                         self.bool_regs.insert(zext.clone());
@@ -571,10 +651,14 @@ impl Codegen {
                     if self.string_vars.contains(name) { self.string_regs.insert(reg.clone()); }
                     if self.bool_vars.contains(name) { self.bool_regs.insert(reg.clone()); }
                     if self.float_vars.contains(name) { self.float_regs.insert(reg.clone()); }
+                    // Propagate array element type to the loaded register by SSA name
+                    if let Some(elem_ty) = self.array_elem_types.get(name).cloned() {
+                        self.array_elem_types.insert(reg.clone(), elem_ty);
+                    }
                     Ok(reg)
                 } else if let Some(ssa_reg) = self.mir_temps.get(name).cloned() {
-                    if self.string_vars.contains(name) { self.string_regs.insert(ssa_reg.clone()); }
                     if self.bool_vars.contains(name) { self.bool_regs.insert(ssa_reg.clone()); }
+                    if self.string_vars.contains(name) { self.string_regs.insert(ssa_reg.clone()); }
                     if self.float_vars.contains(name) { self.float_regs.insert(ssa_reg.clone()); }
                     Ok(ssa_reg)
                 } else if let Some(gname) = self.globals_map.get(name).cloned() {

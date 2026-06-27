@@ -112,8 +112,8 @@ if ! download "parth"; then
     exit 1
 fi
 
-if ! download "parthi"; then
-    echo "  ⚠️  parthi not available for ${PLATFORM}, skipping (optional)"
+if ! download "piri"; then
+    echo "  ⚠️  piri not available for ${PLATFORM}, skipping (optional)"
 fi
 
 # ── Verify checksums ───────────────────────────────
@@ -176,7 +176,7 @@ echo "  export PATH=\"${BIN_DIR}:\$PATH\""
 echo ""
 echo "Phir use karo:"
 echo "  ajeebc file.ajb              # compile"
-echo "  parthi file.ajb              # MIR interpreter se chalao"
+echo "  piri file.ajb              # MIR interpreter se chalao"
 echo "  parth init my-project        # naya project banao"
 echo "  parth build                  # compile karo"
 echo "  parth run                    # build + chalao"

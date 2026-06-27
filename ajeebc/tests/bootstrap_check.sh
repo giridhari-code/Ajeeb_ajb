@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT/ajeebc"
+cd "$ROOT"
 
 STEP=0
 
@@ -57,6 +57,7 @@ run_test "test_if" "bada hai"
 run_test "test_while" "$(printf '0\n1\n2')"
 run_test "test_for" "$(printf '0\n1\n2\n4\n5')"
 run_test "test_strings" "$(printf 'Hello World\nHELLO\najeeb\n1\n1\nHello')"
+run_test "test_chr_escape" "$(printf 'hello\nworld\ttab')"
 
 echo ""
 echo "✅ BOOTSTRAP SUCCESS — MIR pipeline verified!"

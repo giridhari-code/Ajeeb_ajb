@@ -1,0 +1,15 @@
+class Point {
+    x: int
+    y: int
+}
+
+function getX(p: Point): int {
+    return p.x;
+}
+
+function main(): int {
+    set p: Point = new Point;
+    set v: int = getX(p);
+    println("class field access working");
+    return 0;
+}

@@ -1,0 +1,46 @@
+// value.ajb — Piri Value Representation
+// Like Miri's Scalar/ImmTy/OpTy types
+// Layout: reg[i*3]=type(0=int,1=str,3=bool,5=void), reg[i*3+1]=val, reg[i*3+2]=strLen
+// String write head at buf[9998]
+
+function makeValBuf(): string {
+    return allocBuf(80000);
+}
+
+function setRegInt(buf: string, i: int, val: int): void {
+    bw(buf, i * 3, 0);     // TYPE_INT
+    bw(buf, i * 3 + 1, val);
+    bw(buf, i * 3 + 2, 0);
+}
+
+function getRegInt(buf: string, i: int): int {
+    return br(buf, i * 3 + 1);
+}
+
+function getRegType(buf: string, i: int): int {
+    return br(buf, i * 3);
+}
+
+function setRegStr(buf: string, sp: string, i: int, val: string): void {
+    bw(buf, i * 3, 2);     // TYPE_STRING
+    set pos: int = br(buf, 9998);
+    set slen: int = len(val);
+    if (pos + slen > 70000) {
+        println("Bhai string pool bhar gaya!\n");
+        return;
+    }
+    set j: int = 0;
+    while (j < slen) {
+        strSet(sp, pos + j, charCode(val, j));
+        j = j + 1;
+    }
+    bw(buf, i * 3 + 1, pos);
+    bw(buf, i * 3 + 2, slen);
+    bw(buf, 9998, pos + slen);
+}
+
+function getRegStr(buf: string, sp: string, i: int): string {
+    set pos: int = br(buf, i * 3 + 1);
+    set slen: int = br(buf, i * 3 + 2);
+    return substring(sp, pos, pos + slen);
+}

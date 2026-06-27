@@ -64,7 +64,7 @@ function Download-Binary {
 
 # ── Download binaries ──────────────────────────────
 $ajeebc_ok = Download-Binary "ajeebc"
-$parthi_ok = Download-Binary "parthi"
+$piri_ok = Download-Binary "piri"
 $parth_ok  = Download-Binary "parth"
 
 if (-not $ajeebc_ok) {
@@ -136,7 +136,7 @@ Write-Host ""
 Write-Host "Naya terminal kholo ya PATH refresh karo, phir:"
 Write-Host ""
 Write-Host "  ajeebc file.ajb              # compile"
-Write-Host "  parthi file.ajb              # MIR interpreter se chalao"
+Write-Host "  piri file.ajb              # MIR interpreter se chalao"
 Write-Host "  parth init my-project        # naya project banao"
 Write-Host "  parth build                  # compile karo"
 Write-Host "  parth run                    # build + chalao"

@@ -619,8 +619,11 @@ intptr_t charCode(intptr_t s, intptr_t i) {
 AjeebValue ajeeb_chr(AjeebValue s, AjeebValue idx) {
     if (s.tag != AJB_STRING || idx.tag != AJB_INT) return ajb_string("", 0);
     if ((size_t)idx.data.as_int >= s.string_len) return ajb_string("", 0);
-    char buf[2] = { s.string[idx.data.as_int], '\0' };
-    return ajb_string(buf, 1);
+    char* buf = (char*)malloc(2);
+    if (!buf) return ajb_string("", 0);
+    buf[0] = s.string[idx.data.as_int];
+    buf[1] = '\0';
+    return ajb_rc_string(buf, 1);
 }
 
 intptr_t chr(intptr_t s, intptr_t i) {
@@ -648,9 +651,11 @@ intptr_t arr_len(intptr_t arr) {
 
 #include <stdarg.h>
 intptr_t __array_lit(intptr_t count, ...) {
+    if (count < 0 || count > 1000000) return 0;
     va_list args;
     va_start(args, count);
-    intptr_t* arr = (intptr_t*)malloc((count + 1) * sizeof(intptr_t));
+    intptr_t* arr = (intptr_t*)malloc((size_t)(count + 1) * sizeof(intptr_t));
+    if (!arr) { va_end(args); return 0; }
     arr[0] = count;
     for (intptr_t i = 0; i < count; i++) {
         arr[i + 1] = va_arg(args, intptr_t);
@@ -662,12 +667,16 @@ intptr_t __array_lit(intptr_t count, ...) {
 intptr_t __index(intptr_t arr, intptr_t idx) {
     if (arr == 0) return 0;
     int64_t* p = (int64_t*)arr;
+    int64_t len = p[0];
+    if (idx < 0 || idx >= len) return 0;
     return p[idx + 1];
 }
 
 intptr_t __index_assign(intptr_t arr, intptr_t idx, intptr_t val) {
     if (arr == 0) return 0;
     int64_t* p = (int64_t*)arr;
+    int64_t len = p[0];
+    if (idx < 0 || idx >= len) return val;
     p[idx + 1] = val;
     return val;
 }
@@ -714,16 +723,17 @@ AjeebValue ajeeb_readFile(AjeebValue path) {
     if (!f) { ns_readFile += now_ns() - t0; return ajb_string("", 0); }
     fseek(f, 0, SEEK_END);
     long sz = ftell(f);
+    if (sz < 0) { fclose(f); ns_readFile += now_ns() - t0; return ajb_string("", 0); }
     cnt_readFile_bytes += sz;
     rewind(f);
     Arena* a = get_arena();
     char* content = (char*)arena_alloc(a, (size_t)sz + 1);
     if (!content) { fclose(f); ns_readFile += now_ns() - t0; return ajb_string("", 0); }
-    fread(content, 1, sz, f);
-    content[sz] = '\0';
+    size_t nread = fread(content, 1, (size_t)sz, f);
+    content[nread] = '\0';
     fclose(f);
     ns_readFile += now_ns() - t0;
-    return ajb_string(content, (size_t)sz);
+    return ajb_string(content, nread);
 }
 
 intptr_t readFile(intptr_t path) {
@@ -739,12 +749,12 @@ int64_t exec(int64_t cmd_ptr) {
 }
 
 int64_t mkdir(int64_t path_ptr) {
-    // Use system() to avoid name conflict with POSIX mkdir()
-    // mkdir -p creates parent directories too
-    char buf[4096];
-    int r = snprintf(buf, sizeof(buf), "mkdir -p %s", (const char*)path_ptr);
-    if (r < 0 || (size_t)r >= sizeof(buf)) return -1;
-    return system(buf);
+    // Use system() with single-quoted path to prevent shell injection
+    const char* path = (const char*)path_ptr;
+    if (!path || !*path) return -1;
+    char cmd[8192];
+    snprintf(cmd, sizeof(cmd), "mkdir -p '%s'", path);
+    return system(cmd);
 }
 
 void writeFile(intptr_t path, intptr_t content) {
@@ -980,6 +990,7 @@ intptr_t endsWith(intptr_t s, intptr_t suffix) {
 AjeebValue ajeeb_replace(AjeebValue s, AjeebValue from, AjeebValue to) {
     if (s.tag != AJB_STRING || from.tag != AJB_STRING || to.tag != AJB_STRING) return ajb_string("", 0);
     if (from.string_len == 0) return s;
+    if (s.string_len < from.string_len) return s;
     size_t count = 0;
     for (size_t i = 0; i <= s.string_len - from.string_len; ) {
         if (memcmp(s.string + i, from.string, from.string_len) == 0) {
@@ -990,13 +1001,17 @@ AjeebValue ajeeb_replace(AjeebValue s, AjeebValue from, AjeebValue to) {
         }
     }
     if (count == 0) return s;
-    size_t result_len = s.string_len + count * (to.string_len - from.string_len);
+    // Use int64_t to avoid size_t underflow when to is shorter than from
+    int64_t diff = (int64_t)to.string_len - (int64_t)from.string_len;
+    int64_t result_len = (int64_t)s.string_len + (int64_t)count * diff;
+    if (result_len < 0) result_len = 0;
     Arena* a = get_arena();
-    char* out = (char*)arena_alloc(a, result_len + 1);
+    char* out = (char*)arena_alloc(a, (size_t)result_len + 1);
     if (!out) return ajb_string("", 0);
     size_t pos = 0;
+    size_t safe_limit = s.string_len >= from.string_len ? s.string_len - from.string_len : 0;
     for (size_t i = 0; i < s.string_len; ) {
-        if (i <= s.string_len - from.string_len && memcmp(s.string + i, from.string, from.string_len) == 0) {
+        if (i <= safe_limit && memcmp(s.string + i, from.string, from.string_len) == 0) {
             memcpy(out + pos, to.string, to.string_len);
             pos += to.string_len;
             i += from.string_len;
@@ -1005,7 +1020,7 @@ AjeebValue ajeeb_replace(AjeebValue s, AjeebValue from, AjeebValue to) {
         }
     }
     out[pos] = '\0';
-    return ajb_string(out, result_len);
+    return ajb_string(out, (size_t)result_len);
 }
 
 intptr_t replace(intptr_t s, intptr_t from, intptr_t to) {
@@ -1172,6 +1187,33 @@ typedef struct {
     void* ctx;
 } TlsSession;
 
+// Simple fd tracking: map SSL pointer → TCP fd for cleanup on tls_close
+#define TLS_MAX_SESSIONS 64
+static void* tls_ssl_fds[TLS_MAX_SESSIONS][2]; // [i][0]=ssl, [i][1]=(void*)(intptr_t)fd
+static int tls_ssl_count = 0;
+
+static void tls_track_fd(void* ssl, int fd) {
+    if (tls_ssl_count < TLS_MAX_SESSIONS) {
+        tls_ssl_fds[tls_ssl_count][0] = ssl;
+        tls_ssl_fds[tls_ssl_count][1] = (void*)(intptr_t)fd;
+        tls_ssl_count++;
+    }
+}
+
+static int tls_lookup_fd(void* ssl) {
+    for (int i = 0; i < tls_ssl_count; i++) {
+        if (tls_ssl_fds[i][0] == ssl) {
+            int fd = (int)(intptr_t)tls_ssl_fds[i][1];
+            // Remove entry by swapping with last
+            tls_ssl_fds[i][0] = tls_ssl_fds[tls_ssl_count - 1][0];
+            tls_ssl_fds[i][1] = tls_ssl_fds[tls_ssl_count - 1][1];
+            tls_ssl_count--;
+            return fd;
+        }
+    }
+    return -1;
+}
+
 static void* tls_ssl_handle = NULL;
 static void* tls_crypto_handle = NULL;
 
@@ -1284,6 +1326,7 @@ AjeebValue ajeeb_tls_connect(AjeebValue host, AjeebValue port) {
     // The fd returned is the raw TCP fd; TLS read/write wrappers would need separate builtins.
     // Returning the SSL pointer as handle for use with tls_read/tls_write/tls_close (separate builtins)
     tls_SSL_CTX_free(ctx);
+    tls_track_fd(ssl, fd);
     return ajb_int((int64_t)(intptr_t)ssl);
 }
 
@@ -1317,6 +1360,9 @@ void tls_write(intptr_t handle, intptr_t data_ptr) {
 void tls_close(intptr_t handle) {
     if (!handle) return;
     if (tls_SSL_shutdown) ((void (*)(void*))(intptr_t)tls_SSL_shutdown)((void*)(intptr_t)handle);
+    // Close the underlying TCP socket before freeing SSL
+    int fd = tls_lookup_fd((void*)(intptr_t)handle);
+    if (fd >= 0) { CLOSE_SOCKET(fd); }
     if (tls_SSL_free) ((void (*)(void*))(intptr_t)tls_SSL_free)((void*)(intptr_t)handle);
 }
 
@@ -1415,10 +1461,12 @@ intptr_t now_ms(void) {
 #define ARRAY_PTR_TAG ((int64_t)1 << 63)
 
 static void array_to_string_rec(int64_t* arr, int64_t len, char* out, int* pos, int* cap) {
+    if (*pos >= *cap - 1) return;
     out[*pos] = '[';
     (*pos)++;
     for (int64_t i = 0; i < len; i++) {
         if (i > 0) {
+            if (*pos >= *cap - 2) return;
             out[*pos] = ',';
             (*pos)++;
             out[*pos] = ' ';
@@ -1426,17 +1474,19 @@ static void array_to_string_rec(int64_t* arr, int64_t len, char* out, int* pos, 
         }
         int64_t elem = arr[i];
         if (elem & ARRAY_PTR_TAG) {
-            // It's a pointer to a sub-array
             int64_t* sub = (int64_t*)(uintptr_t)(elem & ~ARRAY_PTR_TAG);
-            // First element of sub-array is its length
             int64_t sub_len = sub[0];
             array_to_string_rec(sub + 1, sub_len, out, pos, cap);
         } else {
-            // Plain integer
-            int written = snprintf(out + *pos, *cap - *pos, "%ld", (long)elem);
+            int remaining = *cap - *pos;
+            if (remaining <= 0) return;
+            int written = snprintf(out + *pos, (size_t)remaining, "%ld", (long)elem);
+            if (written > remaining) written = remaining;
+            if (written < 0) written = 0;
             *pos += written;
         }
     }
+    if (*pos >= *cap - 1) return;
     out[*pos] = ']';
     (*pos)++;
 }
@@ -1446,18 +1496,21 @@ static void array_to_string_rec(int64_t* arr, int64_t len, char* out, int* pos, 
 static char* ll_array_to_string(int64_t* raw) {
     if (!raw) {
         char* empty = (char*)malloc(3);
+        if (!empty) return NULL;
         strcpy(empty, "[]");
         return empty;
     }
     int64_t len = raw[0];
     int64_t* data = raw + 1;
     int cap = 4096;
-    char* out = (char*)malloc(cap);
+    char* out = (char*)malloc((size_t)cap);
+    if (!out) { char* empty = (char*)malloc(3); if (!empty) return NULL; strcpy(empty, "[]"); return empty; }
     int pos = 0;
     out[pos] = '[';
     pos++;
     for (int64_t i = 0; i < len; i++) {
         if (i > 0) {
+            if (pos >= cap - 2) break;
             out[pos] = ',';
             pos++;
             out[pos] = ' ';
@@ -1469,12 +1522,18 @@ static char* ll_array_to_string(int64_t* raw) {
             int64_t sub_len = sub[0];
             array_to_string_rec(sub + 1, sub_len, out, &pos, &cap);
         } else {
-            int written = snprintf(out + pos, cap - pos, "%ld", (long)elem);
+            int remaining = cap - pos;
+            if (remaining <= 0) break;
+            int written = snprintf(out + pos, (size_t)remaining, "%ld", (long)elem);
+            if (written > remaining) written = remaining;
+            if (written < 0) written = 0;
             pos += written;
         }
     }
-    out[pos] = ']';
-    pos++;
+    if (pos < cap - 2) {
+        out[pos] = ']';
+        pos++;
+    }
     out[pos] = '\0';
     return out;
 }
@@ -1483,16 +1542,19 @@ static char* ll_array_to_string(int64_t* raw) {
 intptr_t array_to_string(intptr_t ptr, int64_t len) {
     if (!ptr) {
         char* empty = (char*)malloc(3);
+        if (!empty) return 0;
         strcpy(empty, "[]");
         return (intptr_t)empty;
     }
     int cap = 4096;
-    char* out = (char*)malloc(cap);
+    char* out = (char*)malloc((size_t)cap);
+    if (!out) { char* empty = (char*)malloc(3); if (!empty) return 0; strcpy(empty, "[]"); return (intptr_t)empty; }
     int pos = 0;
     out[pos] = '[';
     pos++;
     for (int64_t i = 0; i < len; i++) {
         if (i > 0) {
+            if (pos >= cap - 2) break;
             out[pos] = ',';
             pos++;
             out[pos] = ' ';
@@ -1504,12 +1566,18 @@ intptr_t array_to_string(intptr_t ptr, int64_t len) {
             int64_t sub_len = sub[0];
             array_to_string_rec(sub + 1, sub_len, out, &pos, &cap);
         } else {
-            int written = snprintf(out + pos, cap - pos, "%ld", (long)elem);
+            int remaining = cap - pos;
+            if (remaining <= 0) break;
+            int written = snprintf(out + pos, (size_t)remaining, "%ld", (long)elem);
+            if (written > remaining) written = remaining;
+            if (written < 0) written = 0;
             pos += written;
         }
     }
-    out[pos] = ']';
-    pos++;
+    if (pos < cap - 2) {
+        out[pos] = ']';
+        pos++;
+    }
     out[pos] = '\0';
     return (intptr_t)out;
 }

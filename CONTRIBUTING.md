@@ -73,7 +73,7 @@ ajeebc/           # Compiler source
 ├── tests/        # Test files
 └── crates/       # Rust crates
 parth/            # Package manager
-parthi/           # MIR interpreter
+piri/             # MIR interpreter
 tests/            # Integration tests
 docs/             # Documentation
 ```

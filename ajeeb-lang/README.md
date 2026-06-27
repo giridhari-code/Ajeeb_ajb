@@ -8,13 +8,13 @@ Ajeeb ek self-hosting programming language hai! File extension: `.ajb`
 |--------|----------------------------|------------------------|
 | ajeebc | Ajeeb Compiler (Rust → native) | `ajeebc/`          |
 | parth  | Package Manager            | `parth/`               |
-| parthi | MIR Interpreter            | `parthi/`              |
+| piri   | MIR Interpreter            | `piri/`                |
 
 ## Quick Start
 
 ```bash
 parth init my-project
 cd my-project
-parth run    # interpret with parthi
+parth run    # interpret with piri
 parth build  # compile with ajeebc
 ```

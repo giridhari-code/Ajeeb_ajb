@@ -246,7 +246,10 @@ impl Parser {
                     Some(t) => t,
                     None => return Err(self.err("Field ka type batana zaroori hai.")),
                 };
-                self.expect(&Token::Semicolon)?;
+                // Accept both ',' and ';' as field separators (trailing comma/semicolon allowed)
+                if self.peek() == &Token::Comma || self.peek() == &Token::Semicolon {
+                    self.advance();
+                }
                 fields.push(ClassField { name: fname, type_ann: ftype, pub_: field_pub });
             }
         }

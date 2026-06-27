@@ -62,7 +62,7 @@ fn cmd_help() {
     println!("  outdated         Check for outdated dependencies");
     println!("  upgrade [pkg]    Upgrade dependencies");
     println!("  build [file.ajb] Compile current project or single file");
-    println!("  run [file.ajb]   Run with ParthI interpreter (fast!)");
+    println!("  run [file.ajb]   Run with Piri interpreter (fast!)");
     println!("                   Examples: parth run hello.ajb");
     println!("                             parth run (runs src/main.ajb)");
     println!("                             parth run file.ajb --native (compile + run)");

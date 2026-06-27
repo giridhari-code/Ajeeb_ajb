@@ -1,0 +1,6 @@
+function main(): int {
+    writeFile("/tmp/test_readfile.txt", "hello");
+    set content: string = readFile("/tmp/test_readfile.txt");
+    println(content);
+    return 0;
+}

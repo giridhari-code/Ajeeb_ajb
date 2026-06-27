@@ -12,7 +12,7 @@ This release makes Ajeeb fully usable without Rust or Cargo. Users can install a
 
 - **Installer**: Never suggests building from source when downloads fail. Fails with clear error message and GitHub issue link.
 - **Checksum Verification**: Installer now downloads and verifies SHA256SUMS.txt to ensure binary integrity.
-- **Binary Discovery**: All binaries (ajeebc, parth, parthi) are automatically found via PATH or `~/.ajeeb/bin/`.
+- **Binary Discovery**: All binaries (ajeebc, parth, piri) are automatically found via PATH or `~/.ajeeb/bin/`.
 - **Runtime Discovery**: `ajeeb_runtime.c` is automatically located relative to the installed binaries.
 - **Self-Hosted Parth**: The package manager is now self-hosted (compiled by ajeebc itself), eliminating Rust dependency for the user-facing tool.
 
@@ -29,10 +29,10 @@ This release makes Ajeeb fully usable without Rust or Cargo. Users can install a
 
 | Platform | Binary | Status |
 |----------|--------|--------|
-| Linux x86_64 | `ajeebc-linux-x86_64`, `parth-linux-x86_64`, `parthi-linux-x86_64` | ✅ Available |
-| Linux aarch64 | `ajeebc-linux-aarch64`, `parth-linux-aarch64`, `parthi-linux-aarch64` | ⏳ CI builds |
-| macOS ARM64 | `ajeebc-macos-arm64`, `parth-macos-arm64`, `parthi-macos-arm64` | ⏳ CI builds |
-| macOS x86_64 | `ajeebc-macos-x86_64`, `parth-macos-x86_64`, `parthi-macos-x86_64` | ⏳ CI builds |
+| Linux x86_64 | `ajeebc-linux-x86_64`, `parth-linux-x86_64`, `piri-linux-x86_64` | ✅ Available |
+| Linux aarch64 | `ajeebc-linux-aarch64`, `parth-linux-aarch64`, `piri-linux-aarch64` | ⏳ CI builds |
+| macOS ARM64 | `ajeebc-macos-arm64`, `parth-macos-arm64`, `piri-macos-arm64` | ⏳ CI builds |
+| macOS x86_64 | `ajeebc-macos-x86_64`, `parth-macos-x86_64`, `piri-macos-x86_64` | ⏳ CI builds |
 | Windows x86_64 | `ajeebc-windows-x86_64.exe`, `parth-windows-x86_64.exe` | ⏳ CI builds |
 
 ### Installation

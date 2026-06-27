@@ -188,10 +188,10 @@ pub fn cmd_run_file(args: &[String]) {
         std::process::exit(run_status.code().unwrap_or(0));
     }
 
-    // interpreter mode: try parthi first, then ajeebc --interpret
-    if let Some(p) = find_installed_bin("parthi") {
-        println!("🚀 Running with ParthI...\n");
-        let s = Command::new(&p).arg(file_path).status().expect("parthi failed");
+    // interpreter mode: try piri first, then parthi (compat), then ajeebc --interpret
+    if let Some(p) = find_installed_bin("piri").or_else(|| find_installed_bin("parthi")) {
+        println!("🚀 Running with Piri...\n");
+        let s = Command::new(&p).arg(file_path).status().expect("piri failed");
         std::process::exit(s.code().unwrap_or(0));
     }
     if let Some(p) = find_installed_bin("ajeebc").or_else(|| find_installed_bin("ajeeb_compiler")) {
@@ -201,7 +201,7 @@ pub fn cmd_run_file(args: &[String]) {
     }
 
     eprintln!("❌ No interpreter found.");
-    eprintln!("   Install ajeebc or parthi:");
+    eprintln!("   Install ajeebc or piri:");
     eprintln!("   curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/scripts/install.sh | bash");
     std::process::exit(1);
 }
@@ -464,10 +464,10 @@ pub fn cmd_run() {
         std::process::exit(1);
     }
 
-    // Try parthi first
-    if let Some(p) = find_installed_bin("parthi") {
-        println!("🚀 Running with ParthI...\n");
-        let status = Command::new(&p).arg(&entry).status().expect("Failed to run parthi");
+    // Try piri first, then parthi (compat)
+    if let Some(p) = find_installed_bin("piri").or_else(|| find_installed_bin("parthi")) {
+        println!("🚀 Running with Piri...\n");
+        let status = Command::new(&p).arg(&entry).status().expect("Failed to run piri");
         std::process::exit(status.code().unwrap_or(1));
     }
 
@@ -479,7 +479,7 @@ pub fn cmd_run() {
     }
 
     eprintln!("❌ No interpreter found.");
-    eprintln!("   Install ajeebc or parthi:");
+    eprintln!("   Install ajeebc or piri:");
     eprintln!("   curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/scripts/install.sh | bash");
     std::process::exit(1);
 }

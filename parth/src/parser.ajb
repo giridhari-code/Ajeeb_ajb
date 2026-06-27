@@ -80,6 +80,8 @@ function parseDasConfig(path: string): int {
     set section: int = 0;
     set depCount: int = 0;
     bw(buf, 10, 0);
+    bw(buf, 800, 0);  // Reset workspace mode
+    bw(buf, 801, 0);  // Reset member count
     while (i < len(src)) {
         i = skipBlankLines(src, i);
         if (i >= len(src)) { break; }

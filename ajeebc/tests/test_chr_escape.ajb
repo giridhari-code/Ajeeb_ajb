@@ -1,0 +1,9 @@
+// Regression test: chr() returns int, not string.
+// Bug was: chr() result was misclassified as string temp,
+// causing strcmp_ajeeb() on integer values → segfault.
+// This test exercises emitEscapedStr character comparisons.
+function main(): int {
+    set s: string = "hello\nworld\ttab";
+    println(s);
+    return 0;
+}
