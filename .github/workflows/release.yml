@@ -37,7 +37,10 @@ jobs:
 
           echo "=== Compile parth → LLVM IR ==="
           mkdir -p parth/build
+          # Gen0 doesn't have src/ import path — copy modules alongside entry file
+          cp parth/src/*.ajb parth/
           "$GEN0" parth/parth_m1.ajb parth/build/output.ll --emit-llvm-only
+          rm -f parth/parser.ajb parth/resolver.ajb parth/builder.ajb parth/runner.ajb
 
           echo "=== Compile test_simple → LLVM IR ==="
           "$GEN0" ajeebc/tests/test_simple.ajb ajeebc/build/test_simple.ll --emit-llvm-only
