@@ -2,7 +2,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
+# ROOT resolves to repo root (via symlink) or ajeebc/ (via direct path)
+# Ensure we operate from ajeebc/
+if [ -f "$ROOT/ajeebc/Makefile" ]; then
+  cd "$ROOT/ajeebc"
+else
+  cd "$ROOT"
+fi
 
 STEP=0
 
