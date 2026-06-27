@@ -414,7 +414,7 @@ jobs:
           chmod +x release/ajeebc-* release/piri-* release/parth-* 2>/dev/null || true
           # Generate SHA256SUMS.txt
           cd release && sha256sum ajeebc-* piri-* parth-* 2>/dev/null > SHA256SUMS.txt || true
-          echo "v${GITHUB_REF#refs/tags/}" > version.txt
+          echo "${GITHUB_REF#refs/tags/}" > version.txt
           echo "=== SHA256SUMS.txt ==="
           cat SHA256SUMS.txt
           echo ""

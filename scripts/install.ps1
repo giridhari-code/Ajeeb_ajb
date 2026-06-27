@@ -36,7 +36,7 @@ try {
     $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$REPO/releases/latest"
     $VERSION = $release.tag_name
 } catch {
-    $VERSION = "v0.1.1"
+    $VERSION = "v1.0.1"
 }
 Write-Host "  Version: $VERSION"
 Write-Host ""
@@ -69,9 +69,8 @@ $parth_ok  = Download-Binary "parth"
 
 if (-not $ajeebc_ok) {
     Write-Host ""
-    Write-Host "❌ Ajeebc binary nahi mila. Rust install karo aur manually build karo:" -ForegroundColor Red
-    Write-Host "   Install Rust: https://rustup.rs" -ForegroundColor Red
-    Write-Host "   cargo install --git https://github.com/$REPO ajeeb-compiler" -ForegroundColor Red
+    Write-Host "❌ Ajeebc binary release mein nahi hai ($PLATFORM)" -ForegroundColor Red
+    Write-Host "   GitHub issue karo: https://github.com/$REPO/issues" -ForegroundColor Red
     exit 1
 }
 
@@ -93,8 +92,8 @@ $std_dir = "$env:USERPROFILE\.ajeeb\packages\ajeeb-std"
 if (-not (Test-Path $std_dir)) {
     New-Item -ItemType Directory -Path $std_dir -Force | Out-Null
 }
-@("io", "math", "string", "array", "fs", "result", "collections") | ForEach-Object {
-    $url = "https://raw.githubusercontent.com/$REPO/$VERSION/packages/ajeeb-std/$_.ajb"
+@("io", "math", "string", "array", "fs", "result", "collections", "option", "path", "process", "test", "time", "json") | ForEach-Object {
+    $url = "https://raw.githubusercontent.com/$REPO/$VERSION/ajeeb-lang/std/$_.ajb"
     try {
         Invoke-WebRequest -Uri $url -OutFile "$std_dir\$_.ajb" -UseBasicParsing
         Write-Host "  ✓ ajeeb-std/$_.ajb" -ForegroundColor Green
