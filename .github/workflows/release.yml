@@ -353,6 +353,7 @@ jobs:
 
       - name: Compile ajeebc (llc + gcc)
         run: |
+          export PATH="/c/Program Files/LLVM/bin:/c/ProgramData/chocolatey/lib/mingw/tools/install/mingw64/bin:$PATH"
           mkdir -p release
           llc -O2 --march=x86-64 ajeebc/build/compiler.ll -o ajeebc/build/compiler.s
           gcc ajeebc/build/compiler.s ajeebc/runtime/ajeeb_runtime.c \
@@ -361,6 +362,7 @@ jobs:
 
       - name: Compile parth (llc + gcc)
         run: |
+          export PATH="/c/Program Files/LLVM/bin:/c/ProgramData/chocolatey/lib/mingw/tools/install/mingw64/bin:$PATH"
           llc -O2 --march=x86-64 parth/build/output.ll -o parth/build/output.s
           gcc parth/build/output.s ajeebc/runtime/ajeeb_runtime.c \
             -o release/parth-windows-x86_64.exe -lm -Wno-int-to-pointer-cast
