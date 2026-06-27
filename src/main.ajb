@@ -1,4 +1,0 @@
-function main(): int {
-    println("Hello from Ajeeb!");
-    return 0;
-}

@@ -213,7 +213,6 @@ ajeeb_compiler/
 ├── scripts/          # Install scripts
 ├── parth/            # Package manager (Ajeeb)
 ├── piri/             # MIR interpreter
-└── takshak/          # Web framework
 ```
 
 ## Error Messages (Hinglish)
