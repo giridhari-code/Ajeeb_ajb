@@ -446,43 +446,51 @@ static long long now_ns(void) {
 }
 
 void ajeeb_leak_check(void) {
-    fprintf(stderr, "[Perf] writeAppend: %lld calls, %lld bytes, %lld us\n",
-        cnt_writeAppend, cnt_writeAppend_bytes, ns_writeAppend / 1000);
-    fprintf(stderr, "[Perf] writeFile:  %lld calls, %lld bytes, %lld us\n",
-        cnt_writeFile, cnt_writeFile_bytes, ns_writeFile / 1000);
-    fprintf(stderr, "[Perf] readFile:   %lld calls, %lld bytes, %lld us\n",
-        cnt_readFile, cnt_readFile_bytes, ns_readFile / 1000);
-    fprintf(stderr, "[Perf] getOutbuf:  %lld calls\n", cnt_getOutbuf);
-    fprintf(stderr, "[Perf] parseAdd:   %lld us\n", ns_parseAdd / 1000);
-    fprintf(stderr, "[Perf] import:     %lld us\n", ns_import / 1000);
-    // Report RC heap stats
-    int rc_leaked = rc_total_allocs - rc_total_frees;
-    if (rc_leaked > 0) {
-        fprintf(stderr, "[Ajeeb Runtime] RC LEAK: %d allocations not freed (%d total allocs, %d frees)\n",
-            rc_leaked, rc_total_allocs, rc_total_frees);
-    } else {
-        fprintf(stderr, "[Ajeeb Runtime] RC: %d allocs, %d frees — no leaks\n",
-            rc_total_allocs, rc_total_frees);
-    }
-    // Report string arena stats
-    if (the_str_arena) {
-        size_t str_leaked = the_str_arena->total_allocated - the_str_arena->total_freed;
-        if (str_leaked > 0) {
-            fprintf(stderr, "[Ajeeb Runtime] String Arena: %zu bytes allocated, %zu bytes freed, %zu bytes leaked\n",
-                the_str_arena->total_allocated, the_str_arena->total_freed, str_leaked);
+    // Perf/arena diagnostics: enable with AJEEB_PROFILE=1
+    char *ajeeb_profile = getenv("AJEEB_PROFILE");
+    if (ajeeb_profile && strcmp(ajeeb_profile, "1") == 0) {
+        fprintf(stderr, "[Perf] writeAppend: %lld calls, %lld bytes, %lld us\n",
+            cnt_writeAppend, cnt_writeAppend_bytes, ns_writeAppend / 1000);
+        fprintf(stderr, "[Perf] writeFile:  %lld calls, %lld bytes, %lld us\n",
+            cnt_writeFile, cnt_writeFile_bytes, ns_writeFile / 1000);
+        fprintf(stderr, "[Perf] readFile:   %lld calls, %lld bytes, %lld us\n",
+            cnt_readFile, cnt_readFile_bytes, ns_readFile / 1000);
+        fprintf(stderr, "[Perf] getOutbuf:  %lld calls\n", cnt_getOutbuf);
+        fprintf(stderr, "[Perf] parseAdd:   %lld us\n", ns_parseAdd / 1000);
+        fprintf(stderr, "[Perf] import:     %lld us\n", ns_import / 1000);
+        // Report RC heap stats
+        int rc_leaked = rc_total_allocs - rc_total_frees;
+        if (rc_leaked > 0) {
+            fprintf(stderr, "[Ajeeb Runtime] RC LEAK: %d allocations not freed (%d total allocs, %d frees)\n",
+                rc_leaked, rc_total_allocs, rc_total_frees);
         } else {
-            fprintf(stderr, "[Ajeeb Runtime] String Arena: %zu bytes allocated, %zu bytes freed — no leaks\n",
-                the_str_arena->total_allocated, the_str_arena->total_freed);
+            fprintf(stderr, "[Ajeeb Runtime] RC: %d allocs, %d frees — no leaks\n",
+                rc_total_allocs, rc_total_frees);
         }
-        str_arena_destroy(the_str_arena);
-        the_str_arena = NULL;
-    }
-    // Report arena stats
-    if (the_arena) {
-        fprintf(stderr, "[Ajeeb Runtime] Arena: %zu allocs, %zu bytes requested, %zu bytes capacity\n",
-            the_arena->alloc_count, the_arena->total_requested, the_arena->capacity);
-        arena_destroy(the_arena);
-        the_arena = NULL;
+        // Report string arena stats
+        if (the_str_arena) {
+            size_t str_leaked = the_str_arena->total_allocated - the_str_arena->total_freed;
+            if (str_leaked > 0) {
+                fprintf(stderr, "[Ajeeb Runtime] String Arena: %zu bytes allocated, %zu bytes freed, %zu bytes leaked\n",
+                    the_str_arena->total_allocated, the_str_arena->total_freed, str_leaked);
+            } else {
+                fprintf(stderr, "[Ajeeb Runtime] String Arena: %zu bytes allocated, %zu bytes freed — no leaks\n",
+                    the_str_arena->total_allocated, the_str_arena->total_freed);
+            }
+            str_arena_destroy(the_str_arena);
+            the_str_arena = NULL;
+        }
+        // Report arena stats
+        if (the_arena) {
+            fprintf(stderr, "[Ajeeb Runtime] Arena: %zu allocs, %zu bytes requested, %zu bytes capacity\n",
+                the_arena->alloc_count, the_arena->total_requested, the_arena->capacity);
+            arena_destroy(the_arena);
+            the_arena = NULL;
+        }
+    } else {
+        // Always clean up, just don't print
+        if (the_str_arena) { str_arena_destroy(the_str_arena); the_str_arena = NULL; }
+        if (the_arena) { arena_destroy(the_arena); the_arena = NULL; }
     }
 }
 

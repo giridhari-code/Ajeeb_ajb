@@ -93,6 +93,7 @@ fn main() -> io::Result<()> {
     let skip_compile = args.iter().any(|a| a == "--skip-compile") || args.iter().any(|a| a == "--interpret");
     let emit_llvm_only = args.iter().any(|a| a == "--emit-llvm-only");
     let force_run = args.iter().any(|a| a == "--run") || args.iter().any(|a| a == "--interpret");
+    let verbose = args.iter().any(|a| a == "--verbose" || a == "-v");
 
     // --- Detect backend ---
     let backend = if force_llvm {
@@ -119,16 +120,20 @@ fn main() -> io::Result<()> {
                 .cloned()
                 .unwrap_or_default();
             if !name.is_empty() && name != "project" {
-                println!("📦 parth: '{}' v{}", name, version);
+                if verbose {
+                    println!("📦 parth: '{}' v{}", name, version);
+                }
             }
             break;
         }
     }
 
-    match backend {
-        "llvm" => println!("⚡ Backend: LLVM (llc + as + ld)"),
-        "gcc" => println!("🔧 Backend: GCC (C codegen)"),
-        _ => println!("🐢 Backend: Interpreter only"),
+    if verbose {
+        match backend {
+            "llvm" => println!("⚡ Backend: LLVM (llc + as + ld)"),
+            "gcc" => println!("🔧 Backend: GCC (C codegen)"),
+            _ => println!("🐢 Backend: Interpreter only"),
+        }
     }
 
     // --- Binary name from input file ---
@@ -145,7 +150,7 @@ fn main() -> io::Result<()> {
     module_cache.add_source(entry_path);
 
     let all_stmts = if let Some(cached_stmts) = module_cache.load() {
-        println!("✓ Cache hit: {} statements loaded from cache", cached_stmts.len());
+        if verbose { println!("✓ Cache hit: {} statements loaded from cache", cached_stmts.len()); }
         cached_stmts
     } else {
         let mut file = File::open(file_path)?;
@@ -172,7 +177,7 @@ fn main() -> io::Result<()> {
             }
         }
 
-        println!("✓ Lexer: {} tokens", tokens.len());
+        if verbose { println!("✓ Lexer: {} tokens", tokens.len()); }
 
         // 2. PARSE
         let mut parser = Parser::with_positions(tokens, token_lines, token_cols);
@@ -184,7 +189,7 @@ fn main() -> io::Result<()> {
             }
         };
 
-        println!("✓ Parser: {} statements", ast.len());
+        if verbose { println!("✓ Parser: {} statements", ast.len()); }
 
         // 2b. MODULE LOADING
         let mut loader = ModuleLoader::new();
@@ -245,11 +250,13 @@ fn main() -> io::Result<()> {
         }
 
         let resolved_stmts = loader.collect_all_stmts();
-        println!(
-            "✓ Modules: {} loaded, {} statements",
-            loader.modules.len(),
-            resolved_stmts.len()
-        );
+        if verbose {
+            println!(
+                "✓ Modules: {} loaded, {} statements",
+                loader.modules.len(),
+                resolved_stmts.len()
+            );
+        }
 
         for module in loader.modules.values() {
             module_cache.add_source(&module.file_path);
@@ -269,16 +276,18 @@ fn main() -> io::Result<()> {
         println!("\n😤 Semantic analysis failed! Code mein type ya scope ki problem hai.");
         return Ok(());
     }
-    println!("✓ Semantic: OK");
+    if verbose { println!("✓ Semantic: OK"); }
 
     // 4. HIR LOWERING (AST → HIR)
     let mut lowering = HirLowering::new();
     let hir = lowering.lower_program(&all_stmts);
-    println!(
-        "✓ HIR: {} functions, {} types lowered",
-        hir.functions.len(),
-        hir.structs.len() + hir.enums.len()
-    );
+    if verbose {
+        println!(
+            "✓ HIR: {} functions, {} types lowered",
+            hir.functions.len(),
+            hir.structs.len() + hir.enums.len()
+        );
+    }
 
     // 5. THIR CHECK (Type verification)
     let mut thir_checker = ThirChecker::new();
@@ -290,23 +299,25 @@ fn main() -> io::Result<()> {
         println!("❌ Type checking failed!");
         return Ok(());
     }
-    println!("✓ THIR: Type checking passed");
+    if verbose { println!("✓ THIR: Type checking passed"); }
 
     // 5b. MIR LOWERING (THIR → MIR)
     let mut mir_builder = MirBuilder::new();
     let mut mir = mir_builder.build_program(&hir);
     optimize_mir(&mut mir);
     let total_blocks: usize = mir.functions.iter().map(|f| f.blocks.len()).sum();
-    println!(
-        "✓ MIR: {} functions, {} basic blocks, optimized",
-        mir.functions.len(),
-        total_blocks
-    );
+    if verbose {
+        println!(
+            "✓ MIR: {} functions, {} basic blocks, optimized",
+            mir.functions.len(),
+            total_blocks
+        );
+    }
 
     // 6. INTERPRETER — only run if backend is interpreter, or --run is passed
     let run_interpreter = backend == "interpreter" || force_run;
     if run_interpreter && !skip_run {
-        println!("\n🚀 --- Ajeeb Direct Run Started ---");
+        if verbose { println!("\n🚀 --- Ajeeb Direct Run Started ---"); }
         let mut evaluator = Evaluator::new();
         let mut program_args = vec![args[0].clone()];
         for arg in &args[2..] {
@@ -316,12 +327,12 @@ fn main() -> io::Result<()> {
         }
         evaluator.set_program_args(program_args);
         evaluator.evaluate_program(&all_stmts);
-        println!("--- Ajeeb Execution Ended ---\n🎉 Execution Completed Successfully!");
+        if verbose { println!("--- Ajeeb Execution Ended ---\n🎉 Execution Completed Successfully!"); }
     }
 
     // 7. CODEGEN
     if skip_compile {
-        println!("\n⏭️  Skipping codegen (--skip-compile)");
+        if verbose { println!("\n⏭️  Skipping codegen (--skip-compile)"); }
         return Ok(());
     }
 
@@ -361,11 +372,11 @@ fn main() -> io::Result<()> {
                 };
                 codegen.write_ir_to_file(&ll_path).ok();
 
-                println!("\n🔨 Codegen: {} → {}", file_path, bin_path);
+                if verbose { println!("\n🔨 Codegen: {} → {}", file_path, bin_path); }
 
                 // If --emit-llvm-only, stop after writing .ll file
                 if emit_llvm_only {
-                    println!("✅ LLVM IR written to {}", ll_path);
+                    if verbose { println!("✅ LLVM IR written to {}", ll_path); }
                     compiled_ok = true;
                 } else {
                 let llc_ok = Command::new("llc")
@@ -426,7 +437,7 @@ fn main() -> io::Result<()> {
 
                 match link_status {
                     Ok(s) if s.success() => {
-                        println!("✅ Ready: ./{}", bin_path);
+                        if verbose { println!("✅ Ready: ./{}", bin_path); }
                         compiled_ok = true;
                     }
                     Ok(s) => println!("❌ ld failed (exit: {})", s),
@@ -436,13 +447,13 @@ fn main() -> io::Result<()> {
             }
             Err(e) => {
                 println!("⚠️  LLVM codegen failed: {}", e);
-                println!("🔄 Falling back to C backend...");
+                if verbose { println!("🔄 Falling back to C backend..."); }
                 // Fall through to C backend
                 let c_result = self::c_codegen::CCodegen::new().compile(&mir);
                 match c_result {
                     Ok(c_code) => {
                         std::fs::write("build/output.c", &c_code).ok();
-                        println!("\n🔨 C Codegen: {} → {}", file_path, bin_path);
+                        if verbose { println!("\n🔨 C Codegen: {} → {}", file_path, bin_path); }
                         let gcc_status = Command::new("gcc")
                             .args([
                                 "build/output.c",
@@ -457,7 +468,7 @@ fn main() -> io::Result<()> {
                             .status();
                         match gcc_status {
                             Ok(s) if s.success() => {
-                                println!("✅ Ready (C fallback): ./{}", bin_path);
+                                if verbose { println!("✅ Ready (C fallback): ./{}", bin_path); }
                                 compiled_ok = true;
                             }
                             Ok(s) => println!("❌ GCC failed (exit: {})", s),
@@ -476,7 +487,7 @@ fn main() -> io::Result<()> {
         match c_result {
             Ok(c_code) => {
                 std::fs::write(output_c, &c_code).ok();
-                println!("\n🔨 C Codegen: {} → {}", file_path, bin_path);
+                if verbose { println!("\n🔨 C Codegen: {} → {}", file_path, bin_path); }
                 let gcc_status = Command::new("gcc")
                     .args([
                         output_c,
@@ -491,7 +502,7 @@ fn main() -> io::Result<()> {
                     .status();
                 match gcc_status {
                     Ok(s) if s.success() => {
-                        println!("✅ Ready: ./{}", bin_path);
+                        if verbose { println!("✅ Ready: ./{}", bin_path); }
                         compiled_ok = true;
                     }
                     Ok(s) => println!("❌ GCC failed (exit: {})", s),
@@ -505,7 +516,7 @@ fn main() -> io::Result<()> {
     }
 
     // 8. BUILD SUMMARY
-    if compiled_ok {
+    if compiled_ok && verbose {
         println!("\n═══════════════════════════════");
         println!("📦 Build: ./{}", bin_path);
         println!("═══════════════════════════════");

@@ -570,6 +570,10 @@ function main(): int {
             if (flen > 4 && strcmp_ajeeb(substring(fileArg, flen - 4, flen), ".ajb") == 0) {
                 return buildFile(fileArg);
             }
+            // Skip flag args (--quiet, -q, etc.)
+            if (flen > 0 && charCode(fileArg, 0) == 45) {
+                return buildProject();
+            }
             println("Usage: parth build [file.ajb]");
             return 1;
         }
@@ -582,6 +586,10 @@ function main(): int {
             set rlen: int = len(runArg);
             if (rlen > 4 && strcmp_ajeeb(substring(runArg, rlen - 4, rlen), ".ajb") == 0) {
                 return runFile(runArg);
+            }
+            // Skip flag args (--quiet, -q, etc.)
+            if (rlen > 0 && charCode(runArg, 0) == 45) {
+                return runProject();
             }
             println("Usage: parth run [file.ajb]");
             return 1;

@@ -64,6 +64,20 @@ function findAjeebc(): string {
 function buildProject(): int {
     // Parse config
     set buf: string = getStateBuf();
+    // Default: quiet (no status messages). Use --verbose / -v to enable.
+    bw(buf, 508, 1);
+    set qi: int = 1;
+    while (qi < 10) {
+        set qarg: string = readArg(qi);
+        if (len(qarg) == 0) { break; }
+        if (strcmp_ajeeb(qarg, "--quiet") == 0 || strcmp_ajeeb(qarg, "-q") == 0) {
+            bw(buf, 508, 1);
+        }
+        if (strcmp_ajeeb(qarg, "--verbose") == 0 || strcmp_ajeeb(qarg, "-v") == 0) {
+            bw(buf, 508, 0);
+        }
+        qi = qi + 1;
+    }
     set r: int = parseDasConfig("parth.das");
     if (r != 0) {
         println("Error: parth.das padh nahi paaya! File exist karti hai?");
@@ -77,10 +91,12 @@ function buildProject(): int {
     set runtimePath: string = getBuildRuntime(buf, src);
     set target: string = getCompilerTarget(buf, src);
 
-    println(str_concat("Project:  ", name));
-    println(str_concat("Entry:    ", entry));
-    println(str_concat("Output:   ", outDir));
-    println(str_concat("Target:   ", target));
+    if (br(buf, 508) == 0) {
+        println(str_concat("Project:  ", name));
+        println(str_concat("Entry:    ", entry));
+        println(str_concat("Output:   ", outDir));
+        println(str_concat("Target:   ", target));
+    }
 
     // Resolve dependencies (lockfile-aware)
     r = resolveAllLockAware(buf, src);
@@ -102,17 +118,21 @@ function buildProject(): int {
 
     if (strcmp_ajeeb(target, "native") == 0) {
         // Native build: ajeebc handles C codegen + gcc internally
-        println("");
-        println("Compile ho raha hai (native target)...");
+        if (br(buf, 508) == 0) {
+            println("");
+            println("Compile ho raha hai (native target)...");
+        }
         set binPath: string = str_concat(outDir, name);
         set cFile: string = str_concat(outDir, "output.c");
 
         // Step 0: Ensure runtime is available in project
         set resolvedRuntime: string = findRuntime(runtimePath);
-        mkdir("runtime");
-        set cpCmd: string = str_concat("cp ", resolvedRuntime);
-        cpCmd = str_concat(cpCmd, " runtime/ajeeb_runtime.c");
-        exec(cpCmd);
+        if (strcmp_ajeeb(resolvedRuntime, "runtime/ajeeb_runtime.c") != 0) {
+            mkdir("runtime");
+            set cpCmd: string = str_concat("cp ", resolvedRuntime);
+            cpCmd = str_concat(cpCmd, " runtime/ajeeb_runtime.c");
+            exec(cpCmd);
+        }
 
         // Step 1: Compile with ajeebc (produces LLVM IR + C in build/)
         set cmd1: string = str_concat(ajeebc, " ");
@@ -146,26 +166,47 @@ function buildProject(): int {
             println("gcc link fail!");
             return r;
         }
-        println(str_concat("  ✓ Binary → ", binPath));
-        println("");
-        println(str_concat("Build safal! Chalao: ./", str_concat(outDir, name)));
+        if (br(buf, 508) == 0) {
+            println(str_concat("  ✓ Binary → ", binPath));
+            println("");
+            println(str_concat("Build safal! Chalao: ./", str_concat(outDir, name)));
+        }
 
     } else {
         // Interpreter target: just verify sources parse
-        println("");
-        println("Compile ho raha hai (interpreter target)...");
+        if (br(buf, 508) == 0) {
+            println("");
+            println("Compile ho raha hai (interpreter target)...");
+        }
         set cmd: string = str_concat(ajeebc, str_concat(" ", entry));
         r = exec(cmd);
         if (r != 0) {
             println("Compile fail! Neeche dekh lo.");
             return r;
         }
-        println(str_concat("  ✓ Sources valid. Chalao: piri ", entry));
+        if (br(buf, 508) == 0) {
+            println(str_concat("  ✓ Sources valid. Chalao: piri ", entry));
+        }
     }
     return 0;
 }
 
 function buildFile(filePath: string): int {
+    // Scan args for --quiet / -q, --verbose / -v
+    set qbuf: string = getStateBuf();
+    bw(qbuf, 508, 1);
+    set qi: int = 1;
+    while (qi < 10) {
+        set qarg: string = readArg(qi);
+        if (len(qarg) == 0) { break; }
+        if (strcmp_ajeeb(qarg, "--quiet") == 0 || strcmp_ajeeb(qarg, "-q") == 0) {
+            bw(qbuf, 508, 1);
+        }
+        if (strcmp_ajeeb(qarg, "--verbose") == 0 || strcmp_ajeeb(qarg, "-v") == 0) {
+            bw(qbuf, 508, 0);
+        }
+        qi = qi + 1;
+    }
     if (len(filePath) == 0) {
         println("Usage: parth build <file.ajb>");
         return 1;
@@ -194,7 +235,9 @@ function buildFile(filePath: string): int {
         baseName = substring(baseName, 0, len(baseName) - 4);
     }
     set binPath: string = str_concat("build/", baseName);
-    println(str_concat("Compiling: ", filePath));
+    if (br(getStateBuf(), 508) == 0) {
+        println(str_concat("Compiling: ", filePath));
+    }
 
     set llFile: string = "build/output.ll";
     set cmd1: string = str_concat(ajeebc, " ");
@@ -229,6 +272,8 @@ function buildFile(filePath: string): int {
         println("gcc link fail!");
         return r;
     }
-    println(str_concat("  Binary -> ", binPath));
+    if (br(getStateBuf(), 508) == 0) {
+        println(str_concat("  Binary -> ", binPath));
+    }
     return 0;
 }

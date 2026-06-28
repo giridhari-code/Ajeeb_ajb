@@ -26,6 +26,20 @@ function findPiri(): string {
 
 function runProject(): int {
     set buf: string = getStateBuf();
+    // Default: quiet (no status messages). Use --verbose / -v to enable.
+    bw(buf, 508, 1);
+    set qi: int = 1;
+    while (qi < 10) {
+        set qarg: string = readArg(qi);
+        if (len(qarg) == 0) { break; }
+        if (strcmp_ajeeb(qarg, "--quiet") == 0 || strcmp_ajeeb(qarg, "-q") == 0) {
+            bw(buf, 508, 1);
+        }
+        if (strcmp_ajeeb(qarg, "--verbose") == 0 || strcmp_ajeeb(qarg, "-v") == 0) {
+            bw(buf, 508, 0);
+        }
+        qi = qi + 1;
+    }
     set r: int = parseDasConfig("parth.das");
     if (r != 0) {
         println("Error: parth.das padh nahi paaya!");
@@ -38,20 +52,24 @@ function runProject(): int {
     set outDir: string = getBuildOutput(buf, src);
     set target: string = getCompilerTarget(buf, src);
 
-    set bldMsg: string = str_concat("Pehle build kar rahe hain '", name);
-    bldMsg = str_concat(bldMsg, "'...");
-    println(bldMsg);
+    if (br(buf, 508) == 0) {
+        set bldMsg: string = str_concat("Pehle build kar rahe hain '", name);
+        bldMsg = str_concat(bldMsg, "'...");
+        println(bldMsg);
+    }
     r = buildProject();
     if (r != 0) {
-        println("Build fail! Run fail hoga.");
+        if (br(buf, 508) == 0) { println("Build fail! Run fail hoga."); }
         return r;
     }
 
-    println("");
-    set runMsg: string = str_concat("Chala rahe hain '", name);
-    runMsg = str_concat(runMsg, "'...");
-    println(runMsg);
-    println("---");
+    if (br(buf, 508) == 0) {
+        println("");
+        set runMsg: string = str_concat("Chala rahe hain '", name);
+        runMsg = str_concat(runMsg, "'...");
+        println(runMsg);
+        println("---");
+    }
 
     if (strcmp_ajeeb(target, "native") == 0) {
         set binPath: string = str_concat(outDir, name);
@@ -63,16 +81,33 @@ function runProject(): int {
         r = exec(cmd);
     }
 
-    println("---");
-    if (r != 0) {
-        set errMsg: string = str_concat("Program ne error diya (exit code: ", itoa(r));
-        errMsg = str_concat(errMsg, ")");
-        println(errMsg);
+    if (br(buf, 508) == 0) {
+        println("---");
+        if (r != 0) {
+            set errMsg: string = str_concat("Program ne error diya (exit code: ", itoa(r));
+            errMsg = str_concat(errMsg, ")");
+            println(errMsg);
+        }
     }
     return r;
 }
 
 function runFile(filePath: string): int {
+    // Scan args for --quiet / -q, --verbose / -v
+    set qbuf: string = getStateBuf();
+    bw(qbuf, 508, 1);
+    set qi: int = 1;
+    while (qi < 10) {
+        set qarg: string = readArg(qi);
+        if (len(qarg) == 0) { break; }
+        if (strcmp_ajeeb(qarg, "--quiet") == 0 || strcmp_ajeeb(qarg, "-q") == 0) {
+            bw(qbuf, 508, 1);
+        }
+        if (strcmp_ajeeb(qarg, "--verbose") == 0 || strcmp_ajeeb(qarg, "-v") == 0) {
+            bw(qbuf, 508, 0);
+        }
+        qi = qi + 1;
+    }
     if (len(filePath) == 0) {
         println("Usage: parth run <file.ajb>");
         return 1;
@@ -101,7 +136,9 @@ function runFile(filePath: string): int {
         baseName = substring(baseName, 0, len(baseName) - 4);
     }
     set binPath: string = str_concat("build/", baseName);
-    println(str_concat("Compiling: ", filePath));
+    if (br(getStateBuf(), 508) == 0) {
+        println(str_concat("Compiling: ", filePath));
+    }
 
     set llFile: string = "build/output.ll";
     set cmd1: string = str_concat(ajeebc, " ");
@@ -136,8 +173,10 @@ function runFile(filePath: string): int {
         println("gcc link fail!");
         return r;
     }
-    println(str_concat("  Binary -> ", binPath));
-    println(str_concat("Running: ", binPath));
+    if (br(getStateBuf(), 508) == 0) {
+        println(str_concat("  Binary -> ", binPath));
+        println(str_concat("Running: ", binPath));
+    }
     r = exec(binPath);
     return r;
 }

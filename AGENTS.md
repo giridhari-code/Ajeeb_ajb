@@ -57,6 +57,12 @@ Key test files: test_simple, test_small, test_strings, test_math, test_for, test
 1. Run `cd ajeebc && make test`
 2. Run `bash tests/bootstrap_check.sh`
 3. Run a few key .ajb interpreter tests (e.g. `cross_simple.ajb`, `test_strings.ajb`)
+4. Update runtime symlinks: `cp runtime/ajeeb_runtime.c /root/.ajeeb/bin/ajeeb_runtime.c`
+
+## Diagnostic Output Cleanup (June 2026)
+**Compiler (+ajeebc):** Silent by default. Pass `--verbose` / `-v` to see diagnostics (Lexer, Parser, Modules, Semantic, HIR, THIR, MIR, Backend, Codegen, Build summary).
+**Runtime (`ajeeb_runtime.c`):** Silent by default. Set `AJEEB_PROFILE=1` to see [Perf] and [Ajeeb Runtime] diagnostics.
+**Parth (build/run):** Silent by default. Pass `--quiet` / `-q` to suppress build status messages (Project, Entry, Compile, Build safal, etc.) during `parth build` / `parth run` / `parth run --quiet`. Use `parth run --quiet` for program-only output.
 
 ## Key Bug Fix: appenInstr Arg Order for Goto (main.ajb)
 **Root cause:** All `appendInstr(mirBuf, 6, target, 0, 0, 0)` calls placed the target block in `dst` (arg 3), but the C codegen reads `s1` (arg 4) for `goto block_{s1}`. Every Goto targeted block_0 regardless of intent, causing infinite loops.

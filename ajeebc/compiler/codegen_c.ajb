@@ -1,0 +1,378 @@
+// CODEGEN_C — C Codegen from MIR
+// Uses bw/br from hir.ajb, m* from mir.ajb
+
+function emitCOut(out: string, s: string): void { writeAppend(out, s); }
+function emitNewline(out: string): void { writeAppend(out, "\n"); }
+function emitCInt(out: string, val: int): void { writeAppend(out, itoa(val)); }
+
+function markStrTemp(scBuf: string, t: int): void {
+    set word: int = t / 64; set bit: int = t - word * 64;
+    set slot: int = 480 + word;
+    set val: int = br(scBuf, slot);
+    set mask: int = 1;
+    set b: int = 0; while (b < bit) { mask = mask + mask; b = b + 1; }
+    bw(scBuf, slot, val + mask);
+}
+function isStrTemp(scBuf: string, t: int): int {
+    set word: int = t / 64; set bit: int = t - word * 64;
+    set slot: int = 480 + word;
+    set val: int = br(scBuf, slot);
+    set mask: int = 1;
+    set b: int = 0; while (b < bit) { mask = mask + mask; b = b + 1; }
+    set shifted: int = val / mask;
+    if (shifted - shifted / 2 * 2 == 1) { return 1; }
+    return 0;
+}
+function scanFnStrings(scBuf: string, buf: string, foff: int, src: string): void {
+    set bc: int = mFnBlockCount(buf, foff);
+    set j: int = 0;
+    while (j < bc) {
+        set blkOff: int = mFnBlock(buf, foff, j);
+        set ic: int = mBlockInstrCount(buf, blkOff);
+        set k: int = 0;
+        while (k < ic) {
+            set ioff: int = mBlockInstr(buf, blkOff, k);
+            set op: int = mInstrOp(buf, ioff);
+            set dst: int = mInstrDst(buf, ioff);
+            set s1: int = mInstrS1(buf, ioff);
+            set s2: int = mInstrS2(buf, ioff);
+            set ext: int = mInstrExt(buf, ioff);
+            if (op == 2 && ext == 13) { markStrTemp(scBuf, dst); }
+            else if (op == 12) { markStrTemp(scBuf, dst); }
+            else if (op == 2 && s2 == 0 && ext == 101) {
+                if (isStrTemp(scBuf, s1) == 1) { markStrTemp(scBuf, dst); }
+            }
+            k = k + 1;
+        }
+        j = j + 1;
+    }
+}
+function emitCBlockCode(buf: string, boff: int, out: string, src: string, scBuf: string): void {
+    set ic: int = mBlockInstrCount(buf, boff);
+    set j: int = 0;
+    while (j < ic) {
+        set ioff: int = mBlockInstr(buf, boff, j);
+        set op: int = mInstrOp(buf, ioff);
+        set dst: int = mInstrDst(buf, ioff);
+        set s1: int = mInstrS1(buf, ioff);
+        set s2: int = mInstrS2(buf, ioff);
+        set ext: int = mInstrExt(buf, ioff);
+        if (op == 2 && ext == 13) {
+            set strVal: string = substring(src, s1, s1 + s2);
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = (intptr_t)\"");
+            set k: int = 0;
+            while (k < len(strVal)) { writeByte(out, charCode(strVal, k)); k = k + 1; }
+            emitCOut(out, "\";"); emitNewline(out);
+        } else if (op == 2 && s2 == 0 && ext == 101) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 2 && s2 == 0 && (ext == 1 || ext == 3)) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = "); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 2 && s2 != 0) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            if (ext == 1) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " + t"); emitCInt(out, s2); }
+            else if (ext == 2) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " - t"); emitCInt(out, s2); }
+            else if (ext == 3) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " * t"); emitCInt(out, s2); }
+            else if (ext == 4) { emitCOut(out, " = t"); emitCInt(out, s2); emitCOut(out, " == 0 ? 0 : t"); emitCInt(out, s1); emitCOut(out, " / t"); emitCInt(out, s2); }
+            else if (ext == 5) {
+                if (scBuf != "" && (isStrTemp(scBuf, s1) == 1 || isStrTemp(scBuf, s2) == 1)) {
+                    emitCOut(out, " = (strcmp_ajeeb(t"); emitCInt(out, s1);
+                    emitCOut(out, ", t"); emitCInt(out, s2);
+                    emitCOut(out, ") == 0)");
+                } else {
+                    emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " == t"); emitCInt(out, s2);
+                }
+            }
+            else if (ext == 6) {
+                if (scBuf != "" && (isStrTemp(scBuf, s1) == 1 || isStrTemp(scBuf, s2) == 1)) {
+                    emitCOut(out, " = (strcmp_ajeeb(t"); emitCInt(out, s1);
+                    emitCOut(out, ", t"); emitCInt(out, s2);
+                    emitCOut(out, ") != 0)");
+                } else {
+                    emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " != t"); emitCInt(out, s2);
+                }
+            }
+            else if (ext == 7) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " < t"); emitCInt(out, s2); }
+            else if (ext == 8) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " > t"); emitCInt(out, s2); }
+            else if (ext == 9) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " <= t"); emitCInt(out, s2); }
+            else if (ext == 10) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " >= t"); emitCInt(out, s2); }
+            else if (ext == 11) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " && t"); emitCInt(out, s2); }
+            else if (ext == 12) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " || t"); emitCInt(out, s2); }
+            else if (ext == 15) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " % t"); emitCInt(out, s2); }
+            else if (ext == 16) { emitCOut(out, " = __ipow(t"); emitCInt(out, s1); emitCOut(out, ", t"); emitCInt(out, s2); emitCOut(out, ")"); }
+            emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 11) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = p"); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 4) {
+            set callee: string = substring(src, s1, s1 + s2);
+            set tmpA: int = ext; set ac2: int = 0;
+            set tmpC: int = ext; while (tmpC > 0) { ac2 = ac2 + 1; tmpC = tmpC / 1000; }
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = "); emitCOut(out, callee); emitCOut(out, "(");
+            set ak: int = 0; set aT: int = tmpA;
+            while (ak < ac2) {
+                if (ak > 0) { emitCOut(out, ", "); }
+                set r: int = aT; while (r >= 1000) { r = r - 1000; }
+                emitCOut(out, "t"); emitCInt(out, r - 1); aT = aT / 1000;
+                ak = ak + 1;
+            }
+            emitCOut(out, ");"); emitNewline(out);
+        } else if (op == 5) {
+            emitCOut(out, "    return t"); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 9) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = p"); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 6) {
+            emitCOut(out, "    goto block_"); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
+        } else if (op == 7) {
+            emitCOut(out, "    if (t"); emitCInt(out, dst);
+            emitCOut(out, ") { goto block_"); emitCInt(out, s1);
+            emitCOut(out, "; } else { goto block_"); emitCInt(out, s2);
+            emitCOut(out, "; }"); emitNewline(out);
+        } else if (op == 12) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = str_concat(t"); emitCInt(out, s1);
+            emitCOut(out, ", t"); emitCInt(out, s2);
+            emitCOut(out, ");"); emitNewline(out);
+        }
+        j = j + 1;
+    }
+}
+function emitCHeader(out: string): void {
+    emitCOut(out, "#include <stdint.h>"); emitNewline(out);
+    emitCOut(out, "#include <string.h>"); emitNewline(out);
+    emitCOut(out, "#include <stdio.h>"); emitNewline(out);
+    emitNewline(out);
+    emitCOut(out, "intptr_t getStateBuf(void);"); emitNewline(out);
+    emitCOut(out, "intptr_t getOutbuf(void);"); emitNewline(out);
+    emitCOut(out, "intptr_t getInt(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "void setInt(intptr_t, intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t len(intptr_t);"); emitNewline(out);
+    emitCOut(out, "void strSet(intptr_t, intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t charCode(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t str_concat(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t substring(intptr_t, intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t indexOf(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t contains(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t itoa(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t println(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t readArg(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t readFile(intptr_t);"); emitNewline(out);
+    emitCOut(out, "void writeFile(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "void writeAppend(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "void writeByte(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t strcmp_ajeeb(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t trim(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t toUpperCase(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t toLowerCase(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t startsWith(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t endsWith(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t replace(intptr_t, intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t array_to_string(intptr_t, intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t arr_len(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t __array_lit(intptr_t, ...);"); emitNewline(out);
+    emitCOut(out, "intptr_t exec(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t mkdir(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t print(intptr_t);"); emitNewline(out);
+    emitCOut(out, "intptr_t allocBuf(intptr_t);"); emitNewline(out);
+    emitNewline(out);
+    emitCOut(out, "char __ajeeb_buf[262144];"); emitNewline(out);
+    emitCOut(out, "char __ajeeb_outbuf[65536];"); emitNewline(out);
+    emitNewline(out);
+    emitCOut(out, "intptr_t __ipow(intptr_t base, intptr_t exp) { intptr_t r = 1; while (exp > 0) { r = r * base; exp = exp - 1; } return r; }"); emitNewline(out);
+    emitNewline(out);
+}
+function findFnMaxTemp(buf: string, foff: int): int {
+    set maxT: int = mFnLocalCount(buf, foff) - 1;
+    set bc: int = mFnBlockCount(buf, foff);
+    set bi: int = 0;
+    while (bi < bc) {
+        set blkOff: int = mFnBlock(buf, foff, bi);
+        set ic: int = mBlockInstrCount(buf, blkOff);
+        set ji: int = 0;
+        while (ji < ic) {
+            set ioff: int = mBlockInstr(buf, blkOff, ji);
+            set op: int = mInstrOp(buf, ioff);
+            set dst: int = mInstrDst(buf, ioff);
+            set s1: int = mInstrS1(buf, ioff);
+            set s2: int = mInstrS2(buf, ioff);
+            if (dst > maxT) { maxT = dst; }
+            if (op == 2 || op == 12) {
+                if (s1 > maxT) { maxT = s1; }
+                if (s2 > maxT) { maxT = s2; }
+            }
+            if (op == 5 && s1 > maxT) { maxT = s1; }
+            ji = ji + 1;
+        }
+        set tt: int = mBlockTermTy(buf, blkOff);
+        set t0: int = mBlockTerm0(buf, blkOff);
+        if (tt == 3 && t0 > maxT) { maxT = t0; }
+        bi = bi + 1;
+    }
+    return maxT;
+}
+function emitCFn(buf: string, foff: int, out: string, src: string, isEntryMain: int): void {
+    set fnSrc: int = mFnSrcPtr(buf, foff);
+    if (fnSrc == 0) { fnSrc = src; }
+    set no: int = mFnNameOff(buf, foff);
+    set nl: int = mFnNameLen(buf, foff);
+    set fnName: string = substring(fnSrc, no, no + nl);
+    set bc: int = mFnBlockCount(buf, foff);
+    set pc: int = mFnParamCount(buf, foff);
+    set maxT: int = findFnMaxTemp(buf, foff);
+    set j: int = 0;
+    if (isEntryMain == 1) { emitCOut(out, "int main(void) {"); }
+    else { emitCOut(out, "intptr_t "); emitCOut(out, fnName); emitCOut(out, "(");
+        j = 0;
+        while (j < pc) {
+            if (j > 0) { emitCOut(out, ", "); }
+            emitCOut(out, "intptr_t p"); emitCInt(out, j);
+            j = j + 1;
+        }
+        emitCOut(out, ") {"); }
+    emitNewline(out);
+    if (maxT >= 0) {
+        emitCOut(out, "    intptr_t ");
+        j = 0;
+        while (j <= maxT) {
+            if (j > 0) { emitCOut(out, ", "); }
+            emitCOut(out, "t"); emitCInt(out, j);
+            j = j + 1;
+        }
+        emitCOut(out, ";"); emitNewline(out);
+    }
+    emitNewline(out);
+    set scBuf: string = getStateBuf();
+    scanFnStrings(scBuf, buf, foff, fnSrc);
+    if (bc > 0) { emitCOut(out, "    goto block_0;"); emitNewline(out); }
+    j = 0;
+    while (j < bc) {
+        set blkOff: int = mFnBlock(buf, foff, j);
+        emitCOut(out, "block_"); emitCInt(out, j); emitCOut(out, ":");
+        emitCBlockCode(buf, blkOff, out, fnSrc, scBuf);
+        emitNewline(out);
+        j = j + 1;
+    }
+    emitCOut(out, "}"); emitNewline(out); emitNewline(out);
+}
+function emitCProg(buf: string, progOff: int, outPath: string, src: string): void {
+    set out: string = outPath;
+    writeFile(out, "");
+    emitCHeader(out);
+    set cnt: int = br(buf, progOff + 1);
+    set entryFnOff: int = 0; set entryNo: int = 0; set entryNl: int = 0;
+    set entrySrc: int = 0; set entryIsMain: int = 0;
+    set j: int = 0;
+    while (j < cnt) {
+        set fnOff: int = br(buf, progOff + 2 + j);
+        set fnSrc: int = mFnSrcPtr(buf, fnOff);
+        if (fnSrc == 0) { fnSrc = src; }
+        set no: int = mFnNameOff(buf, fnOff);
+        set nl: int = mFnNameLen(buf, fnOff);
+        if (nl == 4) {
+            set c0: int = charCode(fnSrc, no);
+            set c1: int = charCode(fnSrc, no + 1);
+            set c2: int = charCode(fnSrc, no + 2);
+            set c3: int = charCode(fnSrc, no + 3);
+            if (c0 == 109 && c1 == 97 && c2 == 105 && c3 == 110) {
+                entryFnOff = fnOff; entryNo = no; entryNl = nl; entrySrc = fnSrc; entryIsMain = 1;
+            }
+        }
+        j = j + 1;
+    }
+    j = 0;
+    while (j < cnt) {
+        set fnOff: int = br(buf, progOff + 2 + j);
+        set fnSrc: int = mFnSrcPtr(buf, fnOff);
+        if (fnSrc == 0) { fnSrc = src; }
+        set no: int = mFnNameOff(buf, fnOff);
+        set nl: int = mFnNameLen(buf, fnOff);
+        set pc: int = mFnParamCount(buf, fnOff);
+        if (entryIsMain == 1 && fnOff == entryFnOff) { j = j + 1; continue; }
+        set fnName: string = substring(fnSrc, no, no + nl);
+        emitCOut(out, "intptr_t "); emitCOut(out, fnName); emitCOut(out, "(");
+        set k: int = 0;
+        while (k < pc) {
+            if (k > 0) { emitCOut(out, ", "); }
+            emitCOut(out, "intptr_t");
+            k = k + 1;
+        }
+        emitCOut(out, ");"); emitNewline(out);
+        j = j + 1;
+    }
+    emitNewline(out);
+    if (entryFnOff != 0 && entryIsMain == 0) {
+        set entryName: string = substring(entrySrc, entryNo, entryNo + entryNl);
+        emitCOut(out, "int main(void) {"); emitNewline(out);
+        emitCOut(out, "    return (int)"); emitCOut(out, entryName); emitCOut(out, "();"); emitNewline(out);
+        emitCOut(out, "}"); emitNewline(out); emitNewline(out);
+    }
+    j = 0;
+    while (j < cnt) {
+        set fnOff: int = br(buf, progOff + 2 + j);
+        set isEntry: int = 0;
+        if (entryIsMain == 1 && fnOff == entryFnOff) { isEntry = 1; }
+        emitCFn(buf, fnOff, out, src, isEntry);
+        j = j + 1;
+    }
+}
+
+function stageInfo(sn: int, msg: string): void {
+    if (sn >= 0) { }
+    writeAppend("build/_progress.txt", str_concat("Stage ", str_concat(itoa(sn), str_concat(": ", str_concat(msg, "\n")))));
+}
+
+function stageError(sn: int, msg: string): void {
+    println("❌ Stage " + itoa(sn) + " failed: " + msg);
+}
+
+function detectBackend(): int {
+    if (exec("which gcc > /dev/null 2>&1") == 0) { return 1; }
+    if (exec("which llc > /dev/null 2>&1") == 0) { return 2; }
+    return 0;
+}
+
+function getBinName(inPath: string): string {
+    set ln: int = len(inPath);
+    set i: int = ln;
+    while (i > 0) {
+        if (charCode(inPath, i - 1) == 47) { return substring(inPath, i, ln); }
+        i = i - 1;
+    }
+    return inPath;
+}
+
+function stripExt(name: string): string {
+    set ln: int = len(name);
+    set i: int = ln;
+    while (i > 0) {
+        set c: int = charCode(name, i - 1);
+        if (c == 46) { return substring(name, 0, i - 1); }
+        if (c == 47) { return name; }
+        i = i - 1;
+    }
+    return name;
+}
+
+function printHelp(): void {
+    println("Ajeeb Compiler - Self-hosting Ajeeb to Binary");
+    println("");
+    println("Usage: ajeeb_compiler <input.ajb> [options]");
+    println("");
+    println("Options:");
+    println("  -o <path>      Output binary path (default: build/<name>)");
+    println("  --gcc, -g      Force GCC backend (C codegen then gcc)");
+    println("  --llvm, -l     Force LLVM backend (MIR then llc then ld)");
+    println("  --interpret, -i  Sirf interpreter run karo, skip codegen");
+    println("  --dry-run, -d  Commands dikhao, execute mat karo");
+    println("  -h, --help     Ye help message dikhao");
+    println("");
+    println("Pipeline:");
+    println("  Lex then Parse then HIR then MIR then Codegen then Link");
+    println("");
+    println("Exit codes:");
+    println("  0 = success, 1 = compile error, 2 = tool missing, 3 = link error");
+}

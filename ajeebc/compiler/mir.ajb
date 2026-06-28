@@ -1,0 +1,243 @@
+// MIR — MIR Helpers, Scope Table, Building, Optimization
+// Uses bw/br from hir.ajb
+
+// --- MIR helpers (write head at slot 510) ---
+function minit(buf: string): void { bw(buf, 510, 1024); }
+function mInstr(buf: string, op: int, dst: int, s1: int, s2: int, ext: int): void {
+    set blk: int = br(buf, 506); set ic: int = br(buf, 504);
+    set io: int = blk + 6 + ic * 6; bw(buf, io, 3); bw(buf, io + 1, op);
+    bw(buf, io + 2, dst); bw(buf, io + 3, s1); bw(buf, io + 4, s2); bw(buf, io + 5, ext);
+}
+function mBlock(buf: string, id: int, ic: int, tt: int, t0: int, t1: int): int {
+    set o: int = mallac(buf, 6); bw(buf, o, 2); bw(buf, o + 1, id);
+    bw(buf, o + 2, ic); bw(buf, o + 3, tt); bw(buf, o + 4, t0); bw(buf, o + 5, t1);
+    return o;
+}
+function mFn(buf: string, no: int, nl: int, rt: int, bc: int, lc: int, pc: int, srcPtr: int): int {
+    set o: int = mallac(buf, 8 + bc); bw(buf, o, 1); bw(buf, o + 1, no);
+    bw(buf, o + 2, nl); bw(buf, o + 3, rt); bw(buf, o + 4, bc); bw(buf, o + 5, lc);
+    bw(buf, o + 6, pc); bw(buf, o + 7, srcPtr);
+    return o;
+}
+function mProgram(buf: string, fnc: int): int {
+    set o: int = mallac(buf, 2 + fnc); bw(buf, o, 0); bw(buf, o + 1, fnc); return o;
+}
+function mInstrOp(bbuf: string, io: int): int { return br(bbuf, io + 1); }
+function mInstrDst(bbuf: string, io: int): int { return br(bbuf, io + 2); }
+function mInstrS1(bbuf: string, io: int): int { return br(bbuf, io + 3); }
+function mInstrS2(bbuf: string, io: int): int { return br(bbuf, io + 4); }
+function mInstrExt(bbuf: string, io: int): int { return br(bbuf, io + 5); }
+function mBlockInstrCount(bbuf: string, bo: int): int { return br(bbuf, bo + 2); }
+function mBlockTermTy(bbuf: string, bo: int): int { return br(bbuf, bo + 3); }
+function mBlockTerm0(bbuf: string, bo: int): int { return br(bbuf, bo + 4); }
+function mBlockTerm1(bbuf: string, bo: int): int { return br(bbuf, bo + 5); }
+function mBlockInstr(bbuf: string, bo: int, i: int): int { return bo + 6 + i * 6; }
+function mFnBlock(bbuf: string, fo: int, i: int): int { return br(bbuf, fo + 8 + i); }
+function mFnSrcPtr(bbuf: string, fo: int): int { return br(bbuf, fo + 7); }
+function mFnNameOff(bbuf: string, fo: int): int { return br(bbuf, fo + 1); }
+function mFnNameLen(bbuf: string, fo: int): int { return br(bbuf, fo + 2); }
+function mFnRetTy(bbuf: string, fo: int): int { return br(bbuf, fo + 3); }
+function mFnBlockCount(bbuf: string, fo: int): int { return br(bbuf, fo + 4); }
+function mFnLocalCount(bbuf: string, fo: int): int { return br(bbuf, fo + 5); }
+function mFnParamCount(bbuf: string, fo: int): int { return br(bbuf, fo + 6); }
+
+// --- Scope table (slots 128-383) ---
+function scInit(buf: string): void {
+    set k: int = 0; while (k < 256) { bw(buf, 128 + k, 0); k = k + 1; }
+    bw(buf, 256, 0); bw(buf, 257, 0);
+}
+function scCnt(buf: string): int { return br(buf, 256); }
+function scSetCnt(buf: string, v: int): void { bw(buf, 256, v); }
+function scNP(buf: string, i: int): int { return br(buf, 128 + i * 4); }
+function scNL(buf: string, i: int): int { return br(buf, 129 + i * 4); }
+function scTy(buf: string, i: int): int { return br(buf, 130 + i * 4); }
+function scTmp(buf: string, i: int): int { return br(buf, 131 + i * 4); }
+function scSetNP(buf: string, i: int, v: int): void { bw(buf, 128 + i * 4, v); }
+function scSetNL(buf: string, i: int, v: int): void { bw(buf, 129 + i * 4, v); }
+function scSetTy(buf: string, i: int, v: int): void { bw(buf, 130 + i * 4, v); }
+function scSetTmp(buf: string, i: int, v: int): void { bw(buf, 131 + i * 4, v); }
+function scDefine(buf: string, no: int, nl: int, ty: int): int {
+    set i: int = scCnt(buf); scSetCnt(buf, i + 1);
+    scSetNP(buf, i, no); scSetNL(buf, i, nl); scSetTy(buf, i, ty); scSetTmp(buf, i, 0);
+    return i;
+}
+function scLookup(buf: string, src: string, no: int, nl: int): int {
+    set c: int = scCnt(buf); set i: int = c - 1;
+    while (i >= 0) {
+        if (nameEq(src, scNP(buf, i), scNL(buf, i), no, nl) == 1) { return i; }
+        i = i - 1;
+    }
+    return -1;
+}
+
+// --- MIR building helpers ---
+function freshTemp(buf: string): int {
+    set t: int = br(buf, 508); bw(buf, 508, t + 1); return t;
+}
+function startMirBlock(buf: string): void {
+    set blkOff: int = mBlock(buf, 0, 0, 0, 0, 0);
+    bw(buf, 506, blkOff); bw(buf, 504, 0);
+    bw(buf, 400 + br(buf, 502), blkOff);
+}
+function appendInstr(buf: string, op: int, dst: int, s1: int, s2: int, ext: int): void {
+    mallac(buf, 6);
+    mInstr(buf, op, dst, s1, s2, ext);
+    set ic: int = br(buf, 504);
+    bw(buf, 504, ic + 1); bw(buf, br(buf, 506) + 2, ic + 1);
+}
+function finishMirBlock(buf: string, tt: int, t0: int, t1: int): int {
+    set blk: int = br(buf, 506); bw(buf, blk + 1, br(buf, 502));
+    bw(buf, blk + 3, tt); bw(buf, blk + 4, t0); bw(buf, blk + 5, t1);
+    bw(buf, 502, br(buf, 502) + 1); bw(buf, 506, 0);
+    return blk;
+}
+
+// --- MIR optimization ---
+function constantFoldBlock(buf: string, boff: int): void {
+    set ic: int = mBlockInstrCount(buf, boff);
+    set j: int = 0;
+    while (j < ic) {
+        set ioff: int = mBlockInstr(buf, boff, j);
+        set op: int = mInstrOp(buf, ioff);
+        set s1: int = mInstrS1(buf, ioff);
+        set s2: int = mInstrS2(buf, ioff);
+        set ext: int = mInstrExt(buf, ioff);
+        if (op == 2 && s2 != 0 && ext != 13) {
+            set val1: int = -1; set val2: int = -1;
+            set k: int = 0;
+            while (k < ic) {
+                set koff: int = mBlockInstr(buf, boff, k);
+                if (mInstrOp(buf, koff) == 2 && mInstrExt(buf, koff) == 1 && mInstrS2(buf, koff) == 0) {
+                    if (mInstrDst(buf, koff) == s1) { val1 = mInstrS1(buf, koff); }
+                    if (mInstrDst(buf, koff) == s2) { val2 = mInstrS1(buf, koff); }
+                }
+                k = k + 1;
+            }
+            if (val1 >= 0 && val2 >= 0) {
+                set res: int = 0;
+                if (ext == 1) { res = val1 + val2; }
+                else if (ext == 2) { res = val1 - val2; }
+                else if (ext == 3) { res = val1 * val2; }
+                else if (ext == 4) { if (val2 != 0) { res = val1 / val2; } }
+                else if (ext == 5) { if (val1 == val2) { res = 1; } }
+                else if (ext == 6) { if (val1 != val2) { res = 1; } }
+                else if (ext == 7) { if (val1 < val2) { res = 1; } }
+                else if (ext == 8) { if (val1 > val2) { res = 1; } }
+                else if (ext == 9) { if (val1 <= val2) { res = 1; } }
+                else if (ext == 10) { if (val1 >= val2) { res = 1; } }
+                else if (ext == 15) { if (val2 != 0) { res = val1 - (val1 / val2) * val2; } }
+                else if (ext == 16) { set r: int = 1; set e: int = val2; while (e > 0) { r = r * val1; e = e - 1; } res = r; }
+                set dst: int = mInstrDst(buf, ioff);
+                bw(buf, ioff + 1, 2); bw(buf, ioff + 2, dst); bw(buf, ioff + 3, res); bw(buf, ioff + 4, 0); bw(buf, ioff + 5, 1);
+            }
+        }
+        j = j + 1;
+    }
+}
+function isTempUsedByCallExt(buf: string, boff: int, ic: int, dst: int, skipJ: int): int {
+    set k: int = 0;
+    while (k < ic) {
+        set koff: int = mBlockInstr(buf, boff, k);
+        if (k != skipJ && mInstrOp(buf, koff) == 4) {
+            set callExt: int = mInstrExt(buf, koff);
+            set tmpDiv: int = callExt;
+            while (tmpDiv > 0) {
+                set argTmp: int = tmpDiv;
+                while (argTmp >= 1000) { argTmp = argTmp - 1000; }
+                if (argTmp - 1 == dst) { return 1; }
+                tmpDiv = tmpDiv / 1000;
+            }
+        }
+        k = k + 1;
+    }
+    return 0;
+}
+function deadCodeElimBlock(buf: string, boff: int): void {
+    set ic: int = mBlockInstrCount(buf, boff);
+    set j: int = 0; set newIc: int = 0;
+    while (j < ic) {
+        set ioff: int = mBlockInstr(buf, boff, j);
+        set op: int = mInstrOp(buf, ioff);
+        set keep: int = 1;
+        if (op == 2) {
+            set dst: int = mInstrDst(buf, ioff);
+            keep = 0;
+            set k: int = 0;
+            while (k < ic) {
+                set koff: int = mBlockInstr(buf, boff, k);
+                if (k != j && (mInstrS1(buf, koff) == dst || mInstrS2(buf, koff) == dst)) { keep = 1; }
+                k = k + 1;
+            }
+            if (keep == 0) { keep = isTempUsedByCallExt(buf, boff, ic, dst, j); }
+        }
+        if (op == 4 || op == 5 || op == 1 || op == 11) { keep = 1; }
+        if (keep == 1 && newIc != j) {
+            set dstOff: int = boff + 6 + newIc * 6;
+            set srcOff: int = ioff;
+            bw(buf, dstOff, br(buf, srcOff));
+            bw(buf, dstOff + 1, br(buf, srcOff + 1));
+            bw(buf, dstOff + 2, br(buf, srcOff + 2));
+            bw(buf, dstOff + 3, br(buf, srcOff + 3));
+            bw(buf, dstOff + 4, br(buf, srcOff + 4));
+            bw(buf, dstOff + 5, br(buf, srcOff + 5));
+        }
+        if (keep == 1) { newIc = newIc + 1; }
+        j = j + 1;
+    }
+    bw(buf, boff + 2, newIc);
+}
+function deadBlockElimFn(buf: string, foff: int): void {
+    set bc: int = mFnBlockCount(buf, foff);
+    if (bc <= 1) { return; }
+    set visBase: int = 600;
+    set vi: int = 0;
+    while (vi < bc) { bw(buf, visBase + vi, 0); vi = vi + 1; }
+    set stkBase: int = 650; set stkTop: int = 0;
+    bw(buf, visBase, 1); bw(buf, stkBase, 0); stkTop = 1;
+    while (stkTop > 0) {
+        stkTop = stkTop - 1; set cur: int = br(buf, stkBase + stkTop);
+        set blkOff: int = mFnBlock(buf, foff, cur); set ic: int = mBlockInstrCount(buf, blkOff);
+        set ii: int = 0;
+        while (ii < ic) {
+            set ioff: int = mBlockInstr(buf, blkOff, ii);
+            set iop: int = mInstrOp(buf, ioff);
+            if (iop == 6) { set tgt: int = mInstrS1(buf, ioff); if (tgt >= 0 && tgt < bc && br(buf, visBase + tgt) == 0) { bw(buf, visBase + tgt, 1); bw(buf, stkBase + stkTop, tgt); stkTop = stkTop + 1; } }
+            if (iop == 7) { set t1: int = mInstrS1(buf, ioff); set t2: int = mInstrS2(buf, ioff); if (t1 >= 0 && t1 < bc && br(buf, visBase + t1) == 0) { bw(buf, visBase + t1, 1); bw(buf, stkBase + stkTop, t1); stkTop = stkTop + 1; } if (t2 >= 0 && t2 < bc && br(buf, visBase + t2) == 0) { bw(buf, visBase + t2, 1); bw(buf, stkBase + stkTop, t2); stkTop = stkTop + 1; } }
+            ii = ii + 1;
+        }
+    }
+    set newBc: int = 0; set ri: int = 0;
+    while (ri < bc) { if (br(buf, visBase + ri) == 1) { bw(buf, visBase + ri, newBc); newBc = newBc + 1; } else { bw(buf, visBase + ri, -1); } ri = ri + 1; }
+    if (newBc == bc) { return; }
+    set oi: int = 0; set ni: int = 0;
+    while (oi < bc) {
+        if (br(buf, visBase + oi) >= 0) {
+            set oldBlkOff: int = mFnBlock(buf, foff, oi);
+            set ic2: int = mBlockInstrCount(buf, oldBlkOff);
+            set ii2: int = 0;
+            while (ii2 < ic2) {
+                set ioff2: int = mBlockInstr(buf, oldBlkOff, ii2);
+                set iop2: int = mInstrOp(buf, ioff2);
+                if (iop2 == 6) { set oldTgt: int = mInstrS1(buf, ioff2); if (oldTgt >= 0 && oldTgt < bc) { bw(buf, ioff2 + 3, br(buf, visBase + oldTgt)); } }
+                if (iop2 == 7) { set ot1: int = mInstrS1(buf, ioff2); set ot2: int = mInstrS2(buf, ioff2); if (ot1 >= 0 && ot1 < bc) { bw(buf, ioff2 + 3, br(buf, visBase + ot1)); } if (ot2 >= 0 && ot2 < bc) { bw(buf, ioff2 + 4, br(buf, visBase + ot2)); } }
+                ii2 = ii2 + 1;
+            }
+            bw(buf, oldBlkOff + 1, br(buf, visBase + oi));
+            if (ni != oi) { set fnBlkSlot: int = foff + 7 + ni; set oldRef: int = br(buf, fnBlkSlot); set newRef: int = oldBlkOff; bw(buf, fnBlkSlot, newRef); set moveSrc: int = foff + 7 + oi; }
+            ni = ni + 1;
+        }
+        oi = oi + 1;
+    }
+    bw(buf, foff + 5, newBc);
+}
+function optimizeMirFn(buf: string, foff: int): void {
+    set bc: int = mFnBlockCount(buf, foff);
+    set j: int = 0;
+    while (j < bc) { set blkOff: int = mFnBlock(buf, foff, j); constantFoldBlock(buf, blkOff); j = j + 1; }
+    deadBlockElimFn(buf, foff);
+}
+function optimizeMirProgram(buf: string, progOff: int): void {
+    set cnt: int = br(buf, progOff + 1);
+    set j: int = 0;
+    while (j < cnt) { set fnOff: int = br(buf, progOff + 2 + j); optimizeMirFn(buf, fnOff); j = j + 1; }
+}

@@ -923,7 +923,7 @@ function emitLLVMProg(buf: string, progOff: int, outPath: string, src: string): 
     set j: int = 0;
     while (j < cnt) {
         set fnOff: int = br(buf, progOff + 2 + j);
-        set fnSrc: int = srcMapLookup(buf, fnOff);
+        set fnSrc: int = mFnSrcPtr(buf, fnOff);
         if (fnSrc == 0) { fnSrc = src; }
         set bc: int = mFnBlockCount(buf, fnOff);
         set bi: int = 0;
@@ -959,7 +959,7 @@ function emitLLVMProg(buf: string, progOff: int, outPath: string, src: string): 
     j = 0;
     while (j < cnt) {
         set fnOff: int = br(buf, progOff + 2 + j);
-        set fnSrc2: int = srcMapLookup(buf, fnOff);
+        set fnSrc2: int = mFnSrcPtr(buf, fnOff);
         if (fnSrc2 == 0) { fnSrc2 = src; }
         set no: int = mFnNameOff(buf, fnOff);
         set nl: int = mFnNameLen(buf, fnOff);
@@ -982,7 +982,7 @@ function emitLLVMProg(buf: string, progOff: int, outPath: string, src: string): 
         set fnOff: int = br(buf, progOff + 2 + j);
         set isEntry: int = 0;
         if (entryIsMain == 1 && fnOff == entryFnOff) { isEntry = 1; }
-        set fnSrc3: int = srcMapLookup(buf, fnOff);
+        set fnSrc3: int = mFnSrcPtr(buf, fnOff);
         if (fnSrc3 == 0) { fnSrc3 = src; }
         emitLLVMFn(buf, fnOff, out, fnSrc3, isEntry);
         j = j + 1;
