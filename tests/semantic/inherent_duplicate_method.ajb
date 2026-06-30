@@ -1,0 +1,10 @@
+struct User {
+    name: string,
+}
+
+impl User {
+    fn greet(self) {}
+    fn greet(self) {}
+}
+
+function main() {}

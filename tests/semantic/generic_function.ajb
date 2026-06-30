@@ -1,0 +1,9 @@
+function identity[T](x: T): T {
+    return x;
+}
+
+function main(): int {
+    set a = identity[Int](10);
+    set b = identity[String]("hello");
+    return 0;
+}

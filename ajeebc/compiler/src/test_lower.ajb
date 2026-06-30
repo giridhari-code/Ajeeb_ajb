@@ -1,0 +1,36 @@
+import hir;
+import parser;
+import lower;
+import mir;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set rtSrc: string = readFile("runtime/runtime.ajb");
+    set src: string = readFile("../examples/hello.ajb");
+    hinit(buf);
+    set rtProg: int = parseProgram(rtSrc, buf);
+    set userProg: int = parseProgram(src, buf);
+    println("Parsed OK, combining...");
+    set rtCnt: int = br(buf, rtProg + 1);
+    set userCnt: int = br(buf, userProg + 1);
+    set total: int = rtCnt + userCnt;
+    set combinedProg: int = halloc(buf, 2 + total);
+    bw(buf, combinedProg, 0);
+    bw(buf, combinedProg + 1, total);
+    set i: int = 0;
+    while (i < rtCnt) {
+        bw(buf, combinedProg + 2 + i, br(buf, rtProg + 2 + i));
+        i = i + 1;
+    }
+    set j: int = 0;
+    while (j < userCnt) {
+        bw(buf, combinedProg + 2 + rtCnt + j, br(buf, userProg + 2 + j));
+        j = j + 1;
+    }
+    println("Combined, lowering...");
+    minit(buf);
+    scInit(buf);
+    set mirProg: int = lowerProgram(buf, combinedProg, buf, buf, src);
+    println("Lowered OK, mirProg=" + itoa(mirProg));
+    return 0;
+}

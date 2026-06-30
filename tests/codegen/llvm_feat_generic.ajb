@@ -1,0 +1,17 @@
+// LLVM Feature Test: Generics (single arg println)
+function identity[T](x: T): T {
+    return x;
+}
+
+struct Box[T] {
+    value: T
+}
+
+function main(): int {
+    set v = identity[int](42);
+    println(itoa(v));
+
+    set b = Box[string] { value: "hello" };
+    println(b.value);
+    return 0;
+}

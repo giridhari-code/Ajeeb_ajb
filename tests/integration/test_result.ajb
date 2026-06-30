@@ -1,0 +1,18 @@
+import result;
+
+function main(): Int {
+    set x: Result[Int, String] = Result::Ok(42);
+    match x {
+        Result::Ok(val) => assert_eq(val, 42),
+        Result::Err(msg) => println("Unexpected error: " + msg),
+    }
+
+    set y: Result[String, Int] = Result::Err(99);
+    match y {
+        Result::Ok(_) => println("Unexpected Ok"),
+        Result::Err(code) => assert_eq(code, 99),
+    }
+
+    println("Result tests passed");
+    return 0;
+}

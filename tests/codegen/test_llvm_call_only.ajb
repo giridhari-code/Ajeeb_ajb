@@ -1,0 +1,7 @@
+function greet(name: string): string {
+    return "Hi " + name;
+}
+function main(): int {
+    println(greet("Ajeeb"));
+    return 0;
+}

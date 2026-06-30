@@ -1,0 +1,18 @@
+function main(): int {
+    if (1 == 1) {
+        println("ok");
+    }
+    while (0 == 1) {
+        println("loop");
+    }
+    if (1 == 1) {
+        set x: int = 1;
+        println(itoa(x));
+    }
+    if (1 == 1) {
+        println("a");
+    } else {
+        println("b");
+    }
+    return 0;
+}

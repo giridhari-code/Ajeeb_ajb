@@ -1,0 +1,21 @@
+// C ABI FFI test: load libc, look up tolower, call it
+const lib = lib_open("libc.so.6");
+if (lib == -1) {
+    println("FAIL: could not open libc");
+} else {
+    println("PASS: lib_open OK");
+}
+
+const fn = lib_sym(lib, "tolower");
+if (fn == 0) {
+    println("FAIL: could not find tolower in libc");
+} else {
+    println("PASS: lib_sym OK");
+    // tolower(65) = 97 ('A' -> 'a')
+    const tolower_result = lib_call(fn, [65], 0);
+    if (tolower_result == 97) {
+        println("PASS: lib_call tolower(65) = 97");
+    } else {
+        println("FAIL: tolower(65) got " + itoa(tolower_result) + " expected 97");
+    }
+}

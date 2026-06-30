@@ -1,0 +1,7 @@
+function identity[T, T](x: T): T {
+    return x;
+}
+
+function main(): int {
+    return 0;
+}

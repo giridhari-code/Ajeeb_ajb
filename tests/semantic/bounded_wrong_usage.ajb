@@ -1,0 +1,14 @@
+trait Display {
+    fn show(self) -> string;
+}
+
+// This function requires a type that implements Display
+fn get_display[T: Display](item: T) -> string {
+    return item.show();
+}
+
+// String has no Display impl
+function main() {
+    set msg = get_display[string]("hello");
+    println(msg);
+}

@@ -1,0 +1,21 @@
+struct Printer {
+    name: String,
+}
+
+trait Display[T] {
+    function print(self, value: T);
+}
+
+impl Display[Int] for Printer {
+    function print(self, value: Int) {
+        print(value);
+    }
+}
+
+impl Display[Int] for Printer {
+    function print(self, value: Int) {
+        print(value);
+    }
+}
+
+function main() {}

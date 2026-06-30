@@ -1,0 +1,8 @@
+// NonExistent trait is never defined
+fn do_something[T: NonExistent](item: T) {
+    println("hello");
+}
+
+function main() {
+    do_something[int](42);
+}

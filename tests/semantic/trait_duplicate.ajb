@@ -1,0 +1,7 @@
+trait Display {
+    function show(self: User): string;
+}
+
+trait Display {
+    function format(self: User): string;
+}

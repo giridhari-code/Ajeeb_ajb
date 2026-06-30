@@ -1,0 +1,14 @@
+class Point {
+    x: int
+    y: int
+}
+
+function getX(p: int): int {
+    return p;
+}
+
+function main(): int {
+    set v: int = getX(42);
+    println("ok");
+    return 0;
+}

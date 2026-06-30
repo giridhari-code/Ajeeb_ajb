@@ -92,7 +92,7 @@ impl CCodegen {
         writeln!(self.output, "").unwrap();
 
         // Global buffers expected by C runtime
-        writeln!(self.output, "char __ajeeb_buf[262144];").unwrap();
+        writeln!(self.output, "char __ajeeb_buf[4194304];").unwrap();
         writeln!(self.output, "char __ajeeb_outbuf[65536];").unwrap();
         writeln!(self.output, "").unwrap();
 

@@ -1,0 +1,18 @@
+import option;
+
+function main(): Int {
+    set x: Option[Int] = Option::Some(42);
+    match x {
+        Option::Some(val) => assert_eq(val, 42),
+        Option::None => assert_eq(0, 1),
+    }
+
+    set y: Option[String] = Option::None;
+    match y {
+        Option::Some(_) => assert_eq(0, 1),
+        Option::None => println("None case OK"),
+    }
+
+    println("Option tests passed");
+    return 0;
+}

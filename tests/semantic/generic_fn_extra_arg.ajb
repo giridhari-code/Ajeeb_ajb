@@ -1,0 +1,8 @@
+// FAIL: Generic fn call with 2 type args (expects 1)
+function identity[T](x: T): T {
+    return x;
+}
+
+function main() {
+    set a = identity[Int, String](42);
+}

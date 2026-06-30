@@ -81,11 +81,9 @@ function lowerExpr(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src
         appendInstr(mirBuf, 2, oneTmp, 1, 0, 1);
         set adjIdx: int = freshTemp(mirBuf);
         appendInstr(mirBuf, 2, adjIdx, idxTmp, oneTmp, 1);
-        set mulTmp: int = freshTemp(mirBuf);
-        appendInstr(mirBuf, 2, mulTmp, adjIdx, 8, 3);
         set offTmp: int = freshTemp(mirBuf);
-        appendInstr(mirBuf, 2, offTmp, mulTmp, 8, 1);
-        appendInstr(mirBuf, 9, t, arrTmp, 0, offTmp);
+        appendInstr(mirBuf, 2, offTmp, adjIdx, 8, 3);
+        appendInstr(mirBuf, 9, t, arrTmp, offTmp, 0);
         return t;
     }
     return 0;
@@ -234,6 +232,21 @@ function lowerStmt(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src
         lowerExpr(hirBuf, hOff, mirBuf, scBuf, src);
         return 0;
     }
+    if (tag == 20) {
+        set arrOff: int = br(hirBuf, hOff + 1); set idxOff: int = br(hirBuf, hOff + 2);
+        set vOff: int = br(hirBuf, hOff + 3);
+        set arrTmp: int = lowerExpr(hirBuf, arrOff, mirBuf, scBuf, src);
+        set idxTmp: int = lowerExpr(hirBuf, idxOff, mirBuf, scBuf, src);
+        set vTmp: int = lowerExpr(hirBuf, vOff, mirBuf, scBuf, src);
+        set oneTmp: int = freshTemp(mirBuf);
+        appendInstr(mirBuf, 2, oneTmp, 1, 0, 1);
+        set adjIdx: int = freshTemp(mirBuf);
+        appendInstr(mirBuf, 2, adjIdx, idxTmp, oneTmp, 1);
+        set offTmp: int = freshTemp(mirBuf);
+        appendInstr(mirBuf, 2, offTmp, adjIdx, 8, 3);
+        appendInstr(mirBuf, 10, 0, arrTmp, offTmp, vTmp);
+        return 0;
+    }
     return 0;
 }
 
@@ -279,6 +292,7 @@ function lowerProgram(hirBuf: string, progOff: int, mirBuf: string, scBuf: strin
     while (j < cnt) {
         set sOff: int = br(hirBuf, progOff + 2 + j);
         set stmtTag: int = br(hirBuf, sOff);
+        if (stmtTag == 999) { j = j + 1; continue; }
         if (stmtTag == 1) {
             set mirFn: int = lowerFnDef(hirBuf, sOff, mirBuf, scBuf, src);
             setInt(fnList, fnCount * 8, mirFn);

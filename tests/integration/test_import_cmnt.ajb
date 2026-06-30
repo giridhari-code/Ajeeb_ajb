@@ -1,0 +1,4 @@
+// comment
+function emitStr(out: string, s: string): void { writeAppend(out, s); }
+function emitI(out: string, n: int): void { writeAppend(out, itoa(n)); }
+function main(): int { println("ok"); return 0; }

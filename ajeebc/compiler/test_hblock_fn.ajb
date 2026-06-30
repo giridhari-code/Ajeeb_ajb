@@ -1,0 +1,7 @@
+function hBlock(buf: string, c: int): int {
+    set o: int = c; bw(buf, o, 2); bw(buf, o + 1, c); return 0;
+}
+function bw(buf: string, o: int, v: int): void { setInt(buf, o * 8, v); }
+function setInt(buf: string, off: int, v: int): void {}
+function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
+function getInt(buf: string, off: int): int { return 0; }

@@ -1,0 +1,991 @@
+// ============================================================
+//  Ajeeb Compiler — Self-Hosting Lexer + Parser + C Codegen
+//  State in __ajeeb_outbuf via getInt/setInt
+// ============================================================
+
+// --- BUFFER LAYOUT ---
+// 0:   current source position (lexer cursor)
+// 8:   saved position (backtracking)
+// 16:  function count
+// 24:  label counter
+// 32:  source address
+// 40:  output string (file path or buffer)
+// 48:  current token type
+// 56:  current token value (number literal)
+// 64:  current token string offset in source
+// 72:  current token string length
+// 80:  parenthesis/bracket depth
+// 88:  class name offset during class parsing
+// 96+: function table (24 bytes/entry)
+
+// --- HELPERS ---
+
+function rdB(buf: string, off: int): int { return getInt(buf, off); }
+function wrB(buf: string, off: int, v: int): void { setInt(buf, off, v); }
+function rdPos(buf: string): int { return rdB(buf, 0); }
+function wrPos(buf: string, v: int): void { wrB(buf, 0, v); }
+function rdFnC(buf: string): int { return rdB(buf, 16); }
+function wrFnC(buf: string, v: int): void { wrB(buf, 16, v); }
+function rdSrc(buf: string): int { return rdB(buf, 32); }
+function wrSrc(buf: string, v: int): void { wrB(buf, 32, v); }
+function savePos(buf: string): void { wrB(buf, 8, rdPos(buf)); }
+function restorePos(buf: string): void { wrPos(buf, rdB(buf, 8)); }
+
+function isDigit(c: int): int {
+    if (c >= 48 && c <= 57) { return 1; } return 0;
+}
+function isAlpha(c: int): int {
+    if (c >= 65 && c <= 90) { return 1; }
+    if (c >= 97 && c <= 122) { return 1; }
+    if (c == 95) { return 1; }
+    return 0;
+}
+function isAlphaNum(c: int): int {
+    if (isDigit(c) == 1) { return 1; }
+    if (isAlpha(c) == 1) { return 1; }
+    return 0;
+}
+function isSpace(c: int): int {
+    if (c == 32 || c == 9 || c == 10 || c == 13) { return 1; }
+    return 0;
+}
+function chr(src: int, i: int): int { return charCode(src, i); }
+
+// --- WHITESPACE / COMMENT SKIPPER ---
+
+function skipWS(src: int, buf: string): void {
+    set pos: int = rdPos(buf);
+    set go: int = 1;
+    while (go == 1) {
+        set c: int = chr(src, pos);
+        if (isSpace(c) == 1) { pos = pos + 1; }
+        else if (c == 47 && chr(src, pos+1) == 47) {
+            pos = pos + 2;
+            while (chr(src, pos) != 10 && chr(src, pos) != 0) { pos = pos + 1; }
+        }
+        else if (c == 47 && chr(src, pos+1) == 42) {
+            pos = pos + 2;
+            set dg: int = 1;
+            while (dg == 1) {
+                if (chr(src, pos) == 0) { dg = 0; }
+                else if (chr(src, pos) == 42 && chr(src, pos+1) == 47) { dg = 0; }
+                else { pos = pos + 1; }
+            }
+            pos = pos + 2;
+        }
+        else { go = 0; }
+    }
+    wrPos(buf, pos);
+}
+
+// --- KEYWORD MATCHER ---
+
+function matchKwd(src: int, buf: string, kwd: string): int {
+    set pos: int = rdPos(buf);
+    set klen: int = len(kwd);
+    set i: int = 0;
+    while (i < klen) {
+        if (chr(src, pos + i) != charCode(kwd, i)) { return 0; }
+        i = i + 1;
+    }
+    if (isAlphaNum(chr(src, pos + klen)) == 1) { return 0; }
+    return 1;
+}
+
+// --- IDENTIFIER READER ---
+
+function readIdent(src: int, buf: string): int {
+    set pos: int = rdPos(buf);
+    set start: int = pos;
+    while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+    wrPos(buf, pos);
+    return start;
+}
+
+// --- NUMBER READER ---
+
+function readNumber(src: int, buf: string): int {
+    set pos: int = rdPos(buf);
+    set start: int = pos;
+    while (isDigit(chr(src, pos)) == 1) { pos = pos + 1; }
+    wrPos(buf, pos);
+    set n: int = 0;
+    set i: int = start;
+    while (i < pos) {
+        n = n * 10 + (chr(src, i) - 48);
+        i = i + 1;
+    }
+    return n;
+}
+
+// --- STRING READER ---
+
+function readString(src: int, buf: string): int {
+    set pos: int = rdPos(buf);
+    set start: int = pos + 1;
+    pos = pos + 1;
+    while (chr(src, pos) != 34 && chr(src, pos) != 0) {
+        if (chr(src, pos) == 92) { pos = pos + 1; }
+        pos = pos + 1;
+    }
+    pos = pos + 1;
+    wrPos(buf, pos);
+    return start;
+}
+
+// --- TOKEN TYPES ---
+// 0=Eof 1=Id 2=Num 3=Str 4=Let 5=Const 6=If 7=Else 8=While
+// 9=Fn 10=Ret 11=True 12=False 13=Int 14=String 15=Bool 16=Void
+// 17=+ 18=- 19=* 20=/ 21== 22=!= 23=< 24=> 25=<= 26=>= 27=&& 28=||
+// 29=! 30=; 31=: 32=, 33=-> 34=. 35=( 36=) 37={ 38=} 39=[ 40=]
+// 41== 42=Class 43=Self 44=New
+
+// --- TOKEN CURSOR ---
+
+function setTok(buf: string, typ: int, val: int, soff: int, slen: int): void {
+    wrB(buf, 48, typ); wrB(buf, 56, val); wrB(buf, 64, soff); wrB(buf, 72, slen);
+}
+function tokType(buf: string): int { return rdB(buf, 48); }
+function tokVal(buf: string): int { return rdB(buf, 56); }
+function tokStrOff(buf: string): int { return rdB(buf, 64); }
+function tokStrLen(buf: string): int { return rdB(buf, 72); }
+
+// --- NEXT TOKEN ---
+
+function nextTok(src: int, buf: string): void {
+    skipWS(src, buf);
+    set pos: int = rdPos(buf);
+    set c: int = chr(src, pos);
+
+    if (c == 0) { setTok(buf, 0, 0, 0, 0); return; }
+
+    // Identifier / Keyword
+    if (isAlpha(c) == 1 || c == 95) {
+        set start: int = pos;
+        readIdent(src, buf);
+        set slen: int = rdPos(buf) - start;
+        savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "set") == 1) { setTok(buf, 4, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "const") == 1) { setTok(buf, 5, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "if") == 1) { setTok(buf, 6, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "else") == 1) { setTok(buf, 7, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "while") == 1) { setTok(buf, 8, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "function") == 1) { setTok(buf, 9, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "return") == 1) { setTok(buf, 10, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "true") == 1) { setTok(buf, 11, 1, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "false") == 1) { setTok(buf, 12, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "int") == 1) { setTok(buf, 13, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "string") == 1) { setTok(buf, 14, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "bool") == 1) { setTok(buf, 15, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "void") == 1) { setTok(buf, 16, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "class") == 1) { setTok(buf, 42, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "self") == 1) { setTok(buf, 43, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf); savePos(buf); wrPos(buf, start);
+        if (matchKwd(src, buf, "new") == 1) { setTok(buf, 44, 0, 0, 0); restorePos(buf); return; }
+        restorePos(buf);
+        setTok(buf, 1, 0, start, slen);
+        return;
+    }
+
+    // Number
+    if (isDigit(c) == 1) {
+        set val: int = readNumber(src, buf);
+        setTok(buf, 2, val, 0, 0);
+        return;
+    }
+
+    // String
+    if (c == 34) {
+        set start: int = readString(src, buf);
+        set slen: int = rdPos(buf) - start - 1;
+        setTok(buf, 3, 0, start, slen);
+        return;
+    }
+
+    // Symbols
+    pos = pos + 1; wrPos(buf, pos);
+    if (c == 43) { setTok(buf, 17, 0, 0, 0); return; }
+    if (c == 45) {
+        if (chr(src, pos) == 62) { wrPos(buf, pos+1); setTok(buf, 33, 0, 0, 0); return; }
+        setTok(buf, 18, 0, 0, 0); return;
+    }
+    if (c == 42) { setTok(buf, 19, 0, 0, 0); return; }
+    if (c == 47) { setTok(buf, 20, 0, 0, 0); return; }
+    if (c == 61) {
+        if (chr(src, pos) == 61) { wrPos(buf, pos+1); setTok(buf, 21, 0, 0, 0); return; }
+        setTok(buf, 41, 0, 0, 0); return;
+    }
+    if (c == 33) {
+        if (chr(src, pos) == 61) { wrPos(buf, pos+1); setTok(buf, 22, 0, 0, 0); return; }
+        setTok(buf, 29, 0, 0, 0); return;
+    }
+    if (c == 38) {
+        if (chr(src, pos) == 38) { wrPos(buf, pos+1); setTok(buf, 27, 0, 0, 0); return; }
+        setTok(buf, 0, 0, 0, 0); return;
+    }
+    if (c == 124) {
+        if (chr(src, pos) == 124) { wrPos(buf, pos+1); setTok(buf, 28, 0, 0, 0); return; }
+        setTok(buf, 0, 0, 0, 0); return;
+    }
+    if (c == 60) {
+        if (chr(src, pos) == 61) { wrPos(buf, pos+1); setTok(buf, 25, 0, 0, 0); return; }
+        setTok(buf, 23, 0, 0, 0); return;
+    }
+    if (c == 62) {
+        if (chr(src, pos) == 61) { wrPos(buf, pos+1); setTok(buf, 26, 0, 0, 0); return; }
+        setTok(buf, 24, 0, 0, 0); return;
+    }
+    if (c == 59) { setTok(buf, 30, 0, 0, 0); return; }
+    if (c == 58) { setTok(buf, 31, 0, 0, 0); return; }
+    if (c == 44) { setTok(buf, 32, 0, 0, 0); return; }
+    if (c == 46) { setTok(buf, 34, 0, 0, 0); return; }
+    if (c == 40) { setTok(buf, 35, 0, 0, 0); return; }
+    if (c == 41) { setTok(buf, 36, 0, 0, 0); return; }
+    if (c == 123) { setTok(buf, 37, 0, 0, 0); return; }
+    if (c == 125) { setTok(buf, 38, 0, 0, 0); return; }
+    if (c == 91) { setTok(buf, 39, 0, 0, 0); return; }
+    if (c == 93) { setTok(buf, 40, 0, 0, 0); return; }
+    setTok(buf, 0, 0, 0, 0);
+}
+
+// --- GET IDENTIFIER STRING FROM SOURCE ---
+
+function identStr(src: int, soff: int, slen: int): string {
+    set scratch: string = getOutbuf();
+    set i: int = 0;
+    while (i < slen) {
+        strSet(scratch, i, chr(src, soff + i));
+        i = i + 1;
+    }
+    strSet(scratch, slen, 0);
+    return scratch;
+}
+
+// --- EMIT HELPERS ---
+
+function emitStr(out: string, s: string): void { writeAppend(out, s); }
+function emitI(out: string, n: int): void { writeAppend(out, itoa(n)); }
+
+function emitEscapedStr(out: string, src: int, soff: int, slen: int): void {
+    emitStr(out, "(intptr_t)\"");
+    set i: int = 0;
+    while (i < slen) {
+        set c: int = chr(src, soff + i);
+        if (c == 10) { emitStr(out, "\\n"); }
+        else if (c == 9) { emitStr(out, "\\t"); }
+        else if (c == 34) { emitStr(out, "\\\""); }
+        else if (c == 92) { emitStr(out, "\\\\"); }
+        else {
+            writeByte(out, c);
+        }
+        i = i + 1;
+    }
+    emitStr(out, "\"");
+}
+
+// === EXPRESSION PARSING ===
+
+// Forward declarations handled by function ordering
+
+function parsePrimary(src: int, buf: string, out: string): void {
+    set t: int = tokType(buf);
+    if (t == 2) { // number
+        emitI(out, tokVal(buf));
+        nextTok(src, buf);
+    }
+    else if (t == 3) { // string
+        emitEscapedStr(out, src, tokStrOff(buf), tokStrLen(buf));
+        nextTok(src, buf);
+    }
+    else if (t == 11) { emitStr(out, "1"); nextTok(src, buf); } // true
+    else if (t == 12) { emitStr(out, "0"); nextTok(src, buf); } // false
+    else if (t == 43) { // self — with postfix chain for field/method access
+        nextTok(src, buf);
+        set se: int = 0;
+        set go: int = 1;
+        while (go == 1) {
+            t = tokType(buf);
+            if (t == 34) { // .
+                nextTok(src, buf);
+                set fd: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                nextTok(src, buf);
+                if (tokType(buf) == 35) { // method call on self
+                    nextTok(src, buf);
+                    emitStr(out, fd); emitStr(out, "(self");
+                    se = 1;
+                    set first: int = 1;
+                    while (tokType(buf) != 36 && tokType(buf) != 0) {
+                        if (first == 0) { emitStr(out, ", "); }
+                        first = 0;
+                        parseExpr(src, buf, out);
+                        if (tokType(buf) == 32) { nextTok(src, buf); }
+                    }
+                    emitStr(out, ")");
+                    if (tokType(buf) == 36) { nextTok(src, buf); }
+                } else {
+                    emitStr(out, "self->"); emitStr(out, fd); se = 1;
+                }
+            }
+            else if (t == 39) { // [
+                nextTok(src, buf);
+                emitStr(out, "self["); se = 1;
+                parseExpr(src, buf, out);
+                emitStr(out, "]");
+                if (tokType(buf) == 40) { nextTok(src, buf); }
+            }
+            else if (t == 35) { // ( — direct call on self
+                nextTok(src, buf);
+                emitStr(out, "self("); se = 1;
+                set first: int = 1;
+                while (tokType(buf) != 36 && tokType(buf) != 0) {
+                    if (first == 0) { emitStr(out, ", "); }
+                    first = 0;
+                    parseExpr(src, buf, out);
+                    if (tokType(buf) == 32) { nextTok(src, buf); }
+                }
+                emitStr(out, ")");
+                if (tokType(buf) == 36) { nextTok(src, buf); }
+            }
+            else { if (se == 0) { emitStr(out, "self"); } go = 0; }
+        }
+    }
+    else if (t == 44) { // new
+        nextTok(src, buf);
+        set cn: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+        nextTok(src, buf);
+        emitStr(out, "("); emitStr(out, cn); emitStr(out, "){0}");
+    }
+    else if (t == 35) { // (
+        nextTok(src, buf);
+        emitStr(out, "(");
+        parseExpr(src, buf, out);
+        emitStr(out, ")");
+        if (tokType(buf) == 36) { nextTok(src, buf); }
+    }
+    else if (t == 39) { // [
+        nextTok(src, buf);
+        emitStr(out, "{");
+        set first: int = 1;
+        while (tokType(buf) != 40 && tokType(buf) != 0) {
+            if (first == 0) { emitStr(out, ", "); }
+            first = 0;
+            parseExpr(src, buf, out);
+            if (tokType(buf) == 32) { nextTok(src, buf); }
+        }
+        emitStr(out, "}");
+        if (tokType(buf) == 40) { nextTok(src, buf); }
+    }
+    else if (t == 1) { // identifier
+        set id: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+        nextTok(src, buf);
+
+        // Postfix chain — defer identifier emit so method calls work
+        set emitted: int = 0;
+        set go: int = 1;
+        while (go == 1) {
+            t = tokType(buf);
+            if (t == 35) { // ( -> call
+                if (emitted == 0) { emitStr(out, id); emitted = 1; }
+                nextTok(src, buf);
+                emitStr(out, "(");
+                set first: int = 1;
+                while (tokType(buf) != 36 && tokType(buf) != 0) {
+                    if (first == 0) { emitStr(out, ", "); }
+                    first = 0;
+                    parseExpr(src, buf, out);
+                    if (tokType(buf) == 32) { nextTok(src, buf); }
+                }
+                emitStr(out, ")");
+                if (tokType(buf) == 36) { nextTok(src, buf); }
+            }
+            else if (t == 34) { // .
+                nextTok(src, buf);
+                set fd: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                nextTok(src, buf);
+                if (tokType(buf) == 35) { // method call
+                    if (emitted == 0) { emitStr(out, fd); emitted = 1; }
+                    else { emitStr(out, fd); }
+                    nextTok(src, buf);
+                    emitStr(out, "(&"); emitStr(out, id);
+                    while (tokType(buf) != 36 && tokType(buf) != 0) {
+                        emitStr(out, ", ");
+                        parseExpr(src, buf, out);
+                        if (tokType(buf) == 32) { nextTok(src, buf); }
+                    }
+                    emitStr(out, ")");
+                    if (tokType(buf) == 36) { nextTok(src, buf); }
+                } else {
+                    if (emitted == 0) { emitStr(out, id); emitted = 1; }
+                    emitStr(out, "."); emitStr(out, fd);
+                }
+            }
+            else if (t == 39) { // [
+                if (emitted == 0) { emitStr(out, id); emitted = 1; }
+                nextTok(src, buf);
+                emitStr(out, "[");
+                parseExpr(src, buf, out);
+                emitStr(out, "]");
+                if (tokType(buf) == 40) { nextTok(src, buf); }
+            }
+            else { go = 0; }
+        }
+        if (emitted == 0) { emitStr(out, id); }
+    }
+    else {
+        emitStr(out, "0");
+        nextTok(src, buf);
+    }
+}
+
+function parseUnary(src: int, buf: string, out: string): void {
+    if (tokType(buf) == 18) { // -
+        nextTok(src, buf);
+        emitStr(out, "(-");
+        parseUnary(src, buf, out);
+        emitStr(out, ")");
+    }
+    else if (tokType(buf) == 29) { // !
+        nextTok(src, buf);
+        emitStr(out, "(!");
+        parseUnary(src, buf, out);
+        emitStr(out, ")");
+    }
+    else { parsePrimary(src, buf, out); }
+}
+
+function parseMul(src: int, buf: string, out: string): void {
+    parseUnary(src, buf, out);
+    while (tokType(buf) == 19 || tokType(buf) == 20) {
+        set op: int = tokType(buf);
+        nextTok(src, buf);
+        if (op == 19) { emitStr(out, " * "); } else { emitStr(out, " / "); }
+        parseUnary(src, buf, out);
+    }
+}
+
+function parseAdd(src: int, buf: string, out: string): void {
+    parseMul(src, buf, out);
+    while (tokType(buf) == 17 || tokType(buf) == 18) {
+        set op: int = tokType(buf);
+        nextTok(src, buf);
+        if (op == 17) { emitStr(out, " + "); } else { emitStr(out, " - "); }
+        parseMul(src, buf, out);
+    }
+}
+
+function parseCmp(src: int, buf: string, out: string): void {
+    parseAdd(src, buf, out);
+    while (tokType(buf) == 23 || tokType(buf) == 24 || tokType(buf) == 25 || tokType(buf) == 26) {
+        set op: int = tokType(buf);
+        nextTok(src, buf);
+        if (op == 23) { emitStr(out, " < "); }
+        else if (op == 24) { emitStr(out, " > "); }
+        else if (op == 25) { emitStr(out, " <= "); }
+        else { emitStr(out, " >= "); }
+        parseAdd(src, buf, out);
+    }
+}
+
+function parseEq(src: int, buf: string, out: string): void {
+    parseCmp(src, buf, out);
+    while (tokType(buf) == 21 || tokType(buf) == 22) {
+        set op: int = tokType(buf);
+        nextTok(src, buf);
+        if (op == 21) { emitStr(out, " == "); } else { emitStr(out, " != "); }
+        parseCmp(src, buf, out);
+    }
+}
+
+function parseAnd(src: int, buf: string, out: string): void {
+    parseEq(src, buf, out);
+    while (tokType(buf) == 27) {
+        nextTok(src, buf);
+        emitStr(out, " && ");
+        parseEq(src, buf, out);
+    }
+}
+
+function parseOr(src: int, buf: string, out: string): void {
+    parseAnd(src, buf, out);
+    while (tokType(buf) == 28) {
+        nextTok(src, buf);
+        emitStr(out, " || ");
+        parseAnd(src, buf, out);
+    }
+}
+
+function parseAssign(src: int, buf: string, out: string): void {
+    parseOr(src, buf, out);
+    if (tokType(buf) == 41) { // =
+        nextTok(src, buf);
+        emitStr(out, " = ");
+        parseAssign(src, buf, out);
+    }
+}
+
+function parseExpr(src: int, buf: string, out: string): void {
+    parseAssign(src, buf, out);
+}
+
+// === TYPE ANNOTATION PARSER ===
+
+function parseType(src: int, buf: string, out: string): void {
+    if (tokType(buf) == 31) { // :
+        nextTok(src, buf); // skip :
+        set t: int = tokType(buf);
+        if (t == 13) { emitStr(out, "intptr_t"); }
+        else if (t == 14) { emitStr(out, "intptr_t"); }
+        else if (t == 15) { emitStr(out, "intptr_t"); }
+        else if (t == 16) { emitStr(out, "void"); }
+        else if (t == 1) { // class name
+            set cn: string = identStr(rdSrc(buf), tokStrOff(buf), tokStrLen(buf));
+            emitStr(out, cn);
+        }
+        nextTok(src, buf); // skip type name
+        if (tokType(buf) == 39) { // [
+            nextTok(src, buf);
+            if (tokType(buf) == 40) { nextTok(src, buf); }
+            emitStr(out, "*");
+        }
+    }
+}
+
+// === STATEMENT PARSER ===
+
+function parseStmt(src: int, buf: string, out: string): void {
+    set t: int = tokType(buf);
+
+    if (t == 4) { // set
+        nextTok(src, buf);
+        set vname: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+        nextTok(src, buf);
+        emitStr(out, "    ");
+        if (tokType(buf) == 31) { // type annotation
+            nextTok(src, buf); // skip :
+            if (tokType(buf) == 1) { // class name
+                set cn: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                emitStr(out, cn); emitStr(out, " "); emitStr(out, vname);
+                nextTok(src, buf); // skip class name
+            } else {
+                emitStr(out, "intptr_t "); emitStr(out, vname);
+                nextTok(src, buf); // skip int/string/bool/void
+            }
+            if (tokType(buf) == 39) { nextTok(src, buf); if (tokType(buf) == 40) { nextTok(src, buf); } }
+        } else {
+            emitStr(out, "intptr_t "); emitStr(out, vname);
+        }
+        if (tokType(buf) == 41) { // =
+            nextTok(src, buf);
+            emitStr(out, " = ");
+            parseExpr(src, buf, out);
+        }
+        if (tokType(buf) == 30) { nextTok(src, buf); }
+        emitStr(out, ";\n");
+    }
+    else if (t == 5) { // const
+        nextTok(src, buf);
+        set vname: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+        nextTok(src, buf);
+        emitStr(out, "    const intptr_t "); emitStr(out, vname);
+        if (tokType(buf) == 31) {
+            nextTok(src, buf);
+            if (tokType(buf) == 1) { nextTok(src, buf); }
+            else { nextTok(src, buf); }
+            if (tokType(buf) == 39) { nextTok(src, buf); if (tokType(buf) == 40) { nextTok(src, buf); } }
+        }
+        if (tokType(buf) == 41) {
+            nextTok(src, buf);
+            emitStr(out, " = ");
+            parseExpr(src, buf, out);
+        }
+        if (tokType(buf) == 30) { nextTok(src, buf); }
+        emitStr(out, ";\n");
+    }
+    else if (t == 6) { // if
+        nextTok(src, buf);
+        if (tokType(buf) == 35) { nextTok(src, buf); }
+        emitStr(out, "    if (");
+        parseExpr(src, buf, out);
+        if (tokType(buf) == 36) { nextTok(src, buf); }
+        emitStr(out, ") {\n");
+        if (tokType(buf) == 37) { nextTok(src, buf); }
+        while (tokType(buf) != 38 && tokType(buf) != 0) {
+            parseStmt(src, buf, out);
+        }
+        if (tokType(buf) == 38) { nextTok(src, buf); }
+        emitStr(out, "    }\n");
+        // else clauses
+        while (tokType(buf) == 7) { // else
+            nextTok(src, buf);
+            if (tokType(buf) == 6) { // else if
+                nextTok(src, buf);
+                if (tokType(buf) == 35) { nextTok(src, buf); }
+                emitStr(out, "    else if (");
+                parseExpr(src, buf, out);
+                if (tokType(buf) == 36) { nextTok(src, buf); }
+                emitStr(out, ") {\n");
+                if (tokType(buf) == 37) { nextTok(src, buf); }
+                while (tokType(buf) != 38 && tokType(buf) != 0) {
+                    parseStmt(src, buf, out);
+                }
+                if (tokType(buf) == 38) { nextTok(src, buf); }
+                emitStr(out, "    }\n");
+            } else {
+                if (tokType(buf) == 37) { nextTok(src, buf); }
+                emitStr(out, "    else {\n");
+                while (tokType(buf) != 38 && tokType(buf) != 0) {
+                    parseStmt(src, buf, out);
+                }
+                if (tokType(buf) == 38) { nextTok(src, buf); }
+                emitStr(out, "    }\n");
+            }
+        }
+    }
+    else if (t == 8) { // while
+        nextTok(src, buf);
+        if (tokType(buf) == 35) { nextTok(src, buf); }
+        emitStr(out, "    while (");
+        parseExpr(src, buf, out);
+        if (tokType(buf) == 36) { nextTok(src, buf); }
+        emitStr(out, ") {\n");
+        if (tokType(buf) == 37) { nextTok(src, buf); }
+        while (tokType(buf) != 38 && tokType(buf) != 0) {
+            parseStmt(src, buf, out);
+        }
+        if (tokType(buf) == 38) { nextTok(src, buf); }
+        emitStr(out, "    }\n");
+    }
+    else if (t == 9) { // function
+        nextTok(src, buf);
+        set fnId: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+        nextTok(src, buf);
+        // params
+        if (tokType(buf) == 35) { nextTok(src, buf); }
+        emitStr(out, "int ");
+        if (fnId == "main") {
+            emitStr(out, "main(int argc, char** argv)");
+            // skip params
+            set depth: int = 1;
+            while (depth > 0 && tokType(buf) != 0) {
+                if (tokType(buf) == 35) { depth = depth + 1; }
+                if (tokType(buf) == 36) { depth = depth - 1; }
+                if (depth > 0) { nextTok(src, buf); }
+            }
+            if (tokType(buf) == 36) { nextTok(src, buf); }
+        } else {
+            emitStr(out, fnId); emitStr(out, "(");
+            set first: int = 1;
+            while (tokType(buf) != 36 && tokType(buf) != 0) {
+                if (first == 0) { emitStr(out, ", "); }
+                first = 0;
+                set pn: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                nextTok(src, buf);
+                emitStr(out, "intptr_t "); emitStr(out, pn);
+                if (tokType(buf) == 31) { // type annotation
+                    nextTok(src, buf);
+                    if (tokType(buf) == 1) { nextTok(src, buf); }
+                    else { nextTok(src, buf); }
+                }
+                if (tokType(buf) == 32) { nextTok(src, buf); }
+            }
+            if (tokType(buf) == 36) { nextTok(src, buf); }
+            if (tokType(buf) == 31) { // return type
+                nextTok(src, buf);
+                if (tokType(buf) == 1) { nextTok(src, buf); }
+                else { nextTok(src, buf); }
+            }
+            emitStr(out, ")");
+        }
+        emitStr(out, " {\n");
+        if (tokType(buf) == 37) { nextTok(src, buf); }
+        while (tokType(buf) != 38 && tokType(buf) != 0) {
+            parseStmt(src, buf, out);
+        }
+        if (tokType(buf) == 38) { nextTok(src, buf); }
+        emitStr(out, "    return 0;\n}\n\n");
+    }
+    else if (t == 10) { // return
+        nextTok(src, buf);
+        emitStr(out, "    return");
+        if (tokType(buf) != 30 && tokType(buf) != 0) {
+            emitStr(out, " ");
+            parseExpr(src, buf, out);
+        } else {
+            emitStr(out, " 0");
+        }
+        if (tokType(buf) == 30) { nextTok(src, buf); }
+        emitStr(out, ";\n");
+    }
+    else if (t == 42) { // class
+        nextTok(src, buf);
+        set cn: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+        nextTok(src, buf);
+        if (tokType(buf) == 37) { nextTok(src, buf); }
+        emitStr(out, "typedef struct {\n");
+        writeFile("__methods.txt", "");
+        while (tokType(buf) != 38 && tokType(buf) != 0) {
+            if (tokType(buf) == 9) { // method — emit to temp file
+                set mo: string = "__methods.txt";
+                nextTok(src, buf);
+                set fnId: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                nextTok(src, buf);
+                emitStr(mo, "int "); emitStr(mo, fnId); emitStr(mo, "(");
+                emitStr(mo, cn); emitStr(mo, "* self");
+                if (tokType(buf) == 35) {
+                    nextTok(src, buf);
+                    while (tokType(buf) != 36 && tokType(buf) != 0) {
+                        emitStr(mo, ", ");
+                        set pn: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                        nextTok(src, buf);
+                        emitStr(mo, "intptr_t "); emitStr(mo, pn);
+                        if (tokType(buf) == 31) {
+                            nextTok(src, buf);
+                            if (tokType(buf) == 1) { nextTok(src, buf); }
+                            else { nextTok(src, buf); }
+                        }
+                        if (tokType(buf) == 32) { nextTok(src, buf); }
+                    }
+                    if (tokType(buf) == 36) { nextTok(src, buf); }
+                }
+                if (tokType(buf) == 31) {
+                    nextTok(src, buf);
+                    if (tokType(buf) == 1 || tokType(buf) == 13 || tokType(buf) == 14 || tokType(buf) == 15 || tokType(buf) == 16) { nextTok(src, buf); }
+                }
+                emitStr(mo, ") {\n");
+                if (tokType(buf) == 37) { nextTok(src, buf); }
+                while (tokType(buf) != 38 && tokType(buf) != 0) {
+                    parseStmt(src, buf, mo);
+                }
+                if (tokType(buf) == 38) { nextTok(src, buf); }
+                emitStr(mo, "    return 0;\n}\n\n");
+            } else {
+                set fd: string = identStr(src, tokStrOff(buf), tokStrLen(buf));
+                nextTok(src, buf);
+                emitStr(out, "    intptr_t "); emitStr(out, fd);
+                if (tokType(buf) == 31) {
+                    nextTok(src, buf);
+                    if (tokType(buf) == 1) { nextTok(src, buf); }
+                    else { nextTok(src, buf); }
+                }
+                if (tokType(buf) == 30) { nextTok(src, buf); }
+                emitStr(out, ";\n");
+            }
+        }
+        if (tokType(buf) == 38) { nextTok(src, buf); }
+        emitStr(out, "} "); emitStr(out, cn); emitStr(out, ";\n\n");
+        // Append methods from temp file
+        set mb: string = readFile("__methods.txt");
+        emitStr(out, mb);
+    }
+    else if (t == 38) { // } - empty block end
+        // do nothing
+    }
+    else { // expression statement
+        emitStr(out, "    ");
+        parseExpr(src, buf, out);
+        if (tokType(buf) == 30) { nextTok(src, buf); }
+        emitStr(out, ";\n");
+    }
+}
+
+// === FUNCTION COLLECTION (PASS 1) ===
+
+function addFn(src: int, buf: string, nameStart: int): void {
+    set count: int = rdFnC(buf);
+    set pos: int = rdPos(buf);
+    set nameLen: int = pos - nameStart;
+    set off: int = 96 + count * 24;
+    setInt(buf, off, nameStart);
+    setInt(buf, off+8, nameLen);
+    setInt(buf, off+16, count);
+    wrFnC(buf, count + 1);
+}
+
+function skipDepth(src: int, pos: int, open: int, close: int): int {
+    set depth: int = 1; pos = pos + 1;
+    while (depth > 0) {
+        set c: int = chr(src, pos);
+        if (c == 34) {
+            pos = pos + 1;
+            while (chr(src, pos) != 34 && chr(src, pos) != 0) {
+                if (chr(src, pos) == 92) { pos = pos + 1; }
+                pos = pos + 1;
+            }
+            pos = pos + 1;
+        } else if (c == 47 && chr(src, pos+1) == 47) {
+            pos = pos + 2;
+            while (chr(src, pos) != 10 && chr(src, pos) != 0) { pos = pos + 1; }
+        } else if (c == 47 && chr(src, pos+1) == 42) {
+            pos = pos + 2;
+            while (chr(src, pos) != 0 && !(chr(src, pos) == 42 && chr(src, pos+1) == 47)) { pos = pos + 1; }
+            pos = pos + 2;
+        } else {
+            if (c == open) { depth = depth + 1; }
+            else if (c == close) { depth = depth - 1; }
+            pos = pos + 1;
+        }
+    }
+    return pos;
+}
+
+function collectFns(src: int, buf: string): void {
+    wrPos(buf, 0);
+    wrFnC(buf, 0);
+    set go: int = 1;
+    while (go == 1) {
+        skipWS(src, buf);
+        set pos: int = rdPos(buf);
+        if (chr(src, pos) == 0) { go = 0; }
+        else if (matchKwd(src, buf, "class") == 1) {
+            pos = pos + 5; wrPos(buf, pos); skipWS(src, buf);
+            readIdent(src, buf); skipWS(src, buf);
+            pos = rdPos(buf);
+            if (chr(src, pos) == 123) {
+                pos = pos + 1;
+                set cd: int = 1;
+                while (cd > 0) {
+                    set c: int = chr(src, pos);
+                    if (c == 0) { cd = 0; }
+                    else if (c == 34) {
+                        pos = pos + 1;
+                        while (chr(src, pos) != 34 && chr(src, pos) != 0) {
+                            if (chr(src, pos) == 92) { pos = pos + 1; }
+                            pos = pos + 1;
+                        }
+                        pos = pos + 1;
+                    } else if (c == 47 && chr(src, pos+1) == 47) {
+                        pos = pos + 2;
+                        while (chr(src, pos) != 10 && chr(src, pos) != 0) { pos = pos + 1; }
+                    } else if (c == 47 && chr(src, pos+1) == 42) {
+                        pos = pos + 2;
+                        while (chr(src, pos) != 0 && !(chr(src, pos) == 42 && chr(src, pos+1) == 47)) { pos = pos + 1; }
+                        pos = pos + 2;
+                    } else if (c == 123) { cd = cd + 1; pos = pos + 1; }
+                    else if (c == 125) { cd = cd - 1; pos = pos + 1; }
+                    else if (c == 102 && chr(src, pos+1) == 117 && chr(src, pos+2) == 110 && chr(src, pos+3) == 99 && chr(src, pos+4) == 116 && chr(src, pos+5) == 105 && chr(src, pos+6) == 111 && chr(src, pos+7) == 110) {
+                        pos = pos + 8;
+                        while (isSpace(chr(src, pos)) == 1) { pos = pos + 1; }
+                        set fnS: int = pos;
+                        while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+                        if (pos > fnS) {
+                            savePos(buf); wrPos(buf, fnS); addFn(src, buf, fnS); restorePos(buf);
+                        }
+                    } else { pos = pos + 1; }
+                }
+                wrPos(buf, pos);
+            }
+        }
+        else if (matchKwd(src, buf, "function") == 1) {
+            pos = pos + 8; wrPos(buf, pos); skipWS(src, buf);
+            set fnStart: int = rdPos(buf);
+            readIdent(src, buf);
+            addFn(src, buf, fnStart);
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 40) {
+                pos = skipDepth(src, pos, 40, 41);
+                wrPos(buf, pos);
+            }
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 58) {
+                pos = pos + 1;
+                while (isAlphaNum(chr(src, pos)) == 1) { pos = pos + 1; }
+                if (chr(src, pos) == 91) { pos = pos + 2; }
+                wrPos(buf, pos);
+            }
+            skipWS(src, buf); pos = rdPos(buf);
+            if (chr(src, pos) == 123) {
+                pos = skipDepth(src, pos, 123, 125);
+                wrPos(buf, pos);
+            }
+        }
+        else { wrPos(buf, pos + 1); }
+    }
+}
+
+// === FORWARD DECLARATIONS PASS ===
+
+function emitFwdDecls(src: int, buf: string, out: string): void {
+    set count: int = rdFnC(buf);
+    set i: int = 0;
+    while (i < count) {
+        set off: int = 96 + i * 24;
+        set ns: int = rdB(buf, off);
+        set nl: int = rdB(buf, off+8);
+        emitStr(out, "int fn_");
+        set j: int = 0;
+        while (j < nl) {
+            set ch: int = chr(src, ns + j);
+            j = j + 1;
+            set scratch: string = getOutbuf();
+            strSet(scratch, 0, ch);
+            strSet(scratch, 1, 0);
+            writeAppend(out, scratch);
+        }
+        emitStr(out, "();\n");
+        i = i + 1;
+    }
+}
+
+// === MAIN ===
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set i: int = 0;
+    while (i < 64) { setInt(buf, i * 8, 0); i = i + 1; }
+
+    set inPath: string = "main.ajb";
+    if (len(inPath) == 0) { inPath = "input.ajb"; }
+    set src: string = readFile(inPath);
+    wrSrc(buf, src);
+
+    set out: string = "output.c";
+    writeFile(out, "// Ajeeb self-hosted C output\n");
+
+    // PASS 1: collect function names
+    collectFns(src, buf);
+
+    // PASS 2: parse and generate C code
+    wrPos(buf, 0);
+    nextTok(src, buf);
+    emitStr(out, "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <stdbool.h>\n#include <stdint.h>\n\n");
+    emitStr(out, "char __ajeeb_buf[16384];\nchar __ajeeb_outbuf[65536];\n\n");
+
+    // Built-in declarations
+    emitStr(out, "intptr_t getInt(intptr_t buf, intptr_t off);\n");
+    emitStr(out, "void setInt(intptr_t buf, intptr_t off, intptr_t v);\n");
+    emitStr(out, "intptr_t charCode(intptr_t s, intptr_t i);\n");
+    emitStr(out, "intptr_t len(intptr_t s);\n");
+    emitStr(out, "intptr_t readArg(intptr_t n);\n");
+    emitStr(out, "intptr_t readFile(intptr_t path);\n");
+    emitStr(out, "void writeFile(intptr_t path, intptr_t content);\n");
+    emitStr(out, "void writeAppend(intptr_t path, intptr_t content);\n");
+    emitStr(out, "intptr_t getOutbuf();\n");
+    emitStr(out, "void strSet(intptr_t s, intptr_t i, intptr_t c);\n");
+    emitStr(out, "intptr_t itoa(intptr_t n);\n");
+    emitStr(out, "intptr_t println(intptr_t s);\n");
+    emitStr(out, "intptr_t getStateBuf();\n");
+    emitStr(out, "int parseExpr(intptr_t src, intptr_t buf, intptr_t out);\n");
+    emitStr(out, "int parseStmt(intptr_t src, intptr_t buf, intptr_t out);\n");
+    emitStr(out, "\n");
+
+    // Parse all top-level statements
+    while (tokType(buf) != 0) {
+        parseStmt(src, buf, out);
+    }
+
+    return 0;
+}

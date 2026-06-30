@@ -1,0 +1,39 @@
+// CACHE — File-level compilation cache
+// Cache key: content hash of source + all imported files
+// Cache value: generated C code (skip parse → HIR → MIR → codegen on hit)
+
+function cacheInit(): void {
+    mkdir(".ajeeb_cache");
+}
+
+// djb2 hash of file content
+function hashFile(path: string): int {
+    set src: string = readFile(path);
+    set h: int = 5381;
+    set i: int = 0;
+    while (i < len(src)) {
+        h = h * 33 + charCode(src, i);
+        i = i + 1;
+    }
+    return h;
+}
+
+// Check if cached C code exists for this hash
+// Returns the cached C code string, or empty string on miss
+function cacheGet(sourceHash: int): string {
+    set cachePath: string = str_concat(".ajeeb_cache/", str_concat(itoa(sourceHash), ".c"));
+    set cached: string = readFile(cachePath);
+    return cached;
+}
+
+// Save generated C code to cache
+function cachePut(sourceHash: int, cCode: string): void {
+    mkdir(".ajeeb_cache");
+    set cachePath: string = str_concat(".ajeeb_cache/", str_concat(itoa(sourceHash), ".c"));
+    writeFile(cachePath, cCode);
+}
+
+// Delete entire cache directory
+function cacheClear(): void {
+    exec("rm -rf .ajeeb_cache");
+}

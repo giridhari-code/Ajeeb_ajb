@@ -93,7 +93,7 @@ function emitLLVMPreamble(out: string): void {
     llvmNl(out);
 
     // Global buffers
-    llvmOut(out, "@__ajeeb_buf = global [262144 x i8] zeroinitializer"); llvmNl(out);
+    llvmOut(out, "@__ajeeb_buf = global [4194304 x i8] zeroinitializer"); llvmNl(out);
     llvmOut(out, "@__ajeeb_outbuf = global [65536 x i8] zeroinitializer"); llvmNl(out);
     llvmOut(out, "@stderr = external global ptr"); llvmNl(out);
     llvmNl(out);
@@ -156,6 +156,10 @@ function emitLLVMFn(buf: string, foff: int, out: string, src: string, isEntryMai
             if (dd > maxTemp) { maxTemp = dd; }
             if (ss1 > maxTemp) { maxTemp = ss1; }
             if (ss2 > maxTemp) { maxTemp = ss2; }
+            if (op == 4 || op == 10) {
+                set extVal: int = mInstrExt(buf, ioff);
+                if (extVal > maxTemp) { maxTemp = extVal; }
+            }
             ii = ii + 1;
         }
         bi2 = bi2 + 1;
@@ -353,16 +357,83 @@ function emitLLVMBlockCode(buf: string, boff: int, out: string, src: string, scB
 
         } else if (op == 9) {
             // LOAD: dst = *(base + offset) — array index load
-            llvmOut(out, "  %tmp_ld_");
+            llvmOut(out, "  %tmp_base_");
             llvmInt(out, j);
             llvmOut(out, " = load i64, ptr %t");
             llvmInt(out, s1);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_off_");
+            llvmInt(out, j);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, s2);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_addr_");
+            llvmInt(out, j);
+            llvmOut(out, " = inttoptr i64 %tmp_base_");
+            llvmInt(out, j);
+            llvmOut(out, " to ptr");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_elem_");
+            llvmInt(out, j);
+            llvmOut(out, " = getelementptr i8, ptr %tmp_addr_");
+            llvmInt(out, j);
+            llvmOut(out, ", i64 %tmp_off_");
+            llvmInt(out, j);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_ld_");
+            llvmInt(out, j);
+            llvmOut(out, " = load i64, ptr %tmp_elem_");
+            llvmInt(out, j);
             llvmOut(out, "");
             llvmNl(out);
             llvmOut(out, "  store i64 %tmp_ld_");
             llvmInt(out, j);
             llvmOut(out, ", ptr %t");
             llvmInt(out, dst);
+            llvmNl(out);
+
+        } else if (op == 10) {
+            // STORE: *(base + offset) = value — array index store
+            llvmOut(out, "  %tmp_base_");
+            llvmInt(out, j);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, s1);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_off_");
+            llvmInt(out, j);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, s2);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_val_");
+            llvmInt(out, j);
+            llvmOut(out, " = load i64, ptr %t");
+            llvmInt(out, ext);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_addr_");
+            llvmInt(out, j);
+            llvmOut(out, " = inttoptr i64 %tmp_base_");
+            llvmInt(out, j);
+            llvmOut(out, " to ptr");
+            llvmNl(out);
+            llvmOut(out, "  %tmp_elem_");
+            llvmInt(out, j);
+            llvmOut(out, " = getelementptr i8, ptr %tmp_addr_");
+            llvmInt(out, j);
+            llvmOut(out, ", i64 %tmp_off_");
+            llvmInt(out, j);
+            llvmOut(out, "");
+            llvmNl(out);
+            llvmOut(out, "  store i64 %tmp_val_");
+            llvmInt(out, j);
+            llvmOut(out, ", ptr %tmp_elem_");
+            llvmInt(out, j);
+            llvmOut(out, "");
             llvmNl(out);
 
         } else if (op == 12) {
@@ -757,7 +828,7 @@ function emitLLVMCall(buf: string, out: string, src: string, dst: int, s1: int, 
         set argTemps: string = getOutbuf();
         set aTT: int = tmpA; set ai: int = 0;
         while (ai < ac2) {
-            set rr: int = aTT; while (rr >= 1000) { rr = rr - 1000; }
+            set rr: int = aTT - (aTT / 1000) * 1000;
             setInt(argTemps, ai * 8, rr - 1); aTT = aTT / 1000;
             ai = ai + 1;
         }
@@ -810,15 +881,21 @@ function emitLLVMCall(buf: string, out: string, src: string, dst: int, s1: int, 
         llvmNl(out);
     } else {
         // Generic function call
-        llvmOut(out, "  %tmp_call_");
-        llvmInt(out, dst);
-        llvmOut(out, " = call i64 @");
+        set isVoid: int = 0;
+        if (callee != "" && isVoidCallee(callee) == 1) { isVoid = 1; }
+        if (isVoid == 0) {
+            llvmOut(out, "  %tmp_call_");
+            llvmInt(out, dst);
+            llvmOut(out, " = call i64 @");
+        } else {
+            llvmOut(out, "  call void @");
+        }
         llvmOut(out, callee);
         llvmOut(out, "(");
         set ak: int = 0; set aT: int = tmpA;
         while (ak < ac2) {
             if (ak > 0) { llvmOut(out, ", "); }
-            set r: int = aT; while (r >= 1000) { r = r - 1000; }
+            set r: int = aT - (aT / 1000) * 1000;
             set argTmp: int = r - 1;
             // Load the temp
             llvmOut(out, "i64 %tmp_arg_");
@@ -840,11 +917,13 @@ function emitLLVMCall(buf: string, out: string, src: string, dst: int, s1: int, 
         }
         llvmOut(out, ")");
         llvmNl(out);
-        llvmOut(out, "  store i64 %tmp_call_");
-        llvmInt(out, dst);
-        llvmOut(out, ", ptr %t");
-        llvmInt(out, dst);
-        llvmNl(out);
+        if (isVoid == 0) {
+            llvmOut(out, "  store i64 %tmp_call_");
+            llvmInt(out, dst);
+            llvmOut(out, ", ptr %t");
+            llvmInt(out, dst);
+            llvmNl(out);
+        }
     }
 }
 

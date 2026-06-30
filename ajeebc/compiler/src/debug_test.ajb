@@ -1,0 +1,29 @@
+import hir;
+import parser;
+import codegen_c;
+import mir;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set rtSrc: string = readFile("runtime/runtime.ajb");
+    println("rtSrc len=" + itoa(len(rtSrc)));
+    if (len(rtSrc) > 0) { println("rtSrc[0]=" + itoa(charCode(rtSrc, 0))); }
+    set src: string = readFile("../examples/hello.ajb");
+    println("src len=" + itoa(len(src)));
+    hinit(buf);
+    set rtHirProg: int = parseProgram(rtSrc, buf);
+    println("rtProg=" + itoa(rtHirProg));
+    set userHirProg: int = parseProgram(src, buf);
+    println("userProg=" + itoa(userHirProg));
+    println("buf[511]=" + itoa(br(buf, 511)));
+
+    set rtCnt: int = br(buf, rtHirProg + 1);
+    println("rtCnt=" + itoa(rtCnt));
+    set i: int = 0;
+    while (i < 3) {
+        set so: int = br(buf, rtHirProg + 2 + i);
+        println(" fn " + itoa(i) + " off=" + itoa(so) + " tag=" + itoa(br(buf, so)) + " nameOff=" + itoa(br(buf, so+1)) + " nameLen=" + itoa(br(buf, so+2)) + " rt=" + itoa(br(buf, so+3)));
+        i = i + 1;
+    }
+    return 0;
+}

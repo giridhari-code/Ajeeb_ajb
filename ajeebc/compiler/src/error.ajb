@@ -1,0 +1,20 @@
+// ERROR HANDLING — Hinglish error messages with immediate printing
+
+import hir;
+
+function errCount(buf: string): int { return br(buf, 590); }
+
+function errInit(buf: string): void { bw(buf, 590, 0); }
+
+function errAdd(buf: string, line: int, col: int, msg: string): void {
+    set cnt: int = br(buf, 590);
+    bw(buf, 590, cnt + 1);
+    println("[Error] line " + itoa(line) + ":" + itoa(col) + " — " + msg);
+}
+
+function errPrintSummary(buf: string): void {
+    set cnt: int = errCount(buf);
+    if (cnt > 0) {
+        println("[Semantic] " + itoa(cnt) + " error(s).");
+    }
+}

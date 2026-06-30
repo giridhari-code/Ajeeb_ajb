@@ -1,0 +1,23 @@
+struct Box[T] {
+    value: T,
+}
+
+impl[T] Box[T] {
+    fn new(value: T) -> Box[T] {
+        return Box[T] { value: value };
+    }
+
+    fn get(self) -> T {
+        return self.value;
+    }
+}
+
+function main() {
+    set b = Box[Int]::new(42);
+    assert_eq(b.get(), 42);
+
+    set s = Box[String]::new("hello");
+    assert_eq(s.get(), "hello");
+
+    println("PASS: generic_impl_basic");
+}

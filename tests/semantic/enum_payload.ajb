@@ -1,0 +1,10 @@
+enum Result {
+    Ok(int),
+    Err(string)
+}
+
+function main(): int {
+    set r = Result.Ok(42);
+    set e = Result.Err("failed");
+    return 0;
+}

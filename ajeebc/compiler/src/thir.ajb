@@ -1,0 +1,59 @@
+// THIR — Typed HIR (HIR + type annotations)
+//
+// Type annotations stored in lookaside table:
+//   For each HIR node at offset O, type tag is at buffer slot (thirBase + O)
+//
+// Type tags:
+//   0 = unknown/void  1 = int  2 = string  3 = bool  4 = float
+//   5 = fn            6 = struct  7 = enum  8 = array  9 = generic
+//
+// The THIR lowerer reads type annotations and produces typed MIR.
+// Falls back to untyped lowering if no annotation exists (type = 0).
+
+import hir;
+import lower;
+import mir;
+
+// ── Type annotation base (use slot 600 as init flag, table at 30000+)
+function thirBase(): int { return 30000; }
+function thirInitSlot(): int { return 600; }
+
+function thirInit(buf: string): void {
+    bw(buf, thirInitSlot(), 1);
+}
+function thirIsInit(buf: string): int {
+    return br(buf, thirInitSlot());
+}
+
+function thirSetType(buf: string, hirOff: int, typeTag: int): void {
+    bw(buf, thirBase() + hirOff, typeTag);
+}
+function thirGetType(buf: string, hirOff: int): int {
+    return br(buf, thirBase() + hirOff);
+}
+
+// ── Type inference helpers ────────────────────────────────────
+function isIntType(tag: int): int {
+    if (tag == 1) { return 1; }
+    return 0;
+}
+function isStringType(tag: int): int {
+    if (tag == 2) { return 1; }
+    return 0;
+}
+
+// ── THIR → MIR lowering (type-aware wrapper) ──────────────────
+// Delegates to lower.ajb but reads type annotations for
+// type-specific operations (e.g., string vs int operations).
+
+function thirLowerExpr(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src: string): int {
+    return lowerExpr(hirBuf, hOff, mirBuf, scBuf, src);
+}
+
+function thirLowerFnDef(hirBuf: string, fnOff: int, mirBuf: string, scBuf: string, src: string): int {
+    return lowerFnDef(hirBuf, fnOff, mirBuf, scBuf, src);
+}
+
+function thirLowerProgram(buf: string, progOff: int, mirBuf: string, scBuf: string, src: string): int {
+    return lowerProgram(buf, progOff, mirBuf, scBuf, src);
+}

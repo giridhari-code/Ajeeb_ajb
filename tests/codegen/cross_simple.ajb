@@ -1,0 +1,34 @@
+// Simple cross-backend test (basic features only)
+function add(a: int, b: int): int {
+    return a + b;
+}
+
+function factorial(n: int): int {
+    if (n <= 1) { return 1; }
+    return n * factorial(n - 1);
+}
+
+function main(): int {
+    set x = 10;
+    set y = 20;
+    set sum = add(x, y);
+    println("sum: ", itoa(sum));
+
+    set f = factorial(5);
+    println("factorial(5): ", itoa(f));
+
+    set s1 = "Hello";
+    set s2 = "World";
+    set s3 = s1 + " " + s2;
+    println(s3);
+
+    set i = 0;
+    set acc = 0;
+    for (set j = 0; j < 5; j = j + 1) {
+        acc = acc + j;
+    }
+    println("sum 0..4: ", itoa(acc));
+
+    println("DONE");
+    return 0;
+}

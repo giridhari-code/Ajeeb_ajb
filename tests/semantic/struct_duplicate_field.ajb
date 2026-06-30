@@ -1,0 +1,8 @@
+struct User {
+    name: string,
+    name: int
+}
+
+function main(): int {
+    return 0;
+}

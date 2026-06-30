@@ -1,0 +1,9 @@
+struct User {
+    name: string,
+}
+
+impl UnknownType {
+    fn test() {}
+}
+
+function main() {}

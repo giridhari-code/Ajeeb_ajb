@@ -1,0 +1,19 @@
+struct Box[T] {
+    value: T,
+}
+
+impl[T] Box[T] {
+    fn new(value: T) -> Box[T] {
+        return Box[T] { value: value };
+    }
+}
+
+function main() {
+    set b = Box[Int]::new(42);
+    assert_eq(b.value, 42);
+
+    set s = Box[String]::new("hello");
+    assert_eq(s.value, "hello");
+
+    println("PASS: generic_impl_associated_fn");
+}

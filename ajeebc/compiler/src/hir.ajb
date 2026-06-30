@@ -1,0 +1,88 @@
+// HIR — Buffer Helpers & HIR Node Builders
+// All state in getStateBuf() integer buffer (slot-based)
+
+function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val); }
+function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
+
+function mallac(buf: string, slots: int): int {
+    set h: int = br(buf, 510); bw(buf, 510, h + slots); return h;
+}
+
+function nameEq(src: string, ap: int, al: int, bp: int, bl: int): int {
+    if (al != bl) { return 0; }
+    set i: int = 0;
+    while (i < al) {
+        if (charCode(src, ap + i) != charCode(src, bp + i)) { return 0; }
+        i = i + 1;
+    }
+    return 1;
+}
+
+// --- HIR helpers (write head at slot 511) ---
+function hinit(buf: string): void { bw(buf, 511, 512); }
+function halloc(buf: string, slots: int): int {
+    set h: int = br(buf, 511); bw(buf, 511, h + slots); return h;
+}
+function hFn(buf: string, no: int, nl: int, rt: int, pc: int, srcPtr: int): int {
+    set o: int = halloc(buf, 7 + pc * 3); bw(buf, o, 1); bw(buf, o + 1, no);
+    bw(buf, o + 2, nl); bw(buf, o + 3, rt); bw(buf, o + 4, pc);
+    bw(buf, o + 5, srcPtr); return o;
+}
+function hBlock(buf: string, c: int): int {
+    set o: int = halloc(buf, 2 + c); bw(buf, o, 2); bw(buf, o + 1, c); return o;
+}
+function hSet(buf: string, no: int, nl: int, ty: int, v: int): int {
+    set o: int = halloc(buf, 5); bw(buf, o, 3); bw(buf, o + 1, no);
+    bw(buf, o + 2, nl); bw(buf, o + 3, ty); bw(buf, o + 4, v); return o;
+}
+function hReturn(buf: string, v: int, ty: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 8); bw(buf, o + 1, v); bw(buf, o + 2, ty); return o;
+}
+function hCall(buf: string, no: int, nl: int, ac: int): int {
+    set o: int = halloc(buf, 5 + ac); bw(buf, o, 11); bw(buf, o + 1, no);
+    bw(buf, o + 2, nl); bw(buf, o + 3, ac); return o;
+}
+function hBinop(buf: string, l: int, op: int, r: int): int {
+    set o: int = halloc(buf, 5); bw(buf, o, 12); bw(buf, o + 1, l);
+    bw(buf, o + 2, op); bw(buf, o + 3, r); return o;
+}
+function hIdent(buf: string, so: int, sl: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 14); bw(buf, o + 1, so);
+    bw(buf, o + 2, sl); return o;
+}
+function hInt(buf: string, v: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 15); bw(buf, o + 1, v); return o;
+}
+function hStr(buf: string, so: int, sl: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 16); bw(buf, o + 1, so);
+    bw(buf, o + 2, sl); return o;
+}
+function hBool(buf: string, v: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 17); bw(buf, o + 1, v); return o;
+}
+function hIf(buf: string, c: int, t: int, e: int): int {
+    set o: int = halloc(buf, 4); bw(buf, o, 5); bw(buf, o + 1, c);
+    bw(buf, o + 2, t); bw(buf, o + 3, e); return o;
+}
+function hWhile(buf: string, c: int, b: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 6); bw(buf, o + 1, c); bw(buf, o + 2, b); return o;
+}
+function hAssign(buf: string, no: int, nl: int, v: int): int {
+    set o: int = halloc(buf, 4); bw(buf, o, 4); bw(buf, o + 1, no);
+    bw(buf, o + 2, nl); bw(buf, o + 3, v); return o;
+}
+function hBreak(buf: string): int {
+    set o: int = halloc(buf, 1); bw(buf, o, 9); return o;
+}
+function hContinue(buf: string): int {
+    set o: int = halloc(buf, 1); bw(buf, o, 10); return o;
+}
+function hArray(buf: string, ec: int): int {
+    set o: int = halloc(buf, 2 + ec); bw(buf, o, 18); bw(buf, o + 1, ec); return o;
+}
+function hIndex(buf: string, arr: int, idx: int): int {
+    set o: int = halloc(buf, 3); bw(buf, o, 19); bw(buf, o + 1, arr); bw(buf, o + 2, idx); return o;
+}
+function hIndexAssign(buf: string, arr: int, idx: int, val: int): int {
+    set o: int = halloc(buf, 4); bw(buf, o, 20); bw(buf, o + 1, arr); bw(buf, o + 2, idx); bw(buf, o + 3, val); return o;
+}

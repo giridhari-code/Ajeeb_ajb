@@ -1,0 +1,5 @@
+trait Display[T, T] {
+    function print(self, value: T);
+}
+
+function main() {}

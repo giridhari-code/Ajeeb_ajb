@@ -1,0 +1,21 @@
+trait Display {
+    function show(self: User): string;
+}
+
+struct User {
+    name: string,
+    age: int
+}
+
+impl Display for User {
+    function show(self: User): string {
+        return self.name;
+    }
+}
+
+function main() {
+    set u = User { name: "Ajmal", age: 25 };
+    set msg = u.show();
+    println(msg);
+    assert_eq(msg, "Ajmal");
+}

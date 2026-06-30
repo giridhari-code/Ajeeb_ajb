@@ -1,0 +1,17 @@
+class Point {
+    x: int
+    y: int
+    function getX(): int {
+        return 0;
+    }
+}
+
+struct Vec2 {
+    a: int
+    b: int
+}
+
+function main(): int {
+    println("Class and struct support working");
+    return 0;
+}

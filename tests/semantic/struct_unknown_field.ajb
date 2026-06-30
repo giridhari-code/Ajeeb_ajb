@@ -1,0 +1,9 @@
+struct User {
+    name: string
+}
+
+function main(): int {
+    set user = User { name: "Ajeeb" };
+    print(user.invalid_field);
+    return 0;
+}

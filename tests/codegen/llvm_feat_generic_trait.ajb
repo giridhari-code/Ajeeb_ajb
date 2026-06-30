@@ -1,0 +1,24 @@
+// LLVM Feature Test: Generic Traits (single arg println)
+trait Display {
+    fn show(self) -> string;
+}
+
+struct Printer {
+    prefix: string
+}
+
+impl Display for Printer {
+    fn show(self) -> string {
+        return self.prefix;
+    }
+}
+
+function print_item[T: Display](item: T) {
+    println(item.show());
+}
+
+function main(): int {
+    set p = Printer { prefix: "Hello World" };
+    print_item[Printer](p);
+    return 0;
+}

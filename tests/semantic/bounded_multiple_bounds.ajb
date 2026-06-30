@@ -1,0 +1,49 @@
+trait Display {
+    fn show(self) -> string;
+}
+
+trait Printable {
+    fn format(self) -> string;
+}
+
+trait Serializable {
+    fn serialize(self) -> string;
+}
+
+struct User {
+    name: string
+}
+
+impl Display for User {
+    fn show(self) -> string {
+        return self.name;
+    }
+}
+
+impl Printable for User {
+    fn format(self) -> string {
+        return self.name;
+    }
+}
+
+impl Serializable for User {
+    fn serialize(self) -> string {
+        return self.name;
+    }
+}
+
+// Three bounds on T
+fn process[T: Display + Printable + Serializable](item: T) {
+    set a = item.show();
+    set b = item.format();
+    set c = item.serialize();
+    println(a);
+    println(b);
+    println(c);
+}
+
+function main() {
+    set u = User { name: "Ajmal" };
+    process[User](u);
+    println("multiple bounds OK");
+}

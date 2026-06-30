@@ -1,0 +1,12 @@
+// SEMANTIC — Type checking stub (incremental build)
+
+import error;
+
+function semInit(buf: string): void {
+    errInit(buf);
+}
+
+function semAnalyze(buf: string, src: string, progOff: int): int {
+    semInit(buf);
+    return 1;
+}

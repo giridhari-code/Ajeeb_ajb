@@ -1,0 +1,20 @@
+struct Printer {
+    name: String,
+}
+
+trait Stringifiable[T] {
+    function to_string(self, value: T) -> String;
+}
+
+impl Stringifiable[Int] for Printer {
+    function to_string(self, value: Int) -> String {
+        return "number";
+    }
+}
+
+function main() {
+    set p = Printer { name: "test" };
+    set s = p.to_string(42);
+    assert_eq(s, "number");
+    println("PASS: generic_trait_method_call");
+}

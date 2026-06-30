@@ -1,0 +1,5 @@
+function main(): int {
+    const X: int = 42;
+    println(itoa(X));
+    return 0;
+}

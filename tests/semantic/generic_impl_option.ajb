@@ -1,0 +1,34 @@
+enum Option[T] {
+    Some(T),
+    None,
+}
+
+impl[T] Option[T] {
+    fn is_some(self) -> bool {
+        set result = match self {
+            Option::Some(_) => true,
+            Option::None => false,
+        };
+        return result;
+    }
+
+    fn is_none(self) -> bool {
+        set result = match self {
+            Option::Some(_) => false,
+            Option::None => true,
+        };
+        return result;
+    }
+}
+
+function main() {
+    set some_val = Option[Int].Some(42);
+    assert_eq(some_val.is_some(), true);
+    assert_eq(some_val.is_none(), false);
+
+    set none_val = Option[Int].None;
+    assert_eq(none_val.is_some(), false);
+    assert_eq(none_val.is_none(), true);
+
+    println("PASS: generic_impl_option");
+}

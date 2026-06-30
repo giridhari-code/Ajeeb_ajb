@@ -1,0 +1,11 @@
+trait Display {
+    fn show(self) -> string;
+}
+
+struct Container[T: Display] {
+    value: T
+}
+
+function main() {
+    set bad = Container[int] { value: 42 };
+}

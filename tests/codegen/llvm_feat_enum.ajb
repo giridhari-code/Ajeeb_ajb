@@ -1,0 +1,31 @@
+// LLVM Feature Test: Enums + Match (correct :: syntax)
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+enum Option {
+    Some(int),
+    None
+}
+
+function main(): int {
+    set c = Color::Red;
+    set opt = Option::Some(42);
+
+    set cmsg = match c {
+        Color::Red => "Red",
+        Color::Green => "Green",
+        Color::Blue => "Blue",
+    };
+    println(cmsg);
+
+    set omsg = match opt {
+        Option::Some(v) => itoa(v),
+        Option::None => "None",
+    };
+    println(omsg);
+
+    return 0;
+}

@@ -1,0 +1,10 @@
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+function main(): int {
+    set c = Color.Red;
+    return 0;
+}

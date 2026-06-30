@@ -1,0 +1,1 @@
+class Point { x: int y: int } function main(): int { set p: int = new Point; println("ok"); return 0; }

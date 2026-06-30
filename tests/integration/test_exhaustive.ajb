@@ -1,0 +1,18 @@
+import option;
+
+// This should trigger a non-exhaustive match error (missing Option::None)
+function bad_match(x: Option[Int]): Int {
+    match x {
+        Option::Some(val) => val,
+    }
+}
+
+function main(): Int {
+    // This is fine — exhaustive with wildcard
+    set x = Option::Some(42);
+    match x {
+        Option::Some(val) => println(itoa(val)),
+        _ => println("none"),
+    }
+    return 0;
+}

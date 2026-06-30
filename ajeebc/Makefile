@@ -19,9 +19,9 @@ RUNTIME_O   := $(BUILD)/runtime.o
 AJEEBC      := $(BUILD)/ajeebc
 
 RS_FILES    := $(shell find $(RS_SRC) -name '*.rs' 2>/dev/null)
-TESTS       := test_simple test_math test_if test_while test_for test_strings
+TESTS       := test_simple test_math test_if test_while test_for test_strings test_array
 
-.PHONY: all native rust test bootstrap bootstrap-full clean clean-all help
+.PHONY: all native rust test bootstrap bootstrap-full clean clean-all clean-cache help
 
 # Default: use pre-built ajeebc (no Rust needed)
 all: native
@@ -126,3 +126,7 @@ clean:
 clean-all: clean
 	rm -rf $(BUILD)
 	@echo "🧹 All build artifacts removed"
+
+clean-cache:
+	rm -rf .ajeeb_cache
+	@echo "🧹 Cache saaf ho gaya!"

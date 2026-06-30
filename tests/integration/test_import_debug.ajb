@@ -1,0 +1,6 @@
+// debug: import test
+import lexer;
+function main(): int {
+    println("import test");
+    return 0;
+}

@@ -1,0 +1,6 @@
+@import math as m
+
+function main(): int {
+    set r: int = m.add(10, 32);
+    return r;
+}

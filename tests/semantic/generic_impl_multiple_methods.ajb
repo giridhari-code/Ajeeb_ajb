@@ -1,0 +1,26 @@
+struct Pair[A, B] {
+    first: A,
+    second: B,
+}
+
+impl[A, B] Pair[A, B] {
+    fn new(first: A, second: B) -> Pair[A, B] {
+        return Pair[A, B] { first: first, second: second };
+    }
+
+    fn get_first(self) -> A {
+        return self.first;
+    }
+
+    fn get_second(self) -> B {
+        return self.second;
+    }
+}
+
+function main() {
+    set p = Pair[Int, String]::new(42, "hello");
+    assert_eq(p.get_first(), 42);
+    assert_eq(p.get_second(), "hello");
+
+    println("PASS: generic_impl_multiple_methods");
+}

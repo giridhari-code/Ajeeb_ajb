@@ -1,0 +1,38 @@
+import hir;
+import parser;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set src: string = readFile("runtime/runtime.ajb");
+    set srclen: int = len(src);
+    println("src len=" + itoa(srclen));
+    
+    lexInit(buf);
+    set pos: int = br(buf, 200010);
+    println("pos=" + itoa(pos));
+    
+    skipWS(src, buf);
+    pos = br(buf, 200010);
+    println("after skipWS: pos=" + itoa(pos) + " src[p]=" + itoa(charCode(src, 0)));
+    
+    return 0;
+}
+
+function skipWS(src: string, buf: string): void {
+    set p: int = br(buf, 200010);
+    while (p < len(src)) {
+        set c: int = charCode(src, p);
+        if (c == 32 || c == 10 || c == 13 || c == 9) { p = p + 1; }
+        else if (c == 47 && p + 1 < len(src) && charCode(src, p + 1) == 47) {
+            p = p + 2;
+            while (p < len(src) && charCode(src, p) != 10) { p = p + 1; }
+        }
+        else if (c == 47 && p + 1 < len(src) && charCode(src, p + 1) == 42) {
+            p = p + 2;
+            while (p < len(src) && !(charCode(src, p) == 42 && p + 1 < len(src) && charCode(src, p + 1) == 47)) { p = p + 1; }
+            p = p + 2;
+        }
+        else { bw(buf, 200010, p); return; }
+    }
+    bw(buf, 200010, p);
+}

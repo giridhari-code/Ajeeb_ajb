@@ -1,0 +1,20 @@
+import hir;
+import parser;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set src: string = readFile("runtime/runtime.ajb");
+    
+    lexInit(buf);
+    set pos: int = br(buf, 200010);
+    println("lexInit: pos=" + itoa(pos) + " tokType=" + itoa(br(buf, 200000)));
+    
+    nextTok(src, buf);
+    set pos2: int = br(buf, 200010);
+    println("nextTok: pos=" + itoa(pos2) + " tokType=" + itoa(br(buf, 200000)));
+    
+    set c: int = charCode(src, 0);
+    println("first char: " + itoa(c) + " = '" + chr(c) + "'");
+    
+    return 0;
+}

@@ -1,0 +1,6 @@
+import lexer;
+
+function main(): int {
+    println("import works");
+    return 0;
+}

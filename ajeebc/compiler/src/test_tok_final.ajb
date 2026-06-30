@@ -1,0 +1,23 @@
+import hir;
+import parser;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set src: string = readFile("runtime/runtime.ajb");
+    set srclen: int = len(src);
+    println(srclen);
+    
+    lexInit(buf);
+    nextTok(src, buf);
+    
+    set p: int = br(buf, 15210);
+    set tt: int = br(buf, 15200);
+    set so: int = br(buf, 15202);
+    set sl: int = br(buf, 15203);
+    
+    println(p);
+    println(tt);
+    println(so);
+    println(sl);
+    return 0;
+}

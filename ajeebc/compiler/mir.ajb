@@ -143,7 +143,7 @@ function isTempUsedByCallExt(buf: string, boff: int, ic: int, dst: int, skipJ: i
             set tmpDiv: int = callExt;
             while (tmpDiv > 0) {
                 set argTmp: int = tmpDiv;
-                while (argTmp >= 1000) { argTmp = argTmp - 1000; }
+                argTmp = argTmp - (argTmp / 1000) * 1000;
                 if (argTmp - 1 == dst) { return 1; }
                 tmpDiv = tmpDiv / 1000;
             }
@@ -239,5 +239,5 @@ function optimizeMirFn(buf: string, foff: int): void {
 function optimizeMirProgram(buf: string, progOff: int): void {
     set cnt: int = br(buf, progOff + 1);
     set j: int = 0;
-    while (j < cnt) { set fnOff: int = br(buf, progOff + 2 + j); optimizeMirFn(buf, fnOff); j = j + 1; }
+    while (j < cnt) { set fnOff: int = br(buf, progOff + 2 + j); if (fnOff > 1000000 || (fnOff > 0 && fnOff < 256)) { println("MIR_BAD off=" + itoa(fnOff)); } else { optimizeMirFn(buf, fnOff); } j = j + 1; }
 }

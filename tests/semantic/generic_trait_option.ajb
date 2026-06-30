@@ -1,0 +1,26 @@
+enum Option[T] {
+    Some(T),
+    None,
+}
+
+trait Optional[T] {
+    function is_some(self, value: T) -> Bool;
+}
+
+impl Optional[Int] for Option[Int] {
+    function is_some(self, value: Int) -> Bool {
+        set result = match self {
+            Option::Some(_) => true,
+            Option::None => false,
+        };
+        return result;
+    }
+}
+
+function main() {
+    set some_val = Option[Int].Some(42);
+    assert_eq(some_val.is_some(42), true);
+    set none_val = Option[Int].None;
+    assert_eq(none_val.is_some(0), false);
+    println("PASS: generic_trait_option");
+}

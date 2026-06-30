@@ -1,0 +1,9 @@
+// FAIL: Generic enum ref with 2 type args (expects 1)
+enum Option[T] {
+    Some(T),
+    None,
+}
+
+function main() {
+    set v = Option[Int, String].Some(42);
+}

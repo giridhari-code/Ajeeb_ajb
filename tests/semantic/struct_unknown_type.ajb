@@ -1,0 +1,7 @@
+struct User {
+    name: FakeType
+}
+
+function main(): int {
+    return 0;
+}

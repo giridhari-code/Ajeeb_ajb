@@ -1,0 +1,8 @@
+// FAIL: Generic struct with 2 type args (expects 1)
+struct Box[T] {
+    value: T;
+}
+
+function main() {
+    set b = Box[Int, String] { value: 42 };
+}

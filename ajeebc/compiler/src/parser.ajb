@@ -1,0 +1,488 @@
+// Parser — Lexer + Multi-pass HIR Parser
+// Uses bw/br from hir.ajb
+
+import lexer;
+
+// --- Lexer (slot 15200=tokType, 15202=tokStrOff, 15203=tokStrLen, 15210=lexPos) ---
+function lexInit(buf: string): void { bw(buf, 15200, 0); bw(buf, 15201, 0); bw(buf, 15210, 0); }
+function tokType(buf: string): int { return br(buf, 15200); }
+function tokStrOff(buf: string): int { return br(buf, 15202); }
+function tokStrLen(buf: string): int { return br(buf, 15203); }
+function lexSkipWS(src: string, buf: string): void {
+    set p: int = br(buf, 15210);
+    while (p < len(src)) {
+        set c: int = charCode(src, p);
+        if (c == 32 || c == 10 || c == 13 || c == 9) { p = p + 1; }
+        else if (c == 47 && p + 1 < len(src) && charCode(src, p + 1) == 47) {
+            p = p + 2;
+            while (p < len(src) && charCode(src, p) != 10) { p = p + 1; }
+        }
+        else if (c == 47 && p + 1 < len(src) && charCode(src, p + 1) == 42) {
+            p = p + 2;
+            while (p < len(src) && !(charCode(src, p) == 42 && p + 1 < len(src) && charCode(src, p + 1) == 47)) { p = p + 1; }
+            p = p + 2;
+        }
+        else { bw(buf, 15210, p); return; }
+    }
+    bw(buf, 15210, p);
+}
+function lexNumber(src: string, buf: string): void {
+    set p: int = br(buf, 15210); set start: int = p;
+    while (p < len(src) && charCode(src, p) >= 48 && charCode(src, p) <= 57) { p = p + 1; }
+    bw(buf, 15210, p); bw(buf, 15202, start); bw(buf, 15203, p - start);
+    bw(buf, 15200, 1);
+}
+function lexIdent(src: string, buf: string): void {
+    set p: int = br(buf, 15210); set start: int = p;
+    set c: int = charCode(src, p);
+    if ((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95) { p = p + 1; }
+    while (p < len(src)) {
+        c = charCode(src, p);
+        if ((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 95) { p = p + 1; }
+        else { break; }
+    }
+    bw(buf, 15210, p); bw(buf, 15202, start); bw(buf, 15203, p - start); bw(buf, 15200, 3);
+}
+function lexString(src: string, buf: string): void {
+    set p: int = br(buf, 15210) + 1; set start: int = p;
+    while (p < len(src) && charCode(src, p) != 34) { p = p + 1; }
+    bw(buf, 15210, p + 1); bw(buf, 15202, start); bw(buf, 15203, p - start); bw(buf, 15200, 2);
+}
+function nextTok(src: string, buf: string): void {
+    lexSkipWS(src, buf);
+    set p: int = br(buf, 15210);
+    if (p >= len(src)) { bw(buf, 15200, 0); return; }
+    set c: int = charCode(src, p);
+    if (c >= 48 && c <= 57) { lexNumber(src, buf); return; }
+    if (c == 34) { lexString(src, buf); return; }
+    if ((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95) { lexIdent(src, buf); return; }
+    bw(buf, 15210, p + 1); bw(buf, 15202, p); bw(buf, 15203, 1);
+    if (c == 40) { bw(buf, 15200, 5); }
+    else if (c == 41) { bw(buf, 15200, 6); }
+    else if (c == 123) { bw(buf, 15200, 7); }
+    else if (c == 125) { bw(buf, 15200, 8); }
+    else if (c == 59) { bw(buf, 15200, 9); }
+    else if (c == 44) { bw(buf, 15200, 10); }
+    else if (c == 37) { bw(buf, 15200, 28); }
+    else if (c == 43) { set c2: int = charCode(src, p + 1); if (c2 == 43) { bw(buf, 15210, p + 2); bw(buf, 15200, 30); } else if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 32); } else { bw(buf, 15200, 11); } }
+    else if (c == 45) { set c2: int = charCode(src, p + 1); if (c2 == 45) { bw(buf, 15210, p + 2); bw(buf, 15200, 31); } else if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 33); } else { bw(buf, 15200, 12); } }
+    else if (c == 42) { set c2: int = charCode(src, p + 1); if (c2 == 42) { bw(buf, 15210, p + 2); bw(buf, 15200, 29); } else if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 34); } else { bw(buf, 15200, 13); } }
+    else if (c == 47) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 35); } else { bw(buf, 15200, 14); } }
+    else if (c == 58) { bw(buf, 15200, 25); }
+    else if (c == 33) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 17); } else { bw(buf, 15200, 24); } }
+    else if (c == 61) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 16); } else { bw(buf, 15200, 15); } }
+    else if (c == 60) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 20); } else { bw(buf, 15200, 18); } }
+    else if (c == 62) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 21); } else { bw(buf, 15200, 19); } }
+    else if (c == 38 && charCode(src, p + 1) == 38) { bw(buf, 15210, p + 2); bw(buf, 15200, 22); }
+    else if (c == 124 && charCode(src, p + 1) == 124) { bw(buf, 15210, p + 2); bw(buf, 15200, 23); }
+    else if (c == 91) { bw(buf, 15200, 26); }
+    else if (c == 93) { bw(buf, 15200, 27); }
+    else { bw(buf, 15200, 0); }
+}
+function isKwd(src: string, buf: string, kw: string): int {
+    set off: int = tokStrOff(buf); set ln: int = tokStrLen(buf);
+    if (ln != len(kw)) { return 0; }
+    set i: int = 0;
+    while (i < ln) {
+        if (charCode(src, off + i) != charCode(kw, i)) { return 0; }
+        i = i + 1;
+    }
+    return 1;
+}
+function expectTok(src: string, buf: string, tt: int): int {
+    if (tokType(buf) != tt) {
+        set got: int = tokType(buf);
+        set msg: string = "Expected token type " + itoa(tt) + " but got " + itoa(got);
+        if (tt == 9) { msg = "Semicolon (;) chahiye tha!"; }
+        else if (tt == 5) { msg = "Opening paren '(' chahiye tha!"; }
+        else if (tt == 6) { msg = "Closing paren ')' chahiye tha!"; }
+        else if (tt == 7) { msg = "Opening brace '{' chahiye tha!"; }
+        else if (tt == 8) { msg = "Closing brace '}' chahiye tha!"; }
+        println(msg);
+        return 0;
+    }
+    nextTok(src, buf); return 1;
+}
+function synchronize(src: string, buf: string): void {
+    if (tokType(buf) == 0) { return; }
+    while (tokType(buf) != 0 && tokType(buf) != 9 && tokType(buf) != 8) { nextTok(src, buf); }
+    if (tokType(buf) == 9) { nextTok(src, buf); }
+}
+
+// --- Parser ---
+function parseType(src: string, buf: string): int {
+    set baseTy: int = 0;
+    if (isKwd(src, buf, "int")) { nextTok(src, buf); baseTy = 1; }
+    else if (isKwd(src, buf, "string")) { nextTok(src, buf); baseTy = 2; }
+    else if (isKwd(src, buf, "bool")) { nextTok(src, buf); baseTy = 3; }
+    else if (isKwd(src, buf, "void")) { nextTok(src, buf); baseTy = 5; }
+    else { return 0; }
+    if (tokType(buf) == 26) { nextTok(src, buf); if (expectTok(src, buf, 27) == 0) { return 0; } baseTy = baseTy + 10; }
+    return baseTy;
+}
+function parseFnDef(src: string, buf: string): int {
+    if (tokType(buf) != 3) { return 0; }
+    set nameOff: int = tokStrOff(buf); set nameLen: int = tokStrLen(buf);
+    nextTok(src, buf);
+    if (expectTok(src, buf, 5) == 0) { return 0; }
+    set paramCount: int = 0;
+    set pBuf: string = getOutbuf();
+    if (tokType(buf) != 6) {
+        while (1 == 1) {
+            if (tokType(buf) != 3) { return 0; }
+            set pOff: int = tokStrOff(buf); set pLen: int = tokStrLen(buf);
+            nextTok(src, buf);
+            if (expectTok(src, buf, 25) == 0) { return 0; }
+            set pTy: int = parseType(src, buf);
+            setInt(pBuf, paramCount * 24, pOff);
+            setInt(pBuf, paramCount * 24 + 8, pLen);
+            setInt(pBuf, paramCount * 24 + 16, pTy);
+            paramCount = paramCount + 1;
+            if (tokType(buf) != 10) { break; }
+            nextTok(src, buf);
+        }
+    }
+    if (expectTok(src, buf, 6) == 0) { return 0; }
+    set rt: int = 5;
+    if (tokType(buf) == 25) { nextTok(src, buf); rt = parseType(src, buf); }
+    set fnOff: int = hFn(buf, nameOff, nameLen, rt, paramCount, src);
+    set pi: int = 0;
+    while (pi < paramCount) {
+        bw(buf, fnOff + 6 + pi * 3, getInt(pBuf, pi * 24));
+        bw(buf, fnOff + 7 + pi * 3, getInt(pBuf, pi * 24 + 8));
+        bw(buf, fnOff + 8 + pi * 3, getInt(pBuf, pi * 24 + 16));
+        pi = pi + 1;
+    }
+    if (expectTok(src, buf, 7) == 0) { return 0; }
+    set body: int = parseBlockBody(src, buf, rt);
+    bw(buf, fnOff + 6 + paramCount * 3, body);
+    if (expectTok(src, buf, 8) == 0) { return 0; }
+    return fnOff;
+}
+function parseBlockBody(src: string, buf: string, retTy: int): int {
+    set stmtCount: int = 0;
+    while (tokType(buf) != 8 && tokType(buf) != 0) {
+        set stmt: int = parseStmt(src, buf);
+        if (stmt != 0) {
+            bw(buf, 400 + stmtCount, stmt);
+            stmtCount = stmtCount + 1;
+        } else {
+            synchronize(src, buf);
+        }
+    }
+    set blk: int = hBlock(buf, stmtCount);
+    set sj: int = 0;
+    while (sj < stmtCount) {
+        bw(buf, blk + 2 + sj, br(buf, 400 + sj));
+        sj = sj + 1;
+    }
+    return blk;
+}
+function parseBlock(src: string, buf: string): int {
+    if (expectTok(src, buf, 7) == 0) { return 0; }
+    if (tokType(buf) == 8) { nextTok(src, buf); return hBlock(buf, 0); }
+    set sc2: int = 0;
+    while (tokType(buf) != 8 && tokType(buf) != 0) {
+        set sOff: int = parseStmt(src, buf);
+        if (sOff != 0) { bw(buf, 250 + sc2, sOff); sc2 = sc2 + 1; }
+        else { synchronize(src, buf); }
+    }
+    expectTok(src, buf, 8);
+    set blk: int = hBlock(buf, sc2);
+    set sj2: int = 0;
+    while (sj2 < sc2) { bw(buf, blk + 2 + sj2, br(buf, 250 + sj2)); sj2 = sj2 + 1; }
+    return blk;
+}
+function parseSetStmt(src: string, buf: string): int {
+    nextTok(src, buf);
+    if (tokType(buf) != 3) { return 0; }
+    set no: int = tokStrOff(buf); set nl: int = tokStrLen(buf);
+    nextTok(src, buf);
+    set ty: int = 0;
+    if (tokType(buf) == 25) { nextTok(src, buf); ty = parseType(src, buf); }
+    if (expectTok(src, buf, 15) == 0) { return 0; }
+    set v: int = parseExpr(src, buf);
+    if (expectTok(src, buf, 9) == 0) { return 0; }
+    return hSet(buf, no, nl, ty, v);
+}
+function parseReturnStmt(src: string, buf: string): int {
+    nextTok(src, buf);
+    set v: int = 0;
+    if (tokType(buf) != 9) { v = parseExpr(src, buf); }
+    if (expectTok(src, buf, 9) == 0) { return 0; }
+    return hReturn(buf, v, 0);
+}
+function parseIfStmt(src: string, buf: string): int {
+    nextTok(src, buf);
+    if (expectTok(src, buf, 5) == 0) { return 0; }
+    set cond: int = parseExpr(src, buf);
+    if (expectTok(src, buf, 6) == 0) { return 0; }
+    set thenBlock: int = parseBlock(src, buf);
+    set elseBlock: int = 0;
+    if (isKwd(src, buf, "else")) { nextTok(src, buf); if (isKwd(src, buf, "if")) { elseBlock = parseIfStmt(src, buf); } else { elseBlock = parseBlock(src, buf); } }
+    return hIf(buf, cond, thenBlock, elseBlock);
+}
+function parseWhileStmt(src: string, buf: string): int {
+    nextTok(src, buf);
+    if (expectTok(src, buf, 5) == 0) { return 0; }
+    set cond: int = parseExpr(src, buf);
+    if (expectTok(src, buf, 6) == 0) { return 0; }
+    set body: int = parseBlock(src, buf);
+    return hWhile(buf, cond, body);
+}
+function parseIntFromSrc(src: string, off: int, ln: int): int {
+    set v: int = 0; set i: int = 0;
+    while (i < ln) { v = v * 10 + (charCode(src, off + i) - 48); i = i + 1; }
+    return v;
+}
+function parseAtom(src: string, buf: string): int {
+    set tt: int = tokType(buf);
+    if (tt == 24) { nextTok(src, buf); set inner: int = parseBinary(src, buf, 1); return hBinop(buf, inner, 5, hInt(buf, 0)); }
+    if (tt == 1) { set so: int = tokStrOff(buf); set sl: int = tokStrLen(buf); nextTok(src, buf); return hInt(buf, parseIntFromSrc(src, so, sl)); }
+    if (tt == 2) { set so: int = tokStrOff(buf); set sl: int = tokStrLen(buf); nextTok(src, buf); return hStr(buf, so, sl); }
+    if (tt == 3) { set so: int = tokStrOff(buf); set sl: int = tokStrLen(buf); nextTok(src, buf);
+        if (tokType(buf) == 5) {
+            set depth: int = br(buf, 498); bw(buf, 498, depth + 1);
+            set argBuf: string = getOutbuf(); set ac: int = 0;
+            set argBase: int = 0 + depth * 64;
+            nextTok(src, buf);
+            while (tokType(buf) != 6 && tokType(buf) != 0) {
+                if (tokType(buf) != 6 && tokType(buf) != 0 && ac > 1000) { println("FATAL tt=" + itoa(tokType(buf)) + " ac=" + itoa(ac) + " sl=" + itoa(len(src)) + " sp=" + itoa(br(buf, 15210))); bw(buf, 15200, 6); break; }
+                set arg: int = parseExpr(src, buf);
+                setInt(argBuf, argBase + ac * 8, arg); ac = ac + 1;
+                if (tokType(buf) == 10) { nextTok(src, buf); }
+            }
+    if (expectTok(src, buf, 6) == 0) { return 0; }
+            set callNode: int = hCall(buf, so, sl, ac);
+            set j: int = 0;
+            while (j < ac) { bw(buf, callNode + 4 + j, getInt(argBuf, argBase + j * 8)); j = j + 1; }
+            bw(buf, 498, depth);
+            return callNode;
+        }
+        if (tokType(buf) == 26) {
+            set arrNode: int = hIdent(buf, so, sl);
+            while (tokType(buf) == 26) {
+                nextTok(src, buf);
+                set idxExpr: int = parseExpr(src, buf);
+                expectTok(src, buf, 27);
+                set idxNode: int = hIndex(buf, arrNode, idxExpr);
+                arrNode = idxNode;
+            }
+            return arrNode;
+        }
+        if (tokType(buf) == 30) { nextTok(src, buf); return hAssign(buf, so, sl, hBinop(buf, hIdent(buf, so, sl), 1, hInt(buf, 1))); }
+        if (tokType(buf) == 31) { nextTok(src, buf); return hAssign(buf, so, sl, hBinop(buf, hIdent(buf, so, sl), 2, hInt(buf, 1))); }
+        return hIdent(buf, so, sl);
+    }
+    if (tt == 5) { nextTok(src, buf); set e: int = parseExpr(src, buf); if (expectTok(src, buf, 6) == 0) { return 0; } return e; }
+    if (tt == 30 || tt == 31) {
+        set op: int = 1; if (tt == 31) { op = 2; }
+        nextTok(src, buf); set target: int = parseAtom(src, buf);
+        if (br(buf, target) == 14) {
+            set no: int = br(buf, target + 1); set nl: int = br(buf, target + 2);
+            return hAssign(buf, no, nl, hBinop(buf, hIdent(buf, no, nl), op, hInt(buf, 1)));
+        }
+        return 0;
+    }
+    if (tt == 26) {
+        nextTok(src, buf);
+        set elemBuf: string = getOutbuf(); set ec: int = 0;
+        set elemBase: int = 10000;
+        while (tokType(buf) != 27 && tokType(buf) != 0) {
+            set elem: int = parseExpr(src, buf);
+            setInt(elemBuf, elemBase + ec * 8, elem); ec = ec + 1;
+            if (tokType(buf) == 10) { nextTok(src, buf); }
+        }
+        expectTok(src, buf, 27);
+        set arrNode: int = hArray(buf, ec);
+        set j: int = 0;
+        while (j < ec) { bw(buf, arrNode + 2 + j, getInt(elemBuf, elemBase + j * 8)); j = j + 1; }
+        return arrNode;
+    }
+    return 0;
+}
+function parseForStmt(src: string, buf: string): int {
+    nextTok(src, buf);
+    if (expectTok(src, buf, 5) == 0) { return 0; }
+    set init: int = 0;
+    if (tokType(buf) != 9) {
+        if (isKwd(src, buf, "set")) { init = parseSetStmt(src, buf); }
+        else { init = parseExpr(src, buf); expectTok(src, buf, 9); }
+    } else { nextTok(src, buf); }
+    set cond: int = 0;
+    if (tokType(buf) != 9) { cond = parseExpr(src, buf); }
+    expectTok(src, buf, 9);
+    set update: int = 0;
+    if (tokType(buf) != 6) { update = parseExpr(src, buf); }
+    if (expectTok(src, buf, 6) == 0) { return 0; }
+    set body: int = parseBlock(src, buf);
+    set stmtCount: int = 1;
+    if (update != 0) { stmtCount = 2; }
+    set combinedBody: int = hBlock(buf, stmtCount);
+    bw(buf, combinedBody + 2, body);
+    if (update != 0) { bw(buf, combinedBody + 3, update); }
+    set whileNode: int = hWhile(buf, cond, combinedBody);
+    set outerCount: int = 1;
+    if (init != 0) { outerCount = 2; }
+    set outerBlk: int = hBlock(buf, outerCount);
+    set idx: int = 0;
+    if (init != 0) { bw(buf, outerBlk + 2, init); idx = 1; }
+    bw(buf, outerBlk + 2 + idx, whileNode);
+    return outerBlk;
+}
+function tokenPrec(buf: string): int {
+    set tt: int = tokType(buf);
+    if (tt == 23) { return 1; }
+    if (tt == 22) { return 2; }
+    if (tt == 16 || tt == 17) { return 3; }
+    if (tt == 18 || tt == 19 || tt == 20 || tt == 21) { return 4; }
+    if (tt == 11 || tt == 12 || tt == 28) { return 5; }
+    if (tt == 13 || tt == 14 || tt == 29) { return 6; }
+    return 0;
+}
+function parseBinary(src: string, buf: string, minPrec: int): int {
+    set left: int = parseAtom(src, buf);
+    while (tokenPrec(buf) >= minPrec) {
+        set tt: int = tokType(buf);
+        set prec: int = tokenPrec(buf);
+        if (tt == 29) {
+            nextTok(src, buf);
+            set right: int = parseBinary(src, buf, prec + 1);
+            left = hBinop(buf, left, 16, right);
+        } else {
+            set opCode: int = 0;
+            if (tt == 11) { opCode = 1; }
+            else if (tt == 12) { opCode = 2; }
+            else if (tt == 13) { opCode = 3; }
+            else if (tt == 14) { opCode = 4; }
+            else if (tt == 28) { opCode = 15; }
+            else if (tt == 16) { opCode = 5; }
+            else if (tt == 17) { opCode = 6; }
+            else if (tt == 18) { opCode = 7; }
+            else if (tt == 19) { opCode = 8; }
+            else if (tt == 20) { opCode = 9; }
+            else if (tt == 21) { opCode = 10; }
+            else if (tt == 22) { opCode = 11; }
+            else if (tt == 23) { opCode = 12; }
+            nextTok(src, buf);
+            set right: int = parseBinary(src, buf, prec + 1);
+            left = hBinop(buf, left, opCode, right);
+        }
+    }
+    return left;
+}
+function parseExpr(src: string, buf: string): int {
+    set left: int = parseBinary(src, buf, 1);
+    set tt: int = tokType(buf);
+    if (tt == 15) {
+        set lt: int = br(buf, left);
+        if (lt == 14) {
+            set no: int = br(buf, left + 1); set nl: int = br(buf, left + 2);
+            nextTok(src, buf);
+            set v: int = parseExpr(src, buf);
+            return hAssign(buf, no, nl, v);
+        }
+        if (lt == 19) {
+            set arr: int = br(buf, left + 1); set idx: int = br(buf, left + 2);
+            nextTok(src, buf);
+            set v: int = parseExpr(src, buf);
+            return hIndexAssign(buf, arr, idx, v);
+        }
+    }
+    if (tt == 32 || tt == 33 || tt == 34 || tt == 35) {
+        set lt: int = br(buf, left);
+        if (lt == 14) {
+            set no: int = br(buf, left + 1); set nl: int = br(buf, left + 2);
+            set binOp: int = 1;
+            if (tt == 33) { binOp = 2; }
+            else if (tt == 34) { binOp = 3; }
+            else if (tt == 35) { binOp = 4; }
+            nextTok(src, buf);
+            set v: int = parseExpr(src, buf);
+            return hAssign(buf, no, nl, hBinop(buf, hIdent(buf, no, nl), binOp, v));
+        }
+    }
+    return left;
+}
+function parseImportFile(src: string, buf: string, origSrc: string): void {
+    set saveOff: int = br(buf, 15202);
+    lexInit(buf); nextTok(src, buf);
+    while (tokType(buf) != 0) {
+        set stmt: int = parseStmt(src, buf);
+        if (stmt != 0) {
+            set sc: int = br(buf, 491);
+            setInt(getStateBuf(), sc * 8, stmt);
+            bw(buf, 491, sc + 1);
+        } else {
+            synchronize(src, buf);
+        }
+    }
+    bw(buf, 15210, saveOff);
+    nextTok(origSrc, buf);
+}
+function parseStmt(src: string, buf: string): int {
+    if (isKwd(src, buf, "import")) {
+        nextTok(src, buf);
+        if (tokType(buf) != 3) { println("Import module name expected"); return 0; }
+        set mo: int = tokStrOff(buf); set ml: int = tokStrLen(buf);
+        nextTok(src, buf);
+        if (expectTok(src, buf, 9) == 0) { return 0; }
+        set modName: string = substring(src, mo, mo + ml);
+    set fpath: string = str_concat("compiler/src/", str_concat(modName, ".ajb"));
+    set fsrc: string = readFile(fpath);
+    if (len(fsrc) == 0) { println("Import file not found: " + fpath); return 0; }
+    parseImportFile(fsrc, buf, src);
+    return hBlock(buf, 0);
+    }
+    if (isKwd(src, buf, "set")) { return parseSetStmt(src, buf); }
+    if (isKwd(src, buf, "return")) { return parseReturnStmt(src, buf); }
+    if (isKwd(src, buf, "if")) { return parseIfStmt(src, buf); }
+    if (isKwd(src, buf, "while")) { return parseWhileStmt(src, buf); }
+    if (isKwd(src, buf, "for")) { return parseForStmt(src, buf); }
+    if (isKwd(src, buf, "break")) {
+        nextTok(src, buf);
+        if (tokType(buf) == 9) { nextTok(src, buf); }
+        return hBreak(buf);
+    }
+    if (isKwd(src, buf, "continue")) {
+        nextTok(src, buf);
+        if (tokType(buf) == 9) { nextTok(src, buf); }
+        return hContinue(buf);
+    }
+    if (isKwd(src, buf, "function")) {
+        nextTok(src, buf);
+        set fno: int = parseFnDef(src, buf);
+        return fno;
+    }
+
+    set expr: int = parseExpr(src, buf);
+    if (expectTok(src, buf, 9) == 0) {
+        while (tokType(buf) != 9 && tokType(buf) != 8 && tokType(buf) != 0) { nextTok(src, buf); }
+        if (tokType(buf) == 9) { nextTok(src, buf); }
+    }
+    return expr;
+}
+function parseProgram(src: string, buf: string): int {
+    lexInit(buf);
+    nextTok(src, buf);
+    bw(buf, 491, 0);
+    while (tokType(buf) != 0) {
+        set stmt: int = parseStmt(src, buf);
+        if (stmt != 0) {
+            set sc: int = br(buf, 491);
+            setInt(getStateBuf(), sc * 8, stmt);
+            bw(buf, 491, sc + 1);
+        } else {
+            synchronize(src, buf);
+        }
+    }
+    set cnt: int = br(buf, 491);
+    set prog: int = halloc(buf, 2 + cnt);
+    bw(buf, prog, 0); bw(buf, prog + 1, cnt);
+    set sj3: int = 0;
+    while (sj3 < cnt) {
+        bw(buf, prog + 2 + sj3, getInt(getStateBuf(), sj3 * 8));
+        sj3 = sj3 + 1;
+    }
+    return prog;
+}

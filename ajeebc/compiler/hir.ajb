@@ -19,7 +19,7 @@ function nameEq(src: string, ap: int, al: int, bp: int, bl: int): int {
 }
 
 // --- HIR helpers (write head at slot 511) ---
-function hinit(buf: string): void { bw(buf, 511, 512); }
+function hinit(buf: string): void { bw(buf, 511, 20000); }
 function halloc(buf: string, slots: int): int {
     set h: int = br(buf, 511); bw(buf, 511, h + slots); return h;
 }
@@ -82,4 +82,11 @@ function hArray(buf: string, ec: int): int {
 }
 function hIndex(buf: string, arr: int, idx: int): int {
     set o: int = halloc(buf, 3); bw(buf, o, 19); bw(buf, o + 1, arr); bw(buf, o + 2, idx); return o;
+}
+function hIndexAssign(buf: string, arr: int, idx: int, v: int): int {
+    set o: int = halloc(buf, 4); bw(buf, o, 20); bw(buf, o + 1, arr);
+    bw(buf, o + 2, idx); bw(buf, o + 3, v); return o;
+}
+function hImportSentinel(buf: string): int {
+    set o: int = halloc(buf, 1); bw(buf, o, 999); return o;
 }

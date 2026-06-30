@@ -1,0 +1,12 @@
+struct User {
+    name: string,
+}
+
+impl User {
+    fn greet(self) {}
+}
+
+function main() {
+    set u = User { name: "Ajmal" };
+    u.missing();
+}

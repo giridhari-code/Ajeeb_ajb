@@ -1,0 +1,81 @@
+// Lexer — Token helpers (token state functions in parser.ajb)
+
+import hir;
+
+function isDigit(c: int): int {
+    if (c >= 48 && c <= 57) { return 1; } return 0;
+}
+function isAlpha(c: int): int {
+    if (c >= 65 && c <= 90) { return 1; }
+    if (c >= 97 && c <= 122) { return 1; }
+    if (c == 95) { return 1; }
+    return 0;
+}
+function isAlphaNum(c: int): int {
+    if (isDigit(c) == 1) { return 1; }
+    if (isAlpha(c) == 1) { return 1; }
+    return 0;
+}
+function isSpace(c: int): int {
+    if (c == 32 || c == 9 || c == 10 || c == 13) { return 1; }
+    return 0;
+}
+
+function matchKwd(src: int, buf: string, kwd: string): int {
+    set pos: int = br(buf, 15210);
+    set klen: int = len(kwd);
+    set i: int = 0;
+    while (i < klen) {
+        if (charCode(src, pos + i) != charCode(kwd, i)) { return 0; }
+        i = i + 1;
+    }
+    if (isAlphaNum(charCode(src, pos + klen)) == 1) { return 0; }
+    return 1;
+}
+
+function readIdent(src: int, buf: string): int {
+    set pos: int = br(buf, 15210);
+    set start: int = pos;
+    while (isAlphaNum(charCode(src, pos)) == 1) { pos = pos + 1; }
+    bw(buf, 15210, pos);
+    return start;
+}
+
+function readNumber(src: int, buf: string): int {
+    set pos: int = br(buf, 15210);
+    set start: int = pos;
+    while (isDigit(charCode(src, pos)) == 1) { pos = pos + 1; }
+    bw(buf, 15210, pos);
+    set n: int = 0;
+    set i: int = start;
+    while (i < pos) {
+        n = n * 10 + (charCode(src, i) - 48);
+        i = i + 1;
+    }
+    return n;
+}
+
+function readString(src: int, buf: string): int {
+    set pos: int = br(buf, 15210);
+    set start: int = pos + 1;
+    pos = pos + 1;
+    while (charCode(src, pos) != 34 && charCode(src, pos) != 0) {
+        if (charCode(src, pos) == 92) { pos = pos + 1; }
+        pos = pos + 1;
+    }
+    pos = pos + 1;
+    bw(buf, 15210, pos);
+    return start;
+}
+
+function identStr(buf: string, src: int, so: int, sl: int): string {
+    set out: string = getOutbuf();
+    set i: int = 0;
+    while (i < sl) {
+        set c: int = charCode(src, so + i);
+        strSet(out, i, c);
+        i = i + 1;
+    }
+    strSet(out, sl, 0);
+    return out;
+}

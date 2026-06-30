@@ -1,0 +1,14 @@
+trait Display {
+    fn show(self) -> string;
+    fn format(self) -> string;
+}
+
+struct User {
+    name: string
+}
+
+impl Display for User {
+    fn show(self) -> string {
+        return self.name;
+    }
+}

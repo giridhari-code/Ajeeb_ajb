@@ -1,0 +1,82 @@
+// Comprehensive test for LLVM IR pipeline
+// Tests all required AST node types
+
+function main(): int {
+    // Test 1: Let/Const declarations
+    set x: int = 10;
+    const y: int = 20;
+    
+    // Test 2: Binary expressions
+    set sum = x + y;
+    set diff = x - y;
+    set prod = x * y;
+    set quot = x / y;
+    set eq = x == y;
+    set neq = x != y;
+    set lt = x < y;
+    set gt = x > y;
+    set le = x <= y;
+    set ge = x >= y;
+    set and = x == y && x < y;
+    set or = x != y || x > y;
+    
+    // Test 3: If/Else
+    if (x > 5) {
+        println("x is greater than 5");
+    } else {
+        println("x is less than or equal to 5");
+    }
+    
+    // Test 4: While loops
+    set i = 0;
+    while (i < 3) {
+        println("while loop iteration ", i);
+        i = i + 1;
+    }
+    
+    // Test 5: For loops
+    set sum_for = 0;
+    for (set j = 0; j < 3; j = j + 1) {
+        sum_for = sum_for + j;
+    }
+    
+    // Test 6: Return statements
+    if (sum > 100) {
+        return 1;
+    }
+    
+    // Test 7: String literals
+    set str1 = "Hello";
+    set str2 = "World";
+    set str3 = str1 + " " + str2;
+    println("Concatenated string ", str3);
+    
+    // Test 8: Function calls
+    set result = len(str3);
+    println("String length ", result);
+    
+    // Test 9: itoa builtin
+    set num_str = itoa(42);
+    println("Number as string ", num_str);
+    
+    // Test 10: Complex expression
+    set complex = (x + y) * (x - y) / (x + y);
+    println("Complex expression result ", complex);
+    
+    // Test 11: Nested if
+    if (x > 0) {
+        if (y > 0) {
+            println("Both x and y are positive");
+        } else {
+            println("x is positive but y is not");
+        }
+    }
+    
+    // Test 12: Unary operations
+    set neg_x = -x;
+    set not_x = !x;
+    println("Negated x ", neg_x);
+    println("Not x ", not_x);
+    
+    return 0;
+}

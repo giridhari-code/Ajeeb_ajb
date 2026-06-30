@@ -1,0 +1,18 @@
+// PASS: Generic enum with correct type arg count
+enum Option[T] {
+    Some(T),
+    None,
+}
+
+function main() {
+    set a = Option[Int].Some(10);
+    set b = Option[String].Some("hi");
+
+    set result = match a {
+        Option::Some(n) => n,
+        Option::None => 0,
+    };
+    assert_eq(result, 10);
+
+    println("PASS: generic_enum_valid");
+}

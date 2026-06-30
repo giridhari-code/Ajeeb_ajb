@@ -1,0 +1,32 @@
+trait Display {
+    fn show(self) -> string;
+}
+
+trait Summary {
+    fn summarize(self) -> string;
+}
+
+struct Article {
+    title: string,
+    body: string
+}
+
+impl Display for Article {
+    fn show(self) -> string {
+        return self.title;
+    }
+}
+
+impl Summary for Article {
+    fn summarize(self) -> string {
+        return self.title;
+    }
+}
+
+function main() {
+    set a = Article { title: "Ajeeb", body: "Compiler" };
+    println(a.show());
+    println(a.summarize());
+    assert_eq(a.show(), "Ajeeb");
+    assert_eq(a.summarize(), "Ajeeb");
+}

@@ -16,3 +16,4 @@ bootstrap/
 !runtime/ajeeb_runtime.c
 build/ajeeb_native*
 release/
+*.md

@@ -1,0 +1,12 @@
+trait Display {
+    fn show(self) -> string;
+}
+
+enum Option[T: Display] {
+    Some(T),
+    None
+}
+
+function main() {
+    set z = Option[int].Some(42);
+}

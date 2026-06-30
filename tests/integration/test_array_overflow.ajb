@@ -1,0 +1,6 @@
+function main(): int {
+    set arr: int[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    set s: string = array_to_string(arr, 10);
+    println(s);
+    return 0;
+}

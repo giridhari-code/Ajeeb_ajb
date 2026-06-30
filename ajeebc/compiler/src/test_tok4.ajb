@@ -1,0 +1,45 @@
+import hir;
+import parser;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set src: string = readFile("runtime/runtime.ajb");
+    set srclen: int = len(src);
+    println("src len=" + itoa(srclen));
+    
+    set p: int = 0;
+    set c: int = charCode(src, p);
+    println("p=" + itoa(p) + " c=" + itoa(c));
+    
+    set c47: int = 0;
+    if (c == 47) { c47 = 1; }
+    println("is_slash=" + itoa(c47));
+    
+    set cond: int = 0;
+    if (p < srclen) { cond = 1; }
+    println("p < srclen = " + itoa(cond));
+    
+    set i: int = 0;
+    while (i < 3) {
+        println("loop i=" + itoa(i));
+        i = i + 1;
+    }
+    println("basic while works");
+    
+    set p2: int = 0;
+    set count: int = 0;
+    while (p2 < srclen) {
+        c = charCode(src, p2);
+        if (c == 32 || c == 10 || c == 13 || c == 9) { p2 = p2 + 1; }
+        else if (c == 47 && p2 + 1 < srclen && charCode(src, p2 + 1) == 47) {
+            p2 = p2 + 2;
+            while (p2 < srclen && charCode(src, p2) != 10) { p2 = p2 + 1; }
+        }
+        else { break; }
+        count = count + 1;
+        if (count > 1000) { println("INF LOOP!"); break; }
+    }
+    println("after skipWS: p2=" + itoa(p2));
+    
+    return 0;
+}

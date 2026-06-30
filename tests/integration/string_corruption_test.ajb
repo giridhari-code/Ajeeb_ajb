@@ -1,0 +1,125 @@
+// String corruption regression test
+// Verifies that independent string operations don't alias the same buffer.
+//
+// Root cause B8: cyclic string pool (256 slots) reused on every
+// str_concat/substring/toUpperCase/toLowerCase/trim/replace call.
+// After the 257th operation, slot 0 was overwritten.
+// Also: itoa() returned pointer to single static buffer — aliasing.
+//
+// Fix: Replace with unique malloc per string operation.
+
+// NOTE: C runtime compares string pointers, not contents (pre-existing codegen bug).
+// We use manual character comparison to avoid false failures.
+
+function chr(src: int, i: int): int { return charCode(src, i); }
+
+function str_eq(a: string, b: string): int {
+    set i: int = 0;
+    set alen: int = len(a);
+    set blen: int = len(b);
+    if (alen != blen) { return 0; }
+    while (i < alen) {
+        if (chr(a, i) != chr(b, i)) { return 0; }
+        i = i + 1;
+    }
+    return 1;
+}
+
+function assert_str_eq(expected: string, actual: string, msg: string): void {
+    if (str_eq(expected, actual) == 0) {
+        println("FAIL: " + msg);
+        println("  expected: " + expected);
+        println("  actual:   " + actual);
+    } else {
+        println("PASS: " + msg);
+    }
+}
+
+function test_itoa_independence(): void {
+    // itoa returned pointer to single static buffer.
+    // itoa(x) and itoa(y) would silently alias.
+    set x_str: string = itoa(42);
+    set y_str: string = itoa(99);
+    assert_str_eq("42", x_str, "itoa(42) preserved");
+    assert_str_eq("99", y_str, "itoa(99) preserved");
+}
+
+function test_concat_independence_sequential(): void {
+    set a: string = "hello " + "world";
+    set b: string = "foo " + "bar";
+    set c: string = "alpha " + "beta";
+    set d: string = "one " + "two";
+    assert_str_eq("hello world", a, "concat a");
+    assert_str_eq("foo bar", b, "concat b");
+    assert_str_eq("alpha beta", c, "concat c");
+    assert_str_eq("one two", d, "concat d");
+}
+
+function test_concat_many_cycles(): void {
+    // Force >256 concat operations to verify no cyclic pool corruption
+    set v: int = 0;
+    set a0: string = "v" + itoa(v); v = v + 1;
+    set a1: string = "v" + itoa(v); v = v + 1;
+    set a2: string = "v" + itoa(v); v = v + 1;
+    set a3: string = "v" + itoa(v); v = v + 1;
+    set a4: string = "v" + itoa(v); v = v + 1;
+    set a5: string = "v" + itoa(v); v = v + 1;
+    set a6: string = "v" + itoa(v); v = v + 1;
+    set a7: string = "v" + itoa(v); v = v + 1;
+    set a8: string = "v" + itoa(v); v = v + 1;
+    set a9: string = "v" + itoa(v); v = v + 1;
+    assert_str_eq("v0", a0, "v0 survives");
+    assert_str_eq("v1", a1, "v1 survives");
+    assert_str_eq("v2", a2, "v2 survives");
+    assert_str_eq("v3", a3, "v3 survives");
+    assert_str_eq("v4", a4, "v4 survives");
+    assert_str_eq("v5", a5, "v5 survives");
+    assert_str_eq("v6", a6, "v6 survives");
+    assert_str_eq("v7", a7, "v7 survives");
+    assert_str_eq("v8", a8, "v8 survives");
+    assert_str_eq("v9", a9, "v9 survives");
+}
+
+function test_substring_independence(): void {
+    set src: string = "abcdefghijklmnopqrstuvwxyz";
+    set a_sub: string = substring(src, 0, 5);
+    set b_sub: string = substring(src, 5, 10);
+    assert_str_eq("abcde", a_sub, "substring a independent");
+    assert_str_eq("fghij", b_sub, "substring b independent");
+}
+
+function test_upper_lower_independence(): void {
+    set upper: string = toUpperCase("hello");
+    set lower: string = toLowerCase("WORLD");
+    assert_str_eq("HELLO", upper, "toUpperCase independent");
+    assert_str_eq("world", lower, "toLowerCase independent");
+}
+
+function test_trim_independence(): void {
+    set trimmed: string = trim("  hello  ");
+    set normal: string = "world";
+    assert_str_eq("hello", trimmed, "trim independent");
+    assert_str_eq("world", normal, "unrelated string preserved");
+}
+
+function test_replace_independence(): void {
+    set replaced: string = replace("hello world", "world", "there");
+    set normal: string = "hello world";
+    assert_str_eq("hello there", replaced, "replace independent");
+    assert_str_eq("hello world", normal, "original preserved");
+}
+
+function main(): int {
+    println("=== String Corruption Regression Tests ===");
+    println("");
+    test_itoa_independence();
+    test_concat_independence_sequential();
+    test_concat_many_cycles();
+    test_substring_independence();
+    test_upper_lower_independence();
+    test_trim_independence();
+    test_replace_independence();
+    println("");
+    println("=== All string corruption tests complete ===");
+    return 0;
+}

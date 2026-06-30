@@ -1,0 +1,1 @@
+function test(): int { set i: int = 0; while (i < 10) { if (i == 1) { writeAppend(out, s); } else if (i == 2) { writeAppend(out, s); } else if (i == 3) { writeAppend(out, s); } else if (i == 4) { writeAppend(out, s); } else if (i == 5) { writeAppend(out, s); } i = i + 1; } return 0; } function main(): int { println("ok"); return 0; }

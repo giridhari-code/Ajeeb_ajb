@@ -1,0 +1,9 @@
+enum Option[T] {
+    Some(T),
+    None
+}
+
+function main(): int {
+    set x = Option[Int].Some(10);
+    return 0;
+}

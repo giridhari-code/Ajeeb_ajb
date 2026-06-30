@@ -1,0 +1,16 @@
+import hir;
+import parser;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set src: string = readFile("runtime/runtime.ajb");
+    println("src len=" + itoa(len(src)) + " first=" + itoa(charCode(src, 0)));
+    
+    lexInit(buf);
+    println("After lexInit, tokType=" + itoa(tokType(buf)));
+    
+    nextTok(src, buf);
+    println("After nextTok, tokType=" + itoa(tokType(buf)) + " tokStrOff=" + itoa(tokStrOff(buf)) + " tokStrLen=" + itoa(tokStrLen(buf)));
+    
+    return 0;
+}

@@ -1,0 +1,13 @@
+import hir;
+import parser;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set rtSrc: string = readFile("runtime/runtime.ajb");
+    set src: string = readFile("../examples/hello.ajb");
+    hinit(buf);
+    set rtProg: int = parseProgram(rtSrc, buf);
+    set userProg: int = parseProgram(src, buf);
+    println("Parsed OK");
+    return 0;
+}

@@ -1,0 +1,6 @@
+function main(): int {
+    set a: string = "Hello ";
+    set b: string = "World";
+    println(a + b);
+    return 0;
+}

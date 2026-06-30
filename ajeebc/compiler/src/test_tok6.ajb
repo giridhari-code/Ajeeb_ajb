@@ -1,0 +1,24 @@
+import hir;
+import parser;
+
+function main(): int {
+    set buf: string = getStateBuf();
+    set out: string = getOutbuf();
+    set src: string = readFile("runtime/runtime.ajb");
+    
+    lexInit(buf);
+    nextTok(src, buf);
+    
+    set tt: int = tokType(buf);
+    set pos: int = br(buf, 200010);
+    
+    strSet(out, 0, 84 + (tt / 1) * 0);
+    set msg: string = "";
+    msg = str_concat(msg, "TOK: tt=");
+    msg = str_concat(msg, itoa(tt));
+    msg = str_concat(msg, " pos=");
+    msg = str_concat(msg, itoa(pos));
+    
+    println(msg);
+    return 0;
+}

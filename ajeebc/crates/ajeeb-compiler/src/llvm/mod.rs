@@ -77,7 +77,7 @@ impl Codegen {
         writeln!(g, "declare i32 @snprintf(ptr, i64, ptr, ...)").unwrap();
 
         // Global buffers expected by C runtime
-        writeln!(g, "@__ajeeb_buf = global [262144 x i8] zeroinitializer").unwrap();
+        writeln!(g, "@__ajeeb_buf = global [4194304 x i8] zeroinitializer").unwrap();
         writeln!(g, "@__ajeeb_outbuf = global [65536 x i8] zeroinitializer").unwrap();
         writeln!(g, "@stderr = external global ptr").unwrap();
         writeln!(g, "").unwrap();
