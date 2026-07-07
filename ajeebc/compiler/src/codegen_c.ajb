@@ -67,10 +67,7 @@ function emitCBlockCode(buf: string, boff: int, out: string, src: string, scBuf:
         } else if (op == 2 && s2 == 0 && ext == 101) {
             emitCOut(out, "    t"); emitCInt(out, dst);
             emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
-        } else if (op == 2 && s2 == 0 && (ext == 1 || ext == 3)) {
-            emitCOut(out, "    t"); emitCInt(out, dst);
-            emitCOut(out, " = "); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
-        } else if (op == 2 && s2 != 0) {
+        } else if (op == 2) {
             emitCOut(out, "    t"); emitCInt(out, dst);
             if (ext == 1) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " + t"); emitCInt(out, s2); }
             else if (ext == 2) { emitCOut(out, " = t"); emitCInt(out, s1); emitCOut(out, " - t"); emitCInt(out, s2); }
@@ -113,16 +110,19 @@ function emitCBlockCode(buf: string, boff: int, out: string, src: string, scBuf:
                 else { callee = "__unknown_builtin"; }
             }
             if (callee == "") { callee = substring(src, s1, s1 + s2); }
-            set tmpA: int = ext; set ac2: int = 0;
-            set tmpC: int = ext; while (tmpC > 0) { ac2 = ac2 + 1; tmpC = tmpC / 1000; }
-            emitCOut(out, "    t"); emitCInt(out, dst);
-            emitCOut(out, " = "); emitCOut(out, callee); emitCOut(out, "(");
-            set ak: int = 0; set aT: int = tmpA;
-            while (ak < ac2) {
-                if (ak > 0) { emitCOut(out, ", "); }
-                set r: int = aT - (aT / 1000) * 1000;
-                emitCOut(out, "t"); emitCInt(out, r - 1); aT = aT / 1000;
-                ak = ak + 1;
+            set isVoid: int = 0;
+            if (callee == "writeAppend" || callee == "writeFile" || callee == "writeByte" || callee == "arr_set") { isVoid = 1; }
+            if (isVoid == 0) { emitCOut(out, "    t"); emitCInt(out, dst); emitCOut(out, " = "); }
+            else { emitCOut(out, "    "); }
+            emitCOut(out, callee); emitCOut(out, "(");
+            set rng: int = ext;
+            set firstArg: int = 1;
+            while (rng > 0) {
+                if (firstArg == 0) { emitCOut(out, ", "); }
+                else { firstArg = 0; }
+                set aTmp: int = rng - rng / 1000 * 1000 - 1;
+                emitCOut(out, "t"); emitCInt(out, aTmp);
+                rng = rng / 1000;
             }
             emitCOut(out, ");"); emitNewline(out);
         } else if (op == 5) {
@@ -147,6 +147,9 @@ function emitCBlockCode(buf: string, boff: int, out: string, src: string, scBuf:
             emitCOut(out, " = str_concat(t"); emitCInt(out, s1);
             emitCOut(out, ", t"); emitCInt(out, s2);
             emitCOut(out, ");"); emitNewline(out);
+        } else if (op == 15) {
+            emitCOut(out, "    t"); emitCInt(out, dst);
+            emitCOut(out, " = "); emitCInt(out, s1); emitCOut(out, ";"); emitNewline(out);
         }
         j = j + 1;
     }
@@ -159,7 +162,7 @@ function emitCHeader(out: string): void {
     emitNewline(out);
 
     // Global buffers — must be before inline primitives
-    emitCOut(out, "char __ajeeb_buf[4194304];"); emitNewline(out);
+    emitCOut(out, "char __ajeeb_buf[8388608];"); emitNewline(out);
     emitCOut(out, "char __ajeeb_outbuf[65536];"); emitNewline(out);
     emitNewline(out);
 
@@ -230,13 +233,26 @@ function findFnMaxTemp(buf: string, foff: int): int {
             set d: int = mInstrDst(buf, ioff);
             if (d > maxT) { maxT = d; }
             set op: int = mInstrOp(buf, ioff);
-            if (op != 6 && op != 7) {
-                set s1v: int = mInstrS1(buf, ioff);
-                if (s1v > maxT) { maxT = s1v; }
+            set ext: int = mInstrExt(buf, ioff);
+            set s1v: int = mInstrS1(buf, ioff);
+            set s2v: int = mInstrS2(buf, ioff);
+            if (op != 6 && op != 7 && op != 4 && op != 15) {
+                if (!(op == 2 && ext == 13) && !(op == 2 && ext == 1 && s2v == 0) && !(op == 2 && ext == 3 && s2v == 0)) {
+                    if (s1v > maxT) { maxT = s1v; }
+                }
             }
             if (op == 2 || op == 5 || op == 9 || op == 10) {
-                set s2v: int = mInstrS2(buf, ioff);
-                if (s2v > maxT) { maxT = s2v; }
+                if (!(op == 2 && ext == 13)) {
+                    if (s2v > maxT) { maxT = s2v; }
+                }
+            }
+            if (op == 4) {
+                set rng3: int = ext;
+                while (rng3 > 0) {
+                    set aTmp: int = rng3 - rng3 / 1000 * 1000 - 1;
+                    if (aTmp > maxT) { maxT = aTmp; }
+                    rng3 = rng3 / 1000;
+                }
             }
             if (op == 9 || op == 10) {
                 set extv: int = mInstrExt(buf, ioff);
@@ -257,6 +273,12 @@ function emitCFn(buf: string, foff: int, out: string, src: string, isEntryMain: 
     set bc: int = mFnBlockCount(buf, foff);
     set pc: int = mFnParamCount(buf, foff);
     set maxT: int = findFnMaxTemp(buf, foff);
+    set _clen: int = len(fnName);
+    set _c1: int = 0; if (_clen > 0) { _c1 = charCode(fnName, 0); }
+    if (_c1 == 105 || _clen <= 2) {
+        writeAppend("build/_dbgfn.txt", str_concat("FN: ", str_concat(fnName, str_concat(" src=0x", str_concat(itoa(fnSrc), str_concat(" no=", str_concat(itoa(no), str_concat(" nl=", str_concat(itoa(nl), str_concat(" clen=", itoa(_clen)))))))))));
+        writeAppend("build/_dbgfn.txt", "\n");
+    }
     set j: int = 0;
     if (isEntryMain == 1) { emitCOut(out, "int main(void) {"); }
     else {

@@ -22,9 +22,9 @@ function isStringExpr(hirBuf: string, hOff: int, scBuf: string, src: string): in
 
 function lowerExpr(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src: string): int {
     set tag: int = br(hirBuf, hOff);
-    if (tag == 15) { set v: int = br(hirBuf, hOff + 1); set t: int = freshTemp(mirBuf); appendInstr(mirBuf, 2, t, v, 0, 1); return t; }
+    if (tag == 15) { set v: int = br(hirBuf, hOff + 1); set t: int = freshTemp(mirBuf); appendInstr(mirBuf, 15, t, v, 0, 0); return t; }
     if (tag == 16) { set so: int = br(hirBuf, hOff + 1); set sl: int = br(hirBuf, hOff + 2); set t: int = freshTemp(mirBuf); appendInstr(mirBuf, 2, t, so, sl, 13); return t; }
-    if (tag == 17) { set v: int = br(hirBuf, hOff + 1); set t: int = freshTemp(mirBuf); appendInstr(mirBuf, 2, t, v, 0, 3); return t; }
+    if (tag == 17) { set v: int = br(hirBuf, hOff + 1); set t: int = freshTemp(mirBuf); appendInstr(mirBuf, 15, t, v, 0, 0); return t; }
     if (tag == 14) {
         set so: int = br(hirBuf, hOff + 1); set sl: int = br(hirBuf, hOff + 2);
         set si: int = scLookup(scBuf, src, so, sl);
@@ -53,14 +53,15 @@ function lowerExpr(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src
             args = args + (aTmp + 1) * mul; mul = mul * 1000;
             j = j + 1;
         }
-        appendInstr(mirBuf, 4, t, co, cl, args); return t;
+        appendInstr(mirBuf, 4, t, co, cl, args);
+        return t;
     }
     if (tag == 18) {
         set ec: int = br(hirBuf, hOff + 1);
         set t: int = freshTemp(mirBuf);
         set j: int = 0; set args: int = 0; set mul: int = 1;
         set countTmp: int = freshTemp(mirBuf);
-        appendInstr(mirBuf, 2, countTmp, ec, 0, 1);
+        appendInstr(mirBuf, 15, countTmp, ec, 0, 0);
         args = args + (countTmp + 1) * mul; mul = mul * 1000;
         while (j < ec) {
             set eOff: int = br(hirBuf, hOff + 2 + j);
@@ -78,15 +79,15 @@ function lowerExpr(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src
         set idxTmp: int = lowerExpr(hirBuf, idxOff, mirBuf, scBuf, src);
         set t: int = freshTemp(mirBuf);
         set oneTmp: int = freshTemp(mirBuf);
-        appendInstr(mirBuf, 2, oneTmp, 1, 0, 1);
+        appendInstr(mirBuf, 15, oneTmp, 1, 0, 0);
         set adjIdx: int = freshTemp(mirBuf);
         appendInstr(mirBuf, 2, adjIdx, idxTmp, oneTmp, 1);
         set eightTmp: int = freshTemp(mirBuf);
-        appendInstr(mirBuf, 2, eightTmp, 8, 0, 1);
+        appendInstr(mirBuf, 15, eightTmp, 8, 0, 0);
         set mulTmp: int = freshTemp(mirBuf);
         appendInstr(mirBuf, 2, mulTmp, adjIdx, eightTmp, 3);
         set eightB: int = freshTemp(mirBuf);
-        appendInstr(mirBuf, 2, eightB, 8, 0, 1);
+        appendInstr(mirBuf, 15, eightB, 8, 0, 0);
         set offTmp: int = freshTemp(mirBuf);
         appendInstr(mirBuf, 2, offTmp, mulTmp, eightB, 1);
         appendInstr(mirBuf, 9, t, arrTmp, 0, offTmp);
@@ -246,15 +247,15 @@ function lowerStmt(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src
         set idxTmp: int = lowerExpr(hirBuf, idxOff, mirBuf, scBuf, src);
         set vTmp: int = lowerExpr(hirBuf, vOff, mirBuf, scBuf, src);
         set oneTmp: int = freshTemp(mirBuf);
-        appendInstr(mirBuf, 2, oneTmp, 1, 0, 1);
+        appendInstr(mirBuf, 15, oneTmp, 1, 0, 0);
         set adjIdx: int = freshTemp(mirBuf);
         appendInstr(mirBuf, 2, adjIdx, idxTmp, oneTmp, 1);
         set eightTmp: int = freshTemp(mirBuf);
-        appendInstr(mirBuf, 2, eightTmp, 8, 0, 1);
+        appendInstr(mirBuf, 15, eightTmp, 8, 0, 0);
         set mulTmp: int = freshTemp(mirBuf);
         appendInstr(mirBuf, 2, mulTmp, adjIdx, eightTmp, 3);
         set eightB: int = freshTemp(mirBuf);
-        appendInstr(mirBuf, 2, eightB, 8, 0, 1);
+        appendInstr(mirBuf, 15, eightB, 8, 0, 0);
         set offTmp: int = freshTemp(mirBuf);
         appendInstr(mirBuf, 2, offTmp, mulTmp, eightB, 1);
         appendInstr(mirBuf, 10, 0, arrTmp, offTmp, vTmp);
@@ -288,7 +289,8 @@ function lowerFnDef(hirBuf: string, fnOff: int, mirBuf: string, scBuf: string, s
     if (blkOff != 0) { finishMirBlock(mirBuf, 3, 0, rt); }
     set blockCount: int = br(mirBuf, 502);
     set lc: int = br(mirBuf, 508);
-    set mirFnOff: int = mFn(mirBuf, no, nl, rt, blockCount, lc, pc, fnSrc);
+    set mirFnOff: int = mFn(mirBuf, no, nl, rt, blockCount, lc, pc);
+    bw(mirBuf, mirFnOff + 7, fnSrc);
     set bi: int = 0;
     while (bi < blockCount) {
         set blk: int = br(mirBuf, br(mirBuf, 516) + bi);

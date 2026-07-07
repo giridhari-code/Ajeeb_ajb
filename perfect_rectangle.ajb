@@ -1,0 +1,76 @@
+function cornerKey(x: int, y: int): string {
+    return str_concat(itoa(x), str_concat(":", itoa(y)));
+}
+
+function isRectangleCover(xs: int[], ys: int[], aas: int[], bs: int[], n: int): int {
+    if (n == 0) { return 0; }
+    set totalArea: int = 0;
+    set minX: int = xs[0];
+    set minY: int = ys[0];
+    set maxA: int = aas[0];
+    set maxB: int = bs[0];
+    set corners: string = "";
+    set i: int = 0;
+    while (i < n) {
+        set x: int = xs[i];
+        set y: int = ys[i];
+        set a: int = aas[i];
+        set b: int = bs[i];
+        set w: int = a - x;
+        set h: int = b - y;
+        totalArea = totalArea + w * h;
+        if (x < minX) { minX = x; }
+        if (y < minY) { minY = y; }
+        if (a > maxA) { maxA = a; }
+        if (b > maxB) { maxB = b; }
+        set k1: string = cornerKey(x, y);
+        set k2: string = cornerKey(x, b);
+        set k3: string = cornerKey(a, y);
+        set k4: string = cornerKey(a, b);
+        set s1: string = str_concat(";", k1);
+        if (indexOf(corners, s1) == -1) { corners = str_concat(corners, s1); } else { set p: int = indexOf(corners, s1); set bf: string = substring(corners, 0, p); set af: string = substring(corners, p + len(s1), len(corners)); corners = str_concat(bf, af); }
+        set s2: string = str_concat(";", k2);
+        if (indexOf(corners, s2) == -1) { corners = str_concat(corners, s2); } else { set p: int = indexOf(corners, s2); set bf: string = substring(corners, 0, p); set af: string = substring(corners, p + len(s2), len(corners)); corners = str_concat(bf, af); }
+        set s3: string = str_concat(";", k3);
+        if (indexOf(corners, s3) == -1) { corners = str_concat(corners, s3); } else { set p: int = indexOf(corners, s3); set bf: string = substring(corners, 0, p); set af: string = substring(corners, p + len(s3), len(corners)); corners = str_concat(bf, af); }
+        set s4: string = str_concat(";", k4);
+        if (indexOf(corners, s4) == -1) { corners = str_concat(corners, s4); } else { set p: int = indexOf(corners, s4); set bf: string = substring(corners, 0, p); set af: string = substring(corners, p + len(s4), len(corners)); corners = str_concat(bf, af); }
+        i = i + 1;
+    }
+    set boundingArea: int = (maxA - minX) * (maxB - minY);
+    if (totalArea != boundingArea) { return 0; }
+    set c1: string = str_concat(";", cornerKey(minX, minY));
+    set c2: string = str_concat(";", cornerKey(minX, maxB));
+    set c3: string = str_concat(";", cornerKey(maxA, minY));
+    set c4: string = str_concat(";", cornerKey(maxA, maxB));
+    if (indexOf(corners, c1) == -1) { return 0; }
+    if (indexOf(corners, c2) == -1) { return 0; }
+    if (indexOf(corners, c3) == -1) { return 0; }
+    if (indexOf(corners, c4) == -1) { return 0; }
+    return 1;
+}
+
+function main(): int {
+    set xs1: int[] = [1, 3, 3, 1, 2];
+    set ys1: int[] = [1, 1, 2, 3, 3];
+    set aas1: int[] = [3, 4, 4, 2, 3];
+    set bs1: int[] = [3, 2, 4, 4, 4];
+    set r1: int = isRectangleCover(xs1, ys1, aas1, bs1, 5);
+    if (r1 == 1) { println("Example 1: true"); } else { println("Example 1: false"); }
+
+    set xs2: int[] = [1, 1, 3, 3];
+    set ys2: int[] = [1, 3, 1, 2];
+    set aas2: int[] = [2, 2, 4, 4];
+    set bs2: int[] = [3, 4, 2, 4];
+    set r2: int = isRectangleCover(xs2, ys2, aas2, bs2, 4);
+    if (r2 == 1) { println("Example 2: true"); } else { println("Example 2: false"); }
+
+    set xs3: int[] = [1, 3, 1, 2];
+    set ys3: int[] = [1, 1, 3, 2];
+    set aas3: int[] = [3, 4, 2, 4];
+    set bs3: int[] = [3, 2, 4, 4];
+    set r3: int = isRectangleCover(xs3, ys3, aas3, bs3, 4);
+    if (r3 == 1) { println("Example 3: true"); } else { println("Example 3: false"); }
+
+    return 0;
+}

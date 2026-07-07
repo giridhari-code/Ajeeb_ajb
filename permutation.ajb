@@ -1,0 +1,40 @@
+function factorial(x: int): int {
+    if (x <= 1) { return 1; }
+    return x * factorial(x - 1);
+}
+
+function mod(a: int, b: int): int {
+    return a - (a / b) * b;
+}
+
+function getPermutation(n: int, k: int): string {
+    set digits: string = "";
+    set d: int = 1;
+    while (d <= n) {
+        digits = str_concat(digits, itoa(d));
+        d = d + 1;
+    }
+    set result: string = "";
+    k = k - 1;
+    for (set i: int = n; i >= 1; i = i - 1) {
+        set fact: int = factorial(i - 1);
+        set index: int = k / fact;
+        set digit: string = substring(digits, index, index + 1);
+        result = str_concat(result, digit);
+        set before: string = substring(digits, 0, index);
+        set after: string = substring(digits, index + 1, len(digits));
+        digits = str_concat(before, after);
+        k = mod(k, fact);
+    }
+    return result;
+}
+
+function main(): int {
+    set r1: string = getPermutation(3, 3);
+    println(r1);
+    set r2: string = getPermutation(4, 9);
+    println(r2);
+    set r3: string = getPermutation(3, 1);
+    println(r3);
+    return 0;
+}

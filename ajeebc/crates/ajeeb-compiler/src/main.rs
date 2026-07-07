@@ -344,10 +344,10 @@ fn main() -> io::Result<()> {
         .ok()
         .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
         .and_then(|bin_dir| {
-            // Walk up to find compiler/compiler.ajb
+            // Walk up to find compiler/src/compiler.ajb
             let mut d = bin_dir.clone();
             loop {
-                if d.join("compiler").join("compiler.ajb").exists() {
+                if d.join("compiler").join("src").join("compiler.ajb").exists() {
                     return Some(d);
                 }
                 if !d.pop() { break; }

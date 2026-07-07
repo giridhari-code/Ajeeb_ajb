@@ -17,3 +17,4 @@ bootstrap/
 build/ajeeb_native*
 release/
 *.md
+.ajeeb_cache/

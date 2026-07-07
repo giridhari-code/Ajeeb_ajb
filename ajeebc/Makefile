@@ -13,7 +13,7 @@ ROOT        := $(shell pwd)
 BUILD       := $(ROOT)/build
 RS_SRC      := $(ROOT)/crates/ajeeb-compiler/src
 RS_BIN      := $(BUILD)/ajeeb_compiler
-COMPILER_AJB := $(ROOT)/compiler/compiler.ajb
+COMPILER_AJB := $(ROOT)/compiler/src/compiler.ajb
 RUNTIME_C   := $(ROOT)/runtime/ajeeb_runtime.c
 RUNTIME_O   := $(BUILD)/runtime.o
 AJEEBC      := $(BUILD)/ajeebc
@@ -46,7 +46,7 @@ $(BUILD)/compiler: $(AJEEBC) $(COMPILER_AJB)
 	@echo "═══════════════════════════════════════════"
 	@echo "📦 ajeebc compiles compiler.ajb → native"
 	@echo "═══════════════════════════════════════════"
-	cd $(ROOT) && $(AJEEBC) compiler/compiler.ajb --skip-run 2>&1
+	cd $(ROOT) && $(AJEEBC) $(COMPILER_AJB) --skip-run 2>&1
 	@echo "ok" > $(BUILD)/.native_version
 	@echo ""
 	@echo "✅ Native compiler: $(BUILD)/compiler ($$(du -h $(BUILD)/compiler | cut -f1))"
@@ -99,7 +99,7 @@ bootstrap: native
 	@echo "═══════════════════════════════════════════"
 	@echo "🔄 Native compiler re-compiles compiler.ajb"
 	@echo "═══════════════════════════════════════════"
-	cd $(ROOT) && timeout 30 $(BUILD)/compiler compiler/compiler.ajb --skip-run 2>&1 || echo "(native compiler binary needs LLVM runtime fix)"
+	cd $(ROOT) && timeout 30 $(BUILD)/compiler compiler/src/compiler.ajb --skip-run 2>&1 || echo "(native compiler binary needs LLVM runtime fix)"
 	@echo ""
 	@echo "✅ BOOTSTRAP COMPLETE"
 
@@ -109,9 +109,9 @@ bootstrap-full: $(RS_BIN) native
 	@echo "═══════════════════════════════════════════"
 	@echo "🔄 Gen0 (Rust) → Gen1 (Ajeeb) → Gen2 (Ajeeb)"
 	@echo "═══════════════════════════════════════════"
-	cd $(ROOT) && $(RS_BIN) compiler/compiler.ajb --skip-run 2>&1 | tail -3
+	cd $(ROOT) && $(RS_BIN) compiler/src/compiler.ajb --skip-run 2>&1 | tail -3
 	@echo "  ✓ Gen1 built"
-	cd $(ROOT) && timeout 30 $(BUILD)/compiler compiler/compiler.ajb --skip-run 2>&1 | tail -3 || true
+	cd $(ROOT) && timeout 30 $(BUILD)/compiler compiler/src/compiler.ajb --skip-run 2>&1 | tail -3 || true
 	@echo "  ✓ Gen2 built"
 	@echo ""
 	@echo "✅ FULL BOOTSTRAP COMPLETE (Gen0→Gen1→Gen2)"

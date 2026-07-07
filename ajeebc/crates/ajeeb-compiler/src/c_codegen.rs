@@ -65,7 +65,7 @@ impl CCodegen {
         writeln!(self.output, "long long endsWith(long long s, long long suffix);").unwrap();
         writeln!(self.output, "long long replace(long long s, long long old, long long new);").unwrap();
         writeln!(self.output, "long long readFile(long long path);").unwrap();
-        writeln!(self.output, "long long readArg();").unwrap();
+        writeln!(self.output, "long long readArg(long long n);").unwrap();
         writeln!(self.output, "void writeFile(long long path, long long content);").unwrap();
         writeln!(self.output, "void writeAppend(long long path, long long content);").unwrap();
         writeln!(self.output, "void writeByte(long long path, long long b);").unwrap();
@@ -96,12 +96,23 @@ impl CCodegen {
         writeln!(self.output, "char __ajeeb_outbuf[65536];").unwrap();
         writeln!(self.output, "").unwrap();
 
-        // Emit functions
+        // Emit function prototypes (forward declarations) first
+        for f in &prog.functions {
+            self.emit_fn_prototype(f);
+        }
+        writeln!(self.output, "").unwrap();
+
+        // Emit function bodies
         for f in &prog.functions {
             self.emit_fn(f)?;
         }
 
         Ok(self.output.clone())
+    }
+
+    fn emit_fn_prototype(&mut self, f: &crate::mir::MirFn) {
+        let params_str: Vec<String> = f.params.iter().map(|(name, _)| format!("long long {}", name)).collect();
+        writeln!(self.output, "long long {}({});", f.name, params_str.join(", ")).unwrap();
     }
 
     fn emit_fn(&mut self, f: &crate::mir::MirFn) -> Result<(), String> {
@@ -113,9 +124,9 @@ impl CCodegen {
         let local_names: HashSet<String> = f.locals.iter().map(|(name, _)| name.clone()).collect();
         let mut used_vars = HashSet::new();
 
-        // Also track v-temps generated during emission
-        let saved_var_counter = self.var_counter;
+        // Reset per-function state
         self.var_counter = 0;
+        self.string_vars.clear();
 
         // Scan to find all used vars and count v-temps
         for block in &f.blocks {
@@ -124,16 +135,16 @@ impl CCodegen {
                     MirStmt::Assign { dest, value } => {
                         used_vars.insert(dest.clone());
                         self.collect_rvalue_vars(value, &mut used_vars);
-                        // Count temps this would generate
                         self.count_rvalue_temps(value);
                     }
-                    MirStmt::Call { dest, func: _, args } => {
+                    MirStmt::Call { dest, func, args } => {
                         if let Some(d) = dest {
                             used_vars.insert(d.clone());
                         }
                         for arg in args {
                             self.collect_operand_vars(arg, &mut used_vars);
                         }
+                        self.count_call_temps(func, args);
                     }
                 }
             }
@@ -148,11 +159,12 @@ impl CCodegen {
             }
         }
         let max_v_temp = self.var_counter;
-        self.var_counter = saved_var_counter;
+        self.var_counter = 0;
 
-        // Declare locals (skip params)
+        // Declare locals (skip params, deduplicate)
+        let mut declared_locals = HashSet::new();
         for (name, _) in &f.locals {
-            if !param_names.contains(name) {
+            if !param_names.contains(name) && declared_locals.insert(name.clone()) {
                 writeln!(self.output, "  long long {};", name).unwrap();
             }
         }
@@ -190,6 +202,20 @@ impl CCodegen {
         match rvalue {
             MirRvalue::BinaryOp(_, _, _) => {
                 self.fresh_var(); // Each binary op uses one temp
+            }
+            _ => {}
+        }
+    }
+
+    fn count_call_temps(&mut self, func: &str, args: &[MirOperand]) {
+        match func {
+            "println" if args.len() > 1 => {
+                for _ in 1..args.len() {
+                    self.fresh_var();
+                }
+            }
+            "assert_eq" => {
+                self.fresh_var();
             }
             _ => {}
         }
@@ -310,8 +336,17 @@ impl CCodegen {
                         }
                     }
                     _ => {
-                        // Generic function call
+                        // Track string-returning functions
                         if let Some(ref dest_name) = dest {
+                            let is_str_fn = matches!(func.as_str(),
+                                "getStateBuf" | "getOutbuf" | "readArg" | "readFile"
+                                | "itoa" | "str_concat" | "substring" | "chr"
+                                | "toUpperCase" | "toLowerCase" | "trim"
+                                | "replace" | "array_to_string" | "allocBuf"
+                            );
+                            if is_str_fn {
+                                self.string_vars.insert(dest_name.clone());
+                            }
                             writeln!(self.output, "  {} = {}({});", dest_name, func, args_str.join(", ")).unwrap();
                         } else {
                             writeln!(self.output, "  {}({});", func, args_str.join(", ")).unwrap();

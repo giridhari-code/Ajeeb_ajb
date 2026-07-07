@@ -19,7 +19,7 @@ echo "  ✓ build/ajeebc ready"
 # Step 2: Build native compiler (compiler.ajb → native)
 echo ""
 echo "=== Step 2: Native compiler (compiler.ajb) ==="
-./build/ajeebc compiler/compiler.ajb --skip-run
+./build/ajeebc compiler/src/compiler.ajb --skip-run
 echo "  ✓ build/compiler ready"
 
 # Step 3: Build parth (Ajeeb package manager)

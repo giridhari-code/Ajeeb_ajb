@@ -28,7 +28,7 @@ mkdir -p build
 echo "  [1/4] Rust compiler: compiler.ajb → LLVM IR"
 make rust 2>/dev/null
 ./build/ajeeb_compiler \
-    compiler/compiler.ajb build/output.ll --skip-run 2>/dev/null
+    compiler/src/compiler.ajb build/output.ll --skip-run 2>/dev/null
 
 if [ ! -f build/output.ll ]; then
     echo "❌ LLVM IR generation failed"

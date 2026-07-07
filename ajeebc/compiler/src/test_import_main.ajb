@@ -1,0 +1,7 @@
+// Test import
+import test_import_lib;
+
+function main(): int {
+    println(itoa(foo()));
+    return 0;
+}

@@ -157,6 +157,7 @@ function parseFnDef(src: string, buf: string): int {
     set body: int = parseBlockBody(src, buf, rt);
     bw(buf, fnOff + 6 + paramCount * 3, body);
     if (expectTok(src, buf, 8) == 0) { return 0; }
+    if (br(buf, 100) < 5) { bw(buf, 100, br(buf, 100) + 1); set _nm: string = substring(src, nameOff, nameOff + nameLen); println("FNDEF off=" + itoa(fnOff) + " nm=" + _nm + " src=" + itoa(src) + " no=" + itoa(nameOff) + " nl=" + itoa(nameLen)); }
     return fnOff;
 }
 function parseBlockBody(src: string, buf: string, retTy: int): int {
@@ -405,7 +406,7 @@ function parseExpr(src: string, buf: string): int {
     return left;
 }
 function parseImportFile(src: string, buf: string, origSrc: string): void {
-    set saveOff: int = br(buf, 15202);
+    set st: int = br(buf, 15200); set so: int = br(buf, 15202); set sl: int = br(buf, 15203); set lp: int = br(buf, 15210);
     lexInit(buf); nextTok(src, buf);
     while (tokType(buf) != 0) {
         set stmt: int = parseStmt(src, buf);
@@ -417,8 +418,7 @@ function parseImportFile(src: string, buf: string, origSrc: string): void {
             synchronize(src, buf);
         }
     }
-    bw(buf, 15210, saveOff);
-    nextTok(origSrc, buf);
+    bw(buf, 15200, st); bw(buf, 15202, so); bw(buf, 15203, sl); bw(buf, 15210, lp);
 }
 function parseStmt(src: string, buf: string): int {
     if (isKwd(src, buf, "import")) {

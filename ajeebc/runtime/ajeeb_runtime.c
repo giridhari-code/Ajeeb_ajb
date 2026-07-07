@@ -508,8 +508,8 @@ static void auto_init_atexit(void) {
 
 // ── Original Runtime Functions (ported to Arena + AjeebValue) ──────
 
-extern char __ajeeb_buf[262144];
-extern char __ajeeb_outbuf[65536];
+extern char __ajeeb_buf[33554432];
+extern char __ajeeb_outbuf[2097152];
 
 static char* saved_argv[256];
 static int saved_argc = 0;
