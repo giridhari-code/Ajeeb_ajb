@@ -1,0 +1,41 @@
+function main(): int {
+    set x: int = 10;
+
+    // modulo
+    set a: int = x % 3;
+    println("10 % 3 = " + itoa(a));
+
+    // power
+    set b: int = 2 ** 8;
+    println("2 ** 8 = " + itoa(b));
+
+    // compound assignment
+    set y: int = 5;
+    y += 3;
+    println("y += 3: " + itoa(y));
+    y -= 2;
+    println("y -= 2: " + itoa(y));
+    y *= 4;
+    println("y *= 4: " + itoa(y));
+    y /= 2;
+    println("y /= 2: " + itoa(y));
+
+    // prefix increment
+    set z: int = 10;
+    ++z;
+    println("++z: " + itoa(z));
+
+    // postfix increment
+    z++;
+    println("z++: " + itoa(z));
+
+    // prefix decrement
+    --z;
+    println("--z: " + itoa(z));
+
+    // postfix decrement
+    z--;
+    println("z--: " + itoa(z));
+
+    return 0;
+}

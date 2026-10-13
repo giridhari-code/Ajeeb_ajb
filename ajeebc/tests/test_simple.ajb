@@ -1,0 +1,8 @@
+// Small test
+function greet(name: string): void {
+    println("Hello " + name);
+}
+function main(): int {
+    greet("World");
+    return 0;
+}
