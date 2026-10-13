@@ -45,7 +45,12 @@ function lexIdent(src: string, buf: string): void {
 }
 function lexString(src: string, buf: string): void {
     set p: int = br(buf, 15210) + 1; set start: int = p;
-    while (p < len(src) && charCode(src, p) != 34) { p = p + 1; }
+    while (p < len(src)) {
+        set ch: int = charCode(src, p);
+        if (ch == 34) { break; }
+        if (ch == 92 && p + 1 < len(src)) { p = p + 2; }
+        else { p = p + 1; }
+    }
     bw(buf, 15210, p + 1); bw(buf, 15202, start); bw(buf, 15203, p - start); bw(buf, 15200, 2);
 }
 function nextTok(src: string, buf: string): void {
@@ -56,28 +61,60 @@ function nextTok(src: string, buf: string): void {
     if (c >= 48 && c <= 57) { lexNumber(src, buf); return; }
     if (c == 34) { lexString(src, buf); return; }
     if ((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95) { lexIdent(src, buf); return; }
-    bw(buf, 15210, p + 1); bw(buf, 15202, p); bw(buf, 15203, 1);
-    if (c == 40) { bw(buf, 15200, 5); }
-    else if (c == 41) { bw(buf, 15200, 6); }
-    else if (c == 123) { bw(buf, 15200, 7); }
-    else if (c == 125) { bw(buf, 15200, 8); }
-    else if (c == 59) { bw(buf, 15200, 9); }
-    else if (c == 44) { bw(buf, 15200, 10); }
-    else if (c == 37) { bw(buf, 15200, 28); }
-    else if (c == 43) { set c2: int = charCode(src, p + 1); if (c2 == 43) { bw(buf, 15210, p + 2); bw(buf, 15200, 30); } else if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 32); } else { bw(buf, 15200, 11); } }
-    else if (c == 45) { set c2: int = charCode(src, p + 1); if (c2 == 45) { bw(buf, 15210, p + 2); bw(buf, 15200, 31); } else if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 33); } else { bw(buf, 15200, 12); } }
-    else if (c == 42) { set c2: int = charCode(src, p + 1); if (c2 == 42) { bw(buf, 15210, p + 2); bw(buf, 15200, 29); } else if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 34); } else { bw(buf, 15200, 13); } }
-    else if (c == 47) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 35); } else { bw(buf, 15200, 14); } }
-    else if (c == 58) { bw(buf, 15200, 25); }
-    else if (c == 33) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 17); } else { bw(buf, 15200, 24); } }
-    else if (c == 61) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 16); } else { bw(buf, 15200, 15); } }
-    else if (c == 60) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 20); } else { bw(buf, 15200, 18); } }
-    else if (c == 62) { set c2: int = charCode(src, p + 1); if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 21); } else { bw(buf, 15200, 19); } }
-    else if (c == 38 && charCode(src, p + 1) == 38) { bw(buf, 15210, p + 2); bw(buf, 15200, 22); }
-    else if (c == 124 && charCode(src, p + 1) == 124) { bw(buf, 15210, p + 2); bw(buf, 15200, 23); }
-    else if (c == 91) { bw(buf, 15200, 26); }
-    else if (c == 93) { bw(buf, 15200, 27); }
-    else { bw(buf, 15200, 0); }
+    set c2: int = 0;
+    if (p + 1 < len(src)) { c2 = charCode(src, p + 1); }
+    if (c == 40) { bw(buf, 15210, p + 1); bw(buf, 15200, 5); return; }
+    if (c == 41) { bw(buf, 15210, p + 1); bw(buf, 15200, 6); return; }
+    if (c == 123) { bw(buf, 15210, p + 1); bw(buf, 15200, 7); return; }
+    if (c == 125) { bw(buf, 15210, p + 1); bw(buf, 15200, 8); return; }
+    if (c == 59) { bw(buf, 15210, p + 1); bw(buf, 15200, 9); return; }
+    if (c == 44) { bw(buf, 15210, p + 1); bw(buf, 15200, 10); return; }
+    if (c == 37) { bw(buf, 15210, p + 1); bw(buf, 15200, 28); return; }
+    if (c == 58) { bw(buf, 15210, p + 1); bw(buf, 15200, 25); return; }
+    if (c == 91) { bw(buf, 15210, p + 1); bw(buf, 15200, 26); return; }
+    if (c == 93) { bw(buf, 15210, p + 1); bw(buf, 15200, 27); return; }
+    if (c == 43) {
+        if (c2 == 43) { bw(buf, 15210, p + 2); bw(buf, 15200, 30); return; }
+        if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 32); return; }
+        bw(buf, 15210, p + 1); bw(buf, 15200, 11); return;
+    }
+    if (c == 45) {
+        if (c2 == 45) { bw(buf, 15210, p + 2); bw(buf, 15200, 31); return; }
+        if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 33); return; }
+        bw(buf, 15210, p + 1); bw(buf, 15200, 12); return;
+    }
+    if (c == 42) {
+        if (c2 == 42) { bw(buf, 15210, p + 2); bw(buf, 15200, 29); return; }
+        if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 34); return; }
+        bw(buf, 15210, p + 1); bw(buf, 15200, 13); return;
+    }
+    if (c == 47) {
+        if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 35); return; }
+        bw(buf, 15210, p + 1); bw(buf, 15200, 14); return;
+    }
+    if (c == 33) {
+        if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 17); return; }
+        bw(buf, 15210, p + 1); bw(buf, 15200, 24); return;
+    }
+    if (c == 61) {
+        if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 16); return; }
+        bw(buf, 15210, p + 1); bw(buf, 15200, 15); return;
+    }
+    if (c == 60) {
+        if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 20); return; }
+        bw(buf, 15210, p + 1); bw(buf, 15200, 18); return;
+    }
+    if (c == 62) {
+        if (c2 == 61) { bw(buf, 15210, p + 2); bw(buf, 15200, 21); return; }
+        bw(buf, 15210, p + 1); bw(buf, 15200, 19); return;
+    }
+    if (c == 38) {
+        if (c2 == 38) { bw(buf, 15210, p + 2); bw(buf, 15200, 22); return; }
+    }
+    if (c == 124) {
+        if (c2 == 124) { bw(buf, 15210, p + 2); bw(buf, 15200, 23); return; }
+    }
+    bw(buf, 15210, p + 1); bw(buf, 15200, 0);
 }
 function isKwd(src: string, buf: string, kw: string): int {
     set off: int = tokStrOff(buf); set ln: int = tokStrLen(buf);
@@ -93,11 +130,11 @@ function expectTok(src: string, buf: string, tt: int): int {
     if (tokType(buf) != tt) {
         set got: int = tokType(buf);
         set msg: string = "Expected token type " + itoa(tt) + " but got " + itoa(got);
-        if (tt == 9) { msg = "Semicolon (;) chahiye tha!"; }
-        else if (tt == 5) { msg = "Opening paren '(' chahiye tha!"; }
-        else if (tt == 6) { msg = "Closing paren ')' chahiye tha!"; }
-        else if (tt == 7) { msg = "Opening brace '{' chahiye tha!"; }
-        else if (tt == 8) { msg = "Closing brace '}' chahiye tha!"; }
+        if (tt == 9) { msg = "Semicolon (;) expected"; }
+        else if (tt == 5) { msg = "Opening paren '(' expected"; }
+        else if (tt == 6) { msg = "Closing paren ')' expected"; }
+        else if (tt == 7) { msg = "Opening brace '{' expected"; }
+        else if (tt == 8) { msg = "Closing brace '}' expected"; }
         println(msg);
         return 0;
     }
@@ -112,12 +149,34 @@ function synchronize(src: string, buf: string): void {
 // --- Parser ---
 function parseType(src: string, buf: string): int {
     set baseTy: int = 0;
-    if (isKwd(src, buf, "int")) { nextTok(src, buf); baseTy = 1; }
-    else if (isKwd(src, buf, "string")) { nextTok(src, buf); baseTy = 2; }
-    else if (isKwd(src, buf, "bool")) { nextTok(src, buf); baseTy = 3; }
-    else if (isKwd(src, buf, "void")) { nextTok(src, buf); baseTy = 5; }
-    else { return 0; }
-    if (tokType(buf) == 26) { nextTok(src, buf); if (expectTok(src, buf, 27) == 0) { return 0; } baseTy = baseTy + 10; }
+    if (isKwd(src, buf, "int")) {
+        nextTok(src, buf);
+        baseTy = 1;
+    }
+    if (baseTy == 0) {
+        if (isKwd(src, buf, "string")) {
+            nextTok(src, buf);
+            baseTy = 2;
+        }
+    }
+    if (baseTy == 0) {
+        if (isKwd(src, buf, "bool")) {
+            nextTok(src, buf);
+            baseTy = 3;
+        }
+    }
+    if (baseTy == 0) {
+        if (isKwd(src, buf, "void")) {
+            nextTok(src, buf);
+            baseTy = 5;
+        }
+    }
+    if (baseTy == 0) { return 0; }
+    if (tokType(buf) == 26) {
+        nextTok(src, buf);
+        if (expectTok(src, buf, 27) == 0) { return 0; }
+        baseTy = baseTy + 10;
+    }
     return baseTy;
 }
 function parseFnDef(src: string, buf: string): int {
@@ -157,7 +216,6 @@ function parseFnDef(src: string, buf: string): int {
     set body: int = parseBlockBody(src, buf, rt);
     bw(buf, fnOff + 6 + paramCount * 3, body);
     if (expectTok(src, buf, 8) == 0) { return 0; }
-    if (br(buf, 100) < 5) { bw(buf, 100, br(buf, 100) + 1); set _nm: string = substring(src, nameOff, nameOff + nameLen); println("FNDEF off=" + itoa(fnOff) + " nm=" + _nm + " src=" + itoa(src) + " no=" + itoa(nameOff) + " nl=" + itoa(nameLen)); }
     return fnOff;
 }
 function parseBlockBody(src: string, buf: string, retTy: int): int {
@@ -165,7 +223,7 @@ function parseBlockBody(src: string, buf: string, retTy: int): int {
     while (tokType(buf) != 8 && tokType(buf) != 0) {
         set stmt: int = parseStmt(src, buf);
         if (stmt != 0) {
-            bw(buf, 400 + stmtCount, stmt);
+            bw(buf, 3700000 + stmtCount, stmt);
             stmtCount = stmtCount + 1;
         } else {
             synchronize(src, buf);
@@ -174,7 +232,7 @@ function parseBlockBody(src: string, buf: string, retTy: int): int {
     set blk: int = hBlock(buf, stmtCount);
     set sj: int = 0;
     while (sj < stmtCount) {
-        bw(buf, blk + 2 + sj, br(buf, 400 + sj));
+        bw(buf, blk + 2 + sj, br(buf, 3700000 + sj));
         sj = sj + 1;
     }
     return blk;
@@ -185,13 +243,13 @@ function parseBlock(src: string, buf: string): int {
     set sc2: int = 0;
     while (tokType(buf) != 8 && tokType(buf) != 0) {
         set sOff: int = parseStmt(src, buf);
-        if (sOff != 0) { bw(buf, 250 + sc2, sOff); sc2 = sc2 + 1; }
+        if (sOff != 0) { bw(buf, 3710000 + sc2, sOff); sc2 = sc2 + 1; }
         else { synchronize(src, buf); }
     }
     expectTok(src, buf, 8);
     set blk: int = hBlock(buf, sc2);
     set sj2: int = 0;
-    while (sj2 < sc2) { bw(buf, blk + 2 + sj2, br(buf, 250 + sj2)); sj2 = sj2 + 1; }
+    while (sj2 < sc2) { bw(buf, blk + 2 + sj2, br(buf, 3710000 + sj2)); sj2 = sj2 + 1; }
     return blk;
 }
 function parseSetStmt(src: string, buf: string): int {
@@ -248,10 +306,14 @@ function parseAtom(src: string, buf: string): int {
             set argBase: int = 0 + depth * 64;
             nextTok(src, buf);
             while (tokType(buf) != 6 && tokType(buf) != 0) {
-                if (tokType(buf) != 6 && tokType(buf) != 0 && ac > 1000) { println("FATAL tt=" + itoa(tokType(buf)) + " ac=" + itoa(ac) + " sl=" + itoa(len(src)) + " sp=" + itoa(br(buf, 15210))); bw(buf, 15200, 6); break; }
+                if (ac > 32) { bw(buf, 15200, 6); break; }
                 set arg: int = parseExpr(src, buf);
+                if (arg == 0) {
+                    while (tokType(buf) != 6 && tokType(buf) != 10 && tokType(buf) != 0) { nextTok(src, buf); }
+                }
                 setInt(argBuf, argBase + ac * 8, arg); ac = ac + 1;
                 if (tokType(buf) == 10) { nextTok(src, buf); }
+                else if (tokType(buf) != 6 && tokType(buf) != 0) { nextTok(src, buf); }
             }
     if (expectTok(src, buf, 6) == 0) { return 0; }
             set callNode: int = hCall(buf, so, sl, ac);
@@ -412,7 +474,7 @@ function parseImportFile(src: string, buf: string, origSrc: string): void {
         set stmt: int = parseStmt(src, buf);
         if (stmt != 0) {
             set sc: int = br(buf, 491);
-            setInt(getStateBuf(), sc * 8, stmt);
+            bw(buf, 3800000 + sc, stmt);
             bw(buf, 491, sc + 1);
         } else {
             synchronize(src, buf);
@@ -470,7 +532,7 @@ function parseProgram(src: string, buf: string): int {
         set stmt: int = parseStmt(src, buf);
         if (stmt != 0) {
             set sc: int = br(buf, 491);
-            setInt(getStateBuf(), sc * 8, stmt);
+            bw(buf, 3800000 + sc, stmt);
             bw(buf, 491, sc + 1);
         } else {
             synchronize(src, buf);
@@ -481,7 +543,7 @@ function parseProgram(src: string, buf: string): int {
     bw(buf, prog, 0); bw(buf, prog + 1, cnt);
     set sj3: int = 0;
     while (sj3 < cnt) {
-        bw(buf, prog + 2 + sj3, getInt(getStateBuf(), sj3 * 8));
+        bw(buf, prog + 2 + sj3, br(buf, 3800000 + sj3));
         sj3 = sj3 + 1;
     }
     return prog;

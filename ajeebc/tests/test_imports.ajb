@@ -1,1 +1,0 @@
-import lexer; import emit; function main(): int { println("ok"); return 0; }

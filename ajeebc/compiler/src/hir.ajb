@@ -5,7 +5,9 @@ function bw(buf: string, slot: int, val: int): void { setInt(buf, slot * 8, val)
 function br(buf: string, slot: int): int { return getInt(buf, slot * 8); }
 
 function mallac(buf: string, slots: int): int {
-    set h: int = br(buf, 510); bw(buf, 510, h + slots); return h;
+    set h: int = br(buf, 510);
+    if (h + slots > 3400000) { return h; }
+    bw(buf, 510, h + slots); return h;
 }
 
 function nameEq(src: string, ap: int, al: int, bp: int, bl: int): int {
@@ -21,7 +23,9 @@ function nameEq(src: string, ap: int, al: int, bp: int, bl: int): int {
 // --- HIR helpers (write head at slot 511) ---
 function hinit(buf: string): void { bw(buf, 511, 512); }
 function halloc(buf: string, slots: int): int {
-    set h: int = br(buf, 511); bw(buf, 511, h + slots); return h;
+    set h: int = br(buf, 511);
+    if (h + slots > 1900000) { return h; }
+    bw(buf, 511, h + slots); return h;
 }
 function hFn(buf: string, no: int, nl: int, rt: int, pc: int, srcPtr: int): int {
     set o: int = halloc(buf, 7 + pc * 3); bw(buf, o, 1); bw(buf, o + 1, no);

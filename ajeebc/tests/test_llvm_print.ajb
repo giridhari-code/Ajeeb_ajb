@@ -1,4 +1,0 @@
-function main(): int {
-    println("Hello from LLVM!");
-    return 0;
-}

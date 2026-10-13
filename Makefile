@@ -1,5 +1,4 @@
-# Ajeeb — Root Makefile (delegates to ajeebc/)
-# See ajeebc/Makefile for all build/test/bootstrap targets.
+# Ajeeb — root Makefile (delegates to ajeebc/)
 
 .PHONY: all native rust test bootstrap bootstrap-full clean clean-all clean-cache help
 
@@ -27,8 +26,8 @@ clean-all:
 	cd ajeebc && $(MAKE) clean-all
 
 clean-cache:
-	rm -rf .ajeeb_cache
-	@echo "Cache saaf ho gaya!"
+	rm -rf .ajeeb_cache ajeebc/.ajeeb_cache
+	@echo "Cache cleared."
 
 help:
 	cd ajeebc && $(MAKE) help

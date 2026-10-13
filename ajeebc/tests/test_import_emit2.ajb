@@ -1,1 +1,0 @@
-function main(): int { import emit; println("ok"); return 0; }

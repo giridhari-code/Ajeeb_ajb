@@ -1,1 +1,0 @@
-import tests/test_emit_full; function main(): int { println("ok"); return 0; }

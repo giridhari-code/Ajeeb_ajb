@@ -12,7 +12,7 @@ impl Evaluator {
 
     pub fn exec_fn_call_at(&mut self, name: &str, args: &[Expr], line: usize, col: usize) -> RuntimeValue {
         self.iteration_count += 1;
-        if self.iteration_count.is_multiple_of(100000) && std::env::var("AJEEB_TRACE").is_ok() {
+        if self.iteration_count % 100000 == 0 && std::env::var("AJEEB_TRACE").is_ok() {
             eprintln!(
                 "[ITER {}] fn: {} args:{}",
                 self.iteration_count,

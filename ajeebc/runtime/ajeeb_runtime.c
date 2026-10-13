@@ -527,8 +527,9 @@ static void flush_cached_files(void) {
 }
 
 static FILE* get_cached_file(const char* path) {
+    if (!path) return NULL;
     for (int i = 0; i < file_cache_count; i++) {
-        if (strcmp(file_cache[i].path, path) == 0)
+        if (file_cache[i].path && strcmp(file_cache[i].path, path) == 0)
             return file_cache[i].fp;
     }
     if (file_cache_count >= FILE_CACHE_SIZE) return NULL;
@@ -784,6 +785,7 @@ void writeAppend(intptr_t path, intptr_t content) {
     long long t0 = now_ns();
     const char* fname = (const char*)path;
     const char* data = (const char*)content;
+    if (!fname || !data) { ns_writeAppend += now_ns() - t0; return; }
     size_t dlen = strlen(data);
     cnt_writeAppend_bytes += dlen;
     FILE* f = get_cached_file(fname);
@@ -840,6 +842,9 @@ intptr_t itoa(intptr_t n) {
 }
 
 intptr_t strcmp_ajeeb(intptr_t a, intptr_t b) {
+    if (!a && !b) return 0;
+    if (!a) return -1;
+    if (!b) return 1;
     return (intptr_t)strcmp((const char*)a, (const char*)b);
 }
 

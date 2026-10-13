@@ -1,20 +1,30 @@
+# Build artifacts
 target/
 **/target/
 build/
 *.o
+*.a
+*.so
+*.dylib
 *.ll
 *.s
 *.asm
---llvm
 output.c
 output.o
-__methods.txt
 *.pyc
 __pycache__/
-bootstrap/
-!ajeebc/bootstrap/
-!runtime/ajeeb_runtime.c
-build/ajeeb_native*
-release/
-*.md
+
+# Ajeeb cache / temp
 .ajeeb_cache/
+**/__methods.txt
+**/_dbgfn.txt
+
+# Editor / OS
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# Local binaries (keep bootstrap scripts, not built outputs)
+ajeebc/build/

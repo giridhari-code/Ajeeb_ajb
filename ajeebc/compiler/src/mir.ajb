@@ -55,6 +55,25 @@ function scSetNP(buf: string, i: int, v: int): void { bw(buf, 128 + i * 4, v); }
 function scSetNL(buf: string, i: int, v: int): void { bw(buf, 129 + i * 4, v); }
 function scSetTy(buf: string, i: int, v: int): void { bw(buf, 130 + i * 4, v); }
 function scSetTmp(buf: string, i: int, v: int): void { bw(buf, 131 + i * 4, v); }
+function markStrTemp(scBuf: string, t: int): void {
+    set word: int = t / 64; set bit: int = t - word * 64;
+    set slot: int = 480 + word;
+    set val: int = br(scBuf, slot);
+    set mask: int = 1;
+    set b: int = 0; while (b < bit) { mask = mask + mask; b = b + 1; }
+    bw(scBuf, slot, val + mask);
+}
+function isStrTemp(scBuf: string, t: int): int {
+    set word: int = t / 64; set bit: int = t - word * 64;
+    set slot: int = 480 + word;
+    set val: int = br(scBuf, slot);
+    set mask: int = 1;
+    set b: int = 0; while (b < bit) { mask = mask + mask; b = b + 1; }
+    set shifted: int = val / mask;
+    if (shifted - shifted / 2 * 2 == 1) { return 1; }
+    return 0;
+}
+
 function scDefine(buf: string, no: int, nl: int, ty: int): int {
     set i: int = scCnt(buf); scSetCnt(buf, i + 1);
     scSetNP(buf, i, no); scSetNL(buf, i, nl); scSetTy(buf, i, ty); scSetTmp(buf, i, 0);
@@ -85,7 +104,9 @@ function appendInstr(buf: string, op: int, dst: int, s1: int, s2: int, ext: int)
     bw(buf, 504, ic + 1); bw(buf, br(buf, 506) + 2, ic + 1);
 }
 function finishMirBlock(buf: string, tt: int, t0: int, t1: int): int {
-    set blk: int = br(buf, 506); bw(buf, blk + 1, br(buf, 502));
+    set blk: int = br(buf, 506);
+    if (blk == 0) { return 0; }
+    bw(buf, blk + 1, br(buf, 502));
     bw(buf, blk + 3, tt); bw(buf, blk + 4, t0); bw(buf, blk + 5, t1);
     bw(buf, 502, br(buf, 502) + 1); bw(buf, 506, 0);
     return blk;
@@ -159,16 +180,21 @@ function deadCodeElimBlock(buf: string, boff: int): void {
         set keep: int = 1;
         if (op == 2) {
             set dst: int = mInstrDst(buf, ioff);
-            keep = 0;
-            set k: int = 0;
-            while (k < ic) {
-                set koff: int = mBlockInstr(buf, boff, k);
-                if (k != j && (mInstrS1(buf, koff) == dst || mInstrS2(buf, koff) == dst)) { keep = 1; }
-                k = k + 1;
+            set extM: int = mInstrExt(buf, ioff);
+            if (extM == 101) {
+                keep = 1;
+            } else {
+                keep = 0;
+                set k: int = 0;
+                while (k < ic) {
+                    set koff: int = mBlockInstr(buf, boff, k);
+                    if (k != j && (mInstrS1(buf, koff) == dst || mInstrS2(buf, koff) == dst)) { keep = 1; }
+                    k = k + 1;
+                }
+                if (keep == 0) { keep = isTempUsedByCallExt(buf, boff, ic, dst, j); }
             }
-            if (keep == 0) { keep = isTempUsedByCallExt(buf, boff, ic, dst, j); }
         }
-        if (op == 4 || op == 5 || op == 1 || op == 11) { keep = 1; }
+        if (op == 4 || op == 5 || op == 1 || op == 11 || op == 6 || op == 7 || op == 10) { keep = 1; }
         if (keep == 1 && newIc != j) {
             set dstOff: int = boff + 6 + newIc * 6;
             set srcOff: int = ioff;
@@ -232,8 +258,5 @@ function deadBlockElimFn(buf: string, foff: int): void {
 }
 function optimizeMirFn(buf: string, foff: int): void {
 }
-function optimizeMirProgram(buf: string, progOff: int): void {
-    set cnt: int = br(buf, progOff + 1);
-    set j: int = 0;
-    while (j < cnt) { set fnOff: int = br(buf, progOff + 2 + j); if (fnOff > 1000000 || fnOff < 5000) { println("FN_BAD"); } else { optimizeMirFn(buf, fnOff); } j = j + 1; }
-}
+function optimizeMirProgram(buf: string, progOff: int): void { }
+

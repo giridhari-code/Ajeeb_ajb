@@ -1,5 +1,0 @@
-import lexer;
-function main(): int {
-    println("imported lexer");
-    return 0;
-}

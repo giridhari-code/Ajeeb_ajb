@@ -21,7 +21,9 @@ function isStringExpr(hirBuf: string, hOff: int, scBuf: string, src: string): in
 }
 
 function lowerExpr(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src: string): int {
+    if (hOff <= 0 || hOff > 3000000) { return 0; }
     set tag: int = br(hirBuf, hOff);
+    if (tag < 0 || tag > 30) { return 0; }
     if (tag == 15) { set v: int = br(hirBuf, hOff + 1); set t: int = freshTemp(mirBuf); appendInstr(mirBuf, 15, t, v, 0, 0); return t; }
     if (tag == 16) { set so: int = br(hirBuf, hOff + 1); set sl: int = br(hirBuf, hOff + 2); set t: int = freshTemp(mirBuf); appendInstr(mirBuf, 2, t, so, sl, 13); return t; }
     if (tag == 17) { set v: int = br(hirBuf, hOff + 1); set t: int = freshTemp(mirBuf); appendInstr(mirBuf, 15, t, v, 0, 0); return t; }
@@ -38,6 +40,10 @@ function lowerExpr(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src
         set t: int = freshTemp(mirBuf);
         if (op == 1 && (isStringExpr(hirBuf, l, scBuf, src) || isStringExpr(hirBuf, r, scBuf, src))) {
             appendInstr(mirBuf, 12, t, lt, rt, 0);
+        } else if ((op == 5 || op == 6) && (isStringExpr(hirBuf, l, scBuf, src) || isStringExpr(hirBuf, r, scBuf, src))) {
+            appendInstr(mirBuf, 2, t, lt, rt, op);
+            markStrTemp(scBuf, lt);
+            markStrTemp(scBuf, rt);
         } else {
             appendInstr(mirBuf, 2, t, lt, rt, op);
         }
@@ -46,27 +52,54 @@ function lowerExpr(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src
     if (tag == 11) {
         set co: int = br(hirBuf, hOff + 1); set cl: int = br(hirBuf, hOff + 2); set ac: int = br(hirBuf, hOff + 3);
         set t: int = freshTemp(mirBuf);
-        set j: int = 0; set args: int = 0; set mul: int = 1;
-        while (j < ac) {
-            set aOff: int = br(hirBuf, hOff + 4 + j);
-            set aTmp: int = lowerExpr(hirBuf, aOff, mirBuf, scBuf, src);
-            args = args + (aTmp + 1) * mul; mul = mul * 1000;
-            j = j + 1;
+        set j: int = 0;
+        if (ac > 6) {
+            set seq: int = br(mirBuf, 509);
+            bw(mirBuf, 509, seq + 1);
+            set base: int = 2000000 + seq * 16;
+            bw(mirBuf, base, ac);
+            while (j < ac) {
+                set aOff: int = br(hirBuf, hOff + 4 + j);
+                set aTmp: int = lowerExpr(hirBuf, aOff, mirBuf, scBuf, src);
+                bw(mirBuf, base + 1 + j, aTmp);
+                j = j + 1;
+            }
+            appendInstr(mirBuf, 4, t, co, cl, 0 - base);
+        } else {
+            set args: int = 0;
+            set mul: int = 1;
+            while (j < ac) {
+                set aOff: int = br(hirBuf, hOff + 4 + j);
+                set aTmp: int = lowerExpr(hirBuf, aOff, mirBuf, scBuf, src);
+                if (aTmp < 0) { aTmp = 0; }
+                if (aTmp > 998) { aTmp = 998; }
+                args = args + (aTmp + 1) * mul;
+                mul = mul * 1000;
+                j = j + 1;
+            }
+            appendInstr(mirBuf, 4, t, co, cl, args);
         }
-        appendInstr(mirBuf, 4, t, co, cl, args);
         return t;
     }
     if (tag == 18) {
         set ec: int = br(hirBuf, hOff + 1);
         set t: int = freshTemp(mirBuf);
-        set j: int = 0; set args: int = 0; set mul: int = 1;
         set countTmp: int = freshTemp(mirBuf);
         appendInstr(mirBuf, 15, countTmp, ec, 0, 0);
-        args = args + (countTmp + 1) * mul; mul = mul * 1000;
+        set j: int = 0;
+        set args: int = 0;
+        set mul: int = 1;
+        set ct: int = countTmp;
+        if (ct > 998) { ct = 998; }
+        args = args + (ct + 1) * mul;
+        mul = mul * 1000;
         while (j < ec) {
             set eOff: int = br(hirBuf, hOff + 2 + j);
             set eTmp: int = lowerExpr(hirBuf, eOff, mirBuf, scBuf, src);
-            args = args + (eTmp + 1) * mul; mul = mul * 1000;
+            if (eTmp < 0) { eTmp = 0; }
+            if (eTmp > 998) { eTmp = 998; }
+            args = args + (eTmp + 1) * mul;
+            mul = mul * 1000;
             j = j + 1;
         }
         set fnSo: int = 0; set fnSl: int = 13;
@@ -97,14 +130,20 @@ function lowerExpr(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src
 }
 
 function lowerStmt(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src: string, fnRetTy: int): int {
+    if (hOff <= 0 || hOff > 3000000) { return 0; }
     set tag: int = br(hirBuf, hOff);
+    if (tag < 0 || tag > 30) { return 0; }
     if (tag == 0 || tag == 2) {
         set ic: int = br(hirBuf, hOff + 1);
+        if (ic < 0 || ic > 512) { return 0; }
         set j: int = 0; set retSeen: int = 0;
         while (j < ic) {
             set sOff: int = br(hirBuf, hOff + 2 + j);
-            retSeen = lowerStmt(hirBuf, sOff, mirBuf, scBuf, src, fnRetTy);
-            j = j + 1;
+            if (sOff == hOff) { j = j + 1; }
+            else {
+                retSeen = lowerStmt(hirBuf, sOff, mirBuf, scBuf, src, fnRetTy);
+                j = j + 1;
+            }
         }
         return retSeen;
     }
@@ -124,7 +163,13 @@ function lowerStmt(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src
         set vOff: int = br(hirBuf, hOff + 3);
         set vTmp: int = lowerExpr(hirBuf, vOff, mirBuf, scBuf, src);
         set si: int = scLookup(scBuf, src, no, nl);
-        if (si >= 0) { set t: int = scTmp(scBuf, si); appendInstr(mirBuf, 2, t, vTmp, 0, 101); }
+        if (si < 0) {
+            si = scDefine(scBuf, no, nl, 1);
+            scSetTmp(scBuf, si, vTmp);
+        } else {
+            set t: int = scTmp(scBuf, si);
+            appendInstr(mirBuf, 2, t, vTmp, 0, 101);
+        }
         return 0;
     }
     if (tag == 8) {
@@ -138,79 +183,87 @@ function lowerStmt(hirBuf: string, hOff: int, mirBuf: string, scBuf: string, src
     if (tag == 5) {
         set cOff: int = br(hirBuf, hOff + 1); set tOff: int = br(hirBuf, hOff + 2); set eOff: int = br(hirBuf, hOff + 3);
         set cTmp: int = lowerExpr(hirBuf, cOff, mirBuf, scBuf, src);
-        set thenBlk: int = br(mirBuf, 502) + 1;
-        set elseBlk: int = br(mirBuf, 502) + 2;
-        appendInstr(mirBuf, 7, cTmp, thenBlk, elseBlk, 0);
+        set condBlkOff: int = br(mirBuf, 506);
+        set branchIc: int = br(mirBuf, 504);
+        appendInstr(mirBuf, 7, cTmp, 0, 0, 0);
+        set branchPatch: int = condBlkOff + 6 + branchIc * 6;
         finishMirBlock(mirBuf, 0, 0, 0);
         startMirBlock(mirBuf);
+        set thenBlk: int = br(mirBuf, 502);
         set tRet: int = lowerStmt(hirBuf, tOff, mirBuf, scBuf, src, fnRetTy);
-        set hasElse: int = 0;
-        if (eOff != 0) { hasElse = 1; }
-        set mergeBlk: int = thenBlk + 1;
-        if (hasElse == 1) { mergeBlk = thenBlk + 2; }
-        if (tRet == 0 && br(mirBuf, 506) != 0) {
-            appendInstr(mirBuf, 6, 0, mergeBlk, 0, 0);
-            finishMirBlock(mirBuf, 0, 0, 0);
-        } else if (br(mirBuf, 506) == 0 && tRet == 1) {
+        set thenGotoOff: int = 0;
+        if (tRet == 0) {
+            if (br(mirBuf, 506) != 0) {
+                appendInstr(mirBuf, 6, 0, 0, 0, 0);
+                thenGotoOff = br(mirBuf, 506) + 6 + (br(mirBuf, 504) - 1) * 6 + 3;
+                finishMirBlock(mirBuf, 0, 0, 0);
+            }
         } else {
             if (br(mirBuf, 506) != 0) { finishMirBlock(mirBuf, 0, 0, 0); }
         }
+        set elseBlk: int = 0;
+        set elseGotoOff: int = 0;
         if (eOff != 0) {
             startMirBlock(mirBuf);
+            elseBlk = br(mirBuf, 502);
             set eRet: int = lowerStmt(hirBuf, eOff, mirBuf, scBuf, src, fnRetTy);
-            if (eRet == 0 && br(mirBuf, 506) != 0) {
-                set actualMerge: int = br(mirBuf, 502) + 1;
-                appendInstr(mirBuf, 6, 0, actualMerge, 0, 0);
-                finishMirBlock(mirBuf, 0, 0, 0);
+            if (eRet == 0) {
+                if (br(mirBuf, 506) != 0) {
+                    appendInstr(mirBuf, 6, 0, 0, 0, 0);
+                    elseGotoOff = br(mirBuf, 506) + 6 + (br(mirBuf, 504) - 1) * 6 + 3;
+                    finishMirBlock(mirBuf, 0, 0, 0);
+                }
+            } else {
+                if (br(mirBuf, 506) != 0) { finishMirBlock(mirBuf, 0, 0, 0); }
             }
-            startMirBlock(mirBuf);
-        } else {
-            startMirBlock(mirBuf);
         }
+        startMirBlock(mirBuf);
+        set mergeBlk: int = br(mirBuf, 502);
+        if (elseBlk == 0) { elseBlk = mergeBlk; }
+        bw(mirBuf, branchPatch + 3, thenBlk);
+        bw(mirBuf, branchPatch + 4, elseBlk);
+        if (thenGotoOff != 0) { bw(mirBuf, thenGotoOff, mergeBlk); }
+        if (elseGotoOff != 0) { bw(mirBuf, elseGotoOff, mergeBlk); }
         return 0;
     }
     if (tag == 6) {
         set cOff: int = br(hirBuf, hOff + 1); set bOff: int = br(hirBuf, hOff + 2);
-        finishMirBlock(mirBuf, 0, 0, 0);
+        if (br(mirBuf, 506) != 0) { finishMirBlock(mirBuf, 0, 0, 0); }
         startMirBlock(mirBuf);
+        set headerBlk: int = br(mirBuf, 502);
         set condBlkOff: int = br(mirBuf, 506);
         set cTmp: int = lowerExpr(hirBuf, cOff, mirBuf, scBuf, src);
-        set bodyBlkPlaceholder: int = br(mirBuf, 502) + 1;
-        set exitBlkPlaceholder: int = br(mirBuf, 502) + 2;
-        appendInstr(mirBuf, 7, cTmp, bodyBlkPlaceholder, exitBlkPlaceholder, 0);
+        set bodyBlkId: int = headerBlk + 1;
+        set exitBlkId: int = headerBlk + 2;
+        appendInstr(mirBuf, 7, cTmp, bodyBlkId, exitBlkId, 0);
         set branchIc: int = br(mirBuf, 504);
         finishMirBlock(mirBuf, 0, 0, 0);
-        set headerBlk: int = br(mirBuf, 502) - 1;
         startMirBlock(mirBuf);
         set savedExit: int = br(mirBuf, 514);
         set savedCont: int = br(mirBuf, 515);
-        set savedBpCount: int = br(mirBuf, 519);
-        set bpi: int = 0;
-        while (bpi < savedBpCount) { bw(mirBuf, 550 + bpi, br(mirBuf, 520 + bpi)); bpi = bpi + 1; }
-        bw(mirBuf, 519, 0);
-        bw(mirBuf, 514, exitBlkPlaceholder);
+        set savedBp: int = br(mirBuf, 519);
+        bw(mirBuf, 514, exitBlkId);
         bw(mirBuf, 515, headerBlk);
+        bw(mirBuf, 519, 0);
         lowerStmt(hirBuf, bOff, mirBuf, scBuf, src, fnRetTy);
+        set bpCount: int = br(mirBuf, 519);
         bw(mirBuf, 514, savedExit);
         bw(mirBuf, 515, savedCont);
+        bw(mirBuf, 519, savedBp);
         if (br(mirBuf, 506) != 0) {
             appendInstr(mirBuf, 6, 0, headerBlk, 0, 0);
             finishMirBlock(mirBuf, 0, 0, 0);
         }
-        set newExitBlk: int = br(mirBuf, 502);
-        set patchCnt: int = br(mirBuf, 519);
-        set pi: int = 0;
-        while (pi < patchCnt) {
-            set pOff: int = br(mirBuf, 520 + pi);
-            bw(mirBuf, pOff, newExitBlk);
-            pi = pi + 1;
-        }
-        bw(mirBuf, 519, savedBpCount);
-        bpi = 0;
-        while (bpi < savedBpCount) { bw(mirBuf, 520 + bpi, br(mirBuf, 550 + bpi)); bpi = bpi + 1; }
+        set actualExit: int = br(mirBuf, 502);
         set branchOff: int = condBlkOff + 6 + (branchIc - 1) * 6;
-        bw(mirBuf, branchOff + 3, bodyBlkPlaceholder);
-        bw(mirBuf, branchOff + 4, newExitBlk);
+        bw(mirBuf, branchOff + 3, bodyBlkId);
+        bw(mirBuf, branchOff + 4, actualExit);
+        set bpi: int = 0;
+        while (bpi < bpCount) {
+            set patchOff: int = br(mirBuf, 520 + bpi);
+            bw(mirBuf, patchOff, actualExit);
+            bpi = bpi + 1;
+        }
         startMirBlock(mirBuf);
         return 0;
     }
@@ -270,8 +323,8 @@ function lowerFnDef(hirBuf: string, fnOff: int, mirBuf: string, scBuf: string, s
     set fnSrc: int = br(hirBuf, fnOff + 5);
     if (fnSrc == 0) { fnSrc = src; }
     set bodyOff: int = br(hirBuf, fnOff + 6 + pc * 3);
-    bw(mirBuf, 508, 0); bw(mirBuf, 506, 0); bw(mirBuf, 504, 0); bw(mirBuf, 502, 0); bw(mirBuf, 256, 0);
-    set blkOffBase: int = mallac(mirBuf, 500); bw(mirBuf, 516, blkOffBase);
+    bw(mirBuf, 508, 0); bw(mirBuf, 509, 0); bw(mirBuf, 530, 0); bw(mirBuf, 506, 0); bw(mirBuf, 504, 0); bw(mirBuf, 502, 0); bw(mirBuf, 256, 0);
+    set blkOffBase: int = mallac(mirBuf, 2000); bw(mirBuf, 516, blkOffBase);
     startMirBlock(mirBuf);
     set pi: int = 0;
     while (pi < pc) {

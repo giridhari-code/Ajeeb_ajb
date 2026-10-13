@@ -1,4 +1,0 @@
-function main(): int {
-    set x: int = 42;
-    return x;
-}

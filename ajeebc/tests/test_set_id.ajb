@@ -1,7 +1,0 @@
-function main(): int {
-    set x: int = 1;
-    set name: string = "hello";
-    println(itoa(x));
-    println(name);
-    return 0;
-}

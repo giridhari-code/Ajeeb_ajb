@@ -1,7 +1,0 @@
-class Point {
-    x: int
-}
-function main(): int {
-    println("hello");
-    return 0;
-}

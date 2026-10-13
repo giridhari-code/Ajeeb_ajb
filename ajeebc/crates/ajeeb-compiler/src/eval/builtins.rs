@@ -305,7 +305,7 @@ impl Evaluator {
                         let mut buf = s.borrow_mut();
                         let blen = buf.len();
                         if i >= blen {
-                            buf.extend(std::iter::repeat_n('\0', i + 1 - blen));
+                            buf.extend(std::iter::repeat('\0').take(i + 1 - blen));
                         }
                         buf.replace_range(
                             i..=i,
