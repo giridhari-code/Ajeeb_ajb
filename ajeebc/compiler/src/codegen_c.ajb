@@ -495,8 +495,6 @@ function printHelp(): void {
     println("");
     println("Options:");
     println("  -o <path>      Output binary path (default: build/<name>)");
-    println("  --gcc, -g      Force GCC backend (C codegen then gcc)");
-    println("  --llvm, -l     Force LLVM backend (MIR then llc then ld)");
     println("  --interpret, -i  Interpret only (skip codegen)");
     println("  --dry-run, -d    Print commands without executing");
     println("  --no-cache       Ignore compile cache");

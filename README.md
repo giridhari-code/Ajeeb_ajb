@@ -29,7 +29,7 @@ Pipeline: **Lex → Parse → HIR → MIR → C codegen → native binary**
 
 ## Requirements
 
-- `gcc` (C backend)
+- A C compiler (`cc`) for the final link step of generated code
 - Optional: `rustc` only if rebuilding the Gen0 bootstrap from source
 
 ## Build

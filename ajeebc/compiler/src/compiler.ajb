@@ -28,8 +28,6 @@ function main(): int {
         if (a == "--help" || a == "-h") { bw(buf, 393, 1); }
         else if (a == "--dry-run" || a == "-d") { bw(buf, 390, 1); }
         else if (a == "--interpret" || a == "-i") { bw(buf, 391, 1); }
-        else if (a == "--llvm" || a == "-l") { bw(buf, 392, 2); }
-        else if (a == "--gcc" || a == "-g") { bw(buf, 392, 1); }
         else if (a == "--skip-run" || a == "--verbose" || a == "-v") { }
         else if (a == "--no-cache") { noCache = 1; }
         else if (a == "--clear-cache") { cacheClear(); println("Cache cleared."); return 0; }
@@ -97,10 +95,10 @@ function main(): int {
     }
 
     set runtime: string = "runtime/ajeeb_runtime.c";
-    set gccCmd: string = "gcc " + cFile + " " + runtime + " -o " + outPath + " -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast -ldl 2>&1";
-    set rc: int = exec(gccCmd);
+    set linkCmd: string = "cc " + cFile + " " + runtime + " -o " + outPath + " -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast -ldl 2>&1";
+    set rc: int = exec(linkCmd);
     if (rc != 0) {
-        println("gcc failed (exit code " + itoa(rc) + ")");
+        println("link failed (exit code " + itoa(rc) + ")");
         println("C output: " + cFile);
         return 3;
     }
