@@ -1,63 +1,72 @@
 #!/usr/bin/env bash
-# parth build script — uses ajeebc to compile parth to a native binary
+# Build Parth package manager with ajeebc
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-echo "=== Building Parth (Ajeeb-native) ==="
+echo "=== Building Parth (Ajeeb package manager) ==="
 
-# Find ajeeb compiler
 AJEEBC=""
-if [ -n "${AJEEBC_PATH:-}" ] && [ -x "$AJEEBC_PATH" ]; then
-    AJEEBC="$AJEEBC_PATH"
+if [ -n "${AJEEBC_PATH:-}" ] && [ -x "${AJEEBC_PATH}" ]; then
+  AJEEBC="$AJEEBC_PATH"
 elif command -v ajeebc &>/dev/null; then
-    AJEEBC="$(command -v ajeebc)"
+  AJEEBC="$(command -v ajeebc)"
+elif [ -x "${ROOT}/../ajeebc/build/compiler" ]; then
+  AJEEBC="${ROOT}/../ajeebc/build/compiler"
 elif [ -x "${ROOT}/../ajeebc/build/ajeebc" ]; then
-    AJEEBC="${ROOT}/../ajeebc/build/ajeebc"
-elif [ -x "${ROOT}/../build/ajeebc" ]; then
-    AJEEBC="${ROOT}/../build/ajeebc"
+  AJEEBC="${ROOT}/../ajeebc/build/ajeebc"
 else
-    echo "ajeebc nahi mila! Pehle ajeebc install karo."
-    echo "  curl -sSf https://raw.githubusercontent.com/giridhari-code/Ajeeb_ajb/main/scripts/install.sh | bash"
-    exit 1
+  echo "ajeebc not found. Build the compiler first: cd ajeebc && make native"
+  exit 1
 fi
 
-# Find runtime
 RUNTIME=""
-for candidate in \
-    "${HOME}/.ajeeb/bin/ajeeb_runtime.c" \
-    "${ROOT}/../ajeebc/runtime/ajeeb_runtime.c" \
-    "${ROOT}/../runtime/ajeeb_runtime.c" \
-    "${ROOT}/runtime/ajeeb_runtime.c"; do
-    if [ -f "$candidate" ]; then
-        RUNTIME="$candidate"
-        break
-    fi
+for c in \
+  "${ROOT}/../ajeebc/runtime/ajeeb_runtime.c" \
+  "${HOME}/.ajeeb/bin/ajeeb_runtime.c" \
+  "${ROOT}/../runtime/ajeeb_runtime.c"; do
+  if [ -f "$c" ]; then RUNTIME="$c"; break; fi
 done
 if [ -z "$RUNTIME" ]; then
-    echo "ajeeb_runtime.c nahi mila!"
-    exit 1
+  echo "ajeeb_runtime.c not found"
+  exit 1
 fi
 
 echo "  Compiler: $AJEEBC"
 echo "  Runtime:  $RUNTIME"
 mkdir -p build
 
-echo "  Step 1: ajeebc → LLVM IR"
-"$AJEEBC" "parth_m1.ajb" "build/output.ll" --emit-llvm-only
-echo "  ✓ LLVM IR generated"
+# Flatten modules for single-file compile (order: deps first)
+FLAT="build/parth_all.ajb"
+{
+  sed '/^import /d' src/parser.ajb
+  echo ""
+  sed '/^import /d' src/resolver.ajb
+  echo ""
+  sed '/^import /d' src/builder.ajb
+  echo ""
+  sed '/^import /d' src/runner.ajb
+  echo ""
+  sed '/^import /d' src/main.ajb
+} > "$FLAT"
 
-echo "  Step 2: llc → assembly"
-llc -O2 "build/output.ll" -o "build/output.s"
-echo "  ✓ Assembly generated"
+"$AJEEBC" "$FLAT" --skip-run -o build/parth 2>&1 || {
+  # fallback: compile then link with cc
+  "$AJEEBC" "$FLAT" --skip-run 2>&1 || true
+  if [ -f build/output.c ] || [ -f output.c ]; then
+    CFILE=build/output.c
+    [ -f output.c ] && CFILE=output.c
+    cc "$CFILE" "$RUNTIME" -o build/parth -Wno-int-to-pointer-cast -Wno-pointer-to-int-cast -ldl
+  else
+    echo "Build failed"
+    exit 1
+  fi
+}
 
-echo "  Step 3: gcc → native binary"
-gcc -no-pie "build/output.s" "$RUNTIME" \
-    -o "build/parth_m2" -lm -ldl -Wno-int-to-pointer-cast 2>&1
-echo "  ✓ Binary compiled"
-
+chmod +x build/parth 2>/dev/null || true
 echo ""
-echo "✅ Parth build complete!"
-echo "   ./build/parth_m2 init my-project"
-echo "   cp build/parth_m2 ~/.ajeeb/bin/parth"
+echo "Parth built: $ROOT/build/parth"
+echo "  ./build/parth init my-app"
+echo "  ./build/parth new my-app"
+echo "  ./build/parth build"
+echo "  ./build/parth run"

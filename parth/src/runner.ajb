@@ -5,41 +5,16 @@
 import builder;
 import parser;
 
-function findPiri(): string {
-    // Try piri first (new name)
-    set r: int = exec("which piri > /dev/null 2>&1");
-    if (r == 0) { return "piri"; }
-    // Backward compat: try parthi (old name)
-    set r2: int = exec("which parthi > /dev/null 2>&1");
-    if (r2 == 0) { return "parthi"; }
-    set homeDir: string = exec("echo $HOME 2>/dev/null");
-    homeDir = trim(homeDir);
-    if (len(homeDir) > 0) {
-        set p1: string = str_concat(homeDir, "/.ajeeb/bin/piri");
-        if (fileExists(p1) == 1) { return p1; }
-        // Backward compat: check old location
-        set p2: string = str_concat(homeDir, "/.ajeeb/bin/parthi");
-        if (fileExists(p2) == 1) { return p2; }
-    }
-    return "piri";
+function findParthi(): string {
+    set r: int = exec("which parthi > /dev/null 2>&1");
+    if (r == 0) { return "parthi"; }
+    set p1: string = "/root/.parth/bin/parthi";
+    if (fileExists(p1) == 1) { return p1; }
+    return "parthi";
 }
 
 function runProject(): int {
     set buf: string = getStateBuf();
-    // Default: quiet (no status messages). Use --verbose / -v to enable.
-    bw(buf, 508, 1);
-    set qi: int = 1;
-    while (qi < 10) {
-        set qarg: string = readArg(qi);
-        if (len(qarg) == 0) { break; }
-        if (strcmp_ajeeb(qarg, "--quiet") == 0 || strcmp_ajeeb(qarg, "-q") == 0) {
-            bw(buf, 508, 1);
-        }
-        if (strcmp_ajeeb(qarg, "--verbose") == 0 || strcmp_ajeeb(qarg, "-v") == 0) {
-            bw(buf, 508, 0);
-        }
-        qi = qi + 1;
-    }
     set r: int = parseDasConfig("parth.das");
     if (r != 0) {
         println("Error: parth.das padh nahi paaya!");
@@ -52,131 +27,36 @@ function runProject(): int {
     set outDir: string = getBuildOutput(buf, src);
     set target: string = getCompilerTarget(buf, src);
 
-    if (br(buf, 508) == 0) {
-        set bldMsg: string = str_concat("Pehle build kar rahe hain '", name);
-        bldMsg = str_concat(bldMsg, "'...");
-        println(bldMsg);
-    }
+    set bldMsg: string = str_concat("Pehle build kar rahe hain '", name);
+    bldMsg = str_concat(bldMsg, "'...");
+    println(bldMsg);
     r = buildProject();
     if (r != 0) {
-        if (br(buf, 508) == 0) { println("Build fail! Run fail hoga."); }
+        println("Build fail! Run fail hoga.");
         return r;
     }
 
-    if (br(buf, 508) == 0) {
-        println("");
-        set runMsg: string = str_concat("Chala rahe hain '", name);
-        runMsg = str_concat(runMsg, "'...");
-        println(runMsg);
-        println("---");
-    }
+    println("");
+    set runMsg: string = str_concat("Chala rahe hain '", name);
+    runMsg = str_concat(runMsg, "'...");
+    println(runMsg);
+    println("---");
 
     if (strcmp_ajeeb(target, "native") == 0) {
         set binPath: string = str_concat(outDir, name);
         r = exec(binPath);
     } else {
-        set piri: string = findPiri();
-        set cmd: string = str_concat(piri, " ");
+        set parthi: string = findParthi();
+        set cmd: string = str_concat(parthi, " ");
         cmd = str_concat(cmd, entry);
         r = exec(cmd);
     }
 
-    if (br(buf, 508) == 0) {
-        println("---");
-        if (r != 0) {
-            set errMsg: string = str_concat("Program ne error diya (exit code: ", itoa(r));
-            errMsg = str_concat(errMsg, ")");
-            println(errMsg);
-        }
-    }
-    return r;
-}
-
-function runFile(filePath: string): int {
-    // Scan args for --quiet / -q, --verbose / -v
-    set qbuf: string = getStateBuf();
-    bw(qbuf, 508, 1);
-    set qi: int = 1;
-    while (qi < 10) {
-        set qarg: string = readArg(qi);
-        if (len(qarg) == 0) { break; }
-        if (strcmp_ajeeb(qarg, "--quiet") == 0 || strcmp_ajeeb(qarg, "-q") == 0) {
-            bw(qbuf, 508, 1);
-        }
-        if (strcmp_ajeeb(qarg, "--verbose") == 0 || strcmp_ajeeb(qarg, "-v") == 0) {
-            bw(qbuf, 508, 0);
-        }
-        qi = qi + 1;
-    }
-    if (len(filePath) == 0) {
-        println("Usage: parth run <file.ajb>");
-        return 1;
-    }
-    set content: string = readFile(filePath);
-    if (len(content) == 0) {
-        println(str_concat("Error: file nahi mili — ", filePath));
-        return 1;
-    }
-    mkdir("build");
-    set ajeebc: string = findAjeebc();
-    set runtimePath: string = findRuntime("runtime/ajeeb_runtime.c");
-    set baseName: string = filePath;
-    set sl: int = len(filePath);
-    set lastSlash: int = -1;
-    set si: int = 0;
-    while (si < sl) {
-        set cc: int = charCode(filePath, si);
-        if (cc == 47) { lastSlash = si; }
-        si = si + 1;
-    }
-    if (lastSlash >= 0) {
-        baseName = substring(filePath, lastSlash + 1, sl);
-    }
-    if (sl > 4 && strcmp_ajeeb(substring(baseName, len(baseName) - 4, len(baseName)), ".ajb") == 0) {
-        baseName = substring(baseName, 0, len(baseName) - 4);
-    }
-    set binPath: string = str_concat("build/", baseName);
-    if (br(getStateBuf(), 508) == 0) {
-        println(str_concat("Compiling: ", filePath));
-    }
-
-    set llFile: string = "build/output.ll";
-    set cmd1: string = str_concat(ajeebc, " ");
-    cmd1 = str_concat(cmd1, filePath);
-    cmd1 = str_concat(cmd1, " ");
-    cmd1 = str_concat(cmd1, llFile);
-    cmd1 = str_concat(cmd1, " --emit-llvm-only");
-    set r: int = exec(cmd1);
+    println("---");
     if (r != 0) {
-        println("ajeebc compile fail!");
-        return r;
+        set errMsg: string = str_concat("Program ne error diya (exit code: ", itoa(r));
+        errMsg = str_concat(errMsg, ")");
+        println(errMsg);
     }
-
-    set asmFile: string = "build/output.s";
-    set llcCmd: string = str_concat("llc -O2 ", llFile);
-    llcCmd = str_concat(llcCmd, " -o ");
-    llcCmd = str_concat(llcCmd, asmFile);
-    r = exec(llcCmd);
-    if (r != 0) {
-        println("llc compile fail!");
-        return r;
-    }
-
-    set gccCmd: string = str_concat("gcc -no-pie ", asmFile);
-    gccCmd = str_concat(gccCmd, " ");
-    gccCmd = str_concat(gccCmd, runtimePath);
-    gccCmd = str_concat(gccCmd, " -o ");
-    gccCmd = str_concat(gccCmd, binPath);
-    gccCmd = str_concat(gccCmd, " -lm -ldl 2>&1");
-    r = exec(gccCmd);
-    if (r != 0) {
-        println("gcc link fail!");
-        return r;
-    }
-    if (br(getStateBuf(), 508) == 0) {
-        println(str_concat("  Binary -> ", binPath));
-        println(str_concat("Running: ", binPath));
-    }
-    r = exec(binPath);
     return r;
 }

@@ -71,6 +71,38 @@ make test
 - Calls, recursion, imports (`import module;`)
 - C backend via MIR
 
+
+## Parth (package manager)
+
+**Parth** is the Ajeeb package and project manager.
+
+```bash
+cd parth && ./build.sh          # build parth binary
+./build/parth new my-app        # create project
+cd my-app
+parth init                      # write parth.das + src/main.ajb
+parth build                     # compile with ajeebc
+parth run                       # build + run
+parth install ajeebc            # install toolchain helper
+parth generate-lockfile         # lock dependencies
+```
+
+Project manifest: `parth.das`
+
+```toml
+[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+# name = "version"
+
+[compiler]
+target = "native"
+output = "build/"
+runtime = "runtime/ajeeb_runtime.c"
+```
+
 ## Status
 
 Active development toward full self-host. Core arithmetic, control flow, and multi-arg calls work for many programs; some edge cases (deep expression chains, nested control-flow patterns) are still being hardened.
